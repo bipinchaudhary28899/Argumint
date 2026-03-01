@@ -1,0 +1,14 @@
+{
+  "name": "argumint",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
+    "build": "npm run build --workspaces",
+    "clean": "rm -rf node_modules packages/*/node_modules apps/*/node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  }
+}
