@@ -54,12 +54,16 @@ export function initializeSocketIO(
           room = await RoomService.joinRoom(roomCode, userId, username);
         }
 
-        // Join socket.io room with room ID
+        // Join socket.io room FIRST with room ID
         socket.join(`room:${room._id}`);
 
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
+
+        console.log(
+          `[Socket] User ${username} joined room ${roomCode} (${room._id})`
+        );
 
         // Respond to client with updated room
         callback({
@@ -67,16 +71,12 @@ export function initializeSocketIO(
           room: room.toObject(),
         });
 
-        // Broadcast participant joined to all in room (including the one who just joined)
+        // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
         io.to(`room:${room._id}`).emit("room:participant-joined", {
-          roomId: room._id,
+          roomId: room._id.toString(),
           participants: room.participants,
           message: `${username} joined the room`,
         });
-
-        console.log(
-          `[Socket] User ${username} joined room ${roomCode} (${room._id})`
-        );
       } catch (error) {
         console.error("[Socket] Room join error:", error);
         callback({ success: false, error: "Failed to join room" });

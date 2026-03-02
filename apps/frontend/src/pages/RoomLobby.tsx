@@ -46,7 +46,7 @@ export function RoomLobby() {
   useEffect(() => {
     if (!socket || !isConnected || !room || !code) return;
 
-    console.log("[Socket] Setting up room listeners", { roomId: room._id, code });
+    console.log("[v0] Setting up room listeners", { roomId: room._id, code, participants: room.participants.length });
 
     // Join room via socket
     socket.emit("room:join", { roomCode: code }, (response: any) => {
@@ -58,8 +58,16 @@ export function RoomLobby() {
 
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
-      console.log("[Socket] Participant joined:", data);
-      setLocalRoom(data.room || { ...room, participants: data.participants });
+      console.log("[v0] Participant joined event:", { 
+        message: data.message, 
+        totalParticipants: data.participants?.length 
+      });
+      if (data.participants) {
+        setLocalRoom((prev) => ({
+          ...prev!,
+          participants: data.participants,
+        }));
+      }
     });
 
     // Listen for participant left
