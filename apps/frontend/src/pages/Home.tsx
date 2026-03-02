@@ -53,17 +53,17 @@ export function Home() {
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <button
-              onClick={() => navigate("/debates/new")}
+              onClick={() => navigate("/create-room")}
               className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition"
             >
-              New Debate
+              Create Debate
             </button>
             <button
-              onClick={() => navigate("/debates")}
+              onClick={() => navigate("/join-room")}
               className="px-6 py-3 bg-white border border-indigo-600 text-indigo-600 rounded-md
                 hover:bg-indigo-50 transition"
             >
-              Browse Debates
+              Join Debate
             </button>
           </div>
         </div>

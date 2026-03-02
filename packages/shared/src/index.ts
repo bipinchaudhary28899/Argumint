@@ -25,3 +25,17 @@ export {
   type PublicUserInfo,
   toPublicUser,
 } from "./types/user.types.js";
+
+// Room Schemas and Types
+export {
+  ParticipantSchema,
+  RoomSchema,
+  CreateRoomSchema,
+  JoinRoomSchema,
+  UpdateRoomSettingsSchema,
+  type Participant,
+  type Room,
+  type CreateRoomInput,
+  type JoinRoomInput,
+  type UpdateRoomSettingsInput,
+} from "./schemas/room.schema.js";
