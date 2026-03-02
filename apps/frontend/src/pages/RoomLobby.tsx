@@ -263,7 +263,11 @@ export function RoomLobby() {
                             : "bg-blue-100 text-blue-700"
                         }`}
                       >
-                        {participant.status === "disconnected" ? "Offline" : "Ready"}
+                        {participant.status === "disconnected" 
+                          ? "Offline" 
+                          : participant.status === "ready" 
+                          ? "Ready" 
+                          : "Waiting"}
                       </span>
                     </div>
                   </div>
@@ -275,45 +279,69 @@ export function RoomLobby() {
           {/* Sidebar - Actions */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-4 space-y-4">
-              <h3 className="text-lg font-bold text-gray-900">Your Status</h3>
+              <h3 className="text-lg font-bold text-gray-900">{isCreator ? "Host Controls" : "Your Status"}</h3>
 
-              {!userReady ? (
-                <button
-                  onClick={handleReady}
-                  disabled={isJoining}
-                  className="w-full px-6 py-3 bg-green-600 text-white rounded-md
-                    hover:bg-green-700 disabled:opacity-50 transition font-medium"
-                >
-                  {isJoining ? "Marking ready..." : "Ready Up"}
-                </button>
-              ) : (
-                <button
-                  onClick={handleUnready}
-                  className="w-full px-6 py-3 bg-orange-600 text-white rounded-md
-                    hover:bg-orange-700 transition font-medium"
-                >
-                  Not Ready
-                </button>
+              {/* Ready buttons only for non-creator participants */}
+              {!isCreator && (
+                <>
+                  {!userReady ? (
+                    <button
+                      onClick={handleReady}
+                      disabled={isJoining}
+                      className="w-full px-6 py-3 bg-green-600 text-white rounded-md
+                        hover:bg-green-700 disabled:opacity-50 transition font-medium"
+                    >
+                      {isJoining ? "Marking ready..." : "Ready Up"}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleUnready}
+                      className="w-full px-6 py-3 bg-orange-600 text-white rounded-md
+                        hover:bg-orange-700 transition font-medium"
+                    >
+                      Not Ready
+                    </button>
+                  )}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      {allReady && room.participants.length >= 2
+                        ? "Waiting for host to start the debate..."
+                        : "Ready up to start the debate"}
+                    </p>
+                  </div>
+                </>
               )}
 
-              {isCreator && allReady && room.participants.length >= 2 && (
-                <button
-                  onClick={handleStartDebate}
-                  className="w-full px-6 py-3 bg-indigo-600 text-white rounded-md
-                    hover:bg-indigo-700 transition font-bold text-lg"
-                >
-                  Start Debate
-                </button>
-              )}
-
-              {isCreator && (!allReady || room.participants.length < 2) && (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-sm text-amber-800">
-                    {room.participants.length < 2
-                      ? "Need at least 2 participants"
-                      : `Waiting for ${room.participants.length - readyCount} participant(s) to ready up`}
-                  </p>
-                </div>
+              {/* Start Debate button - only for creator */}
+              {isCreator && (
+                <>
+                  {allReady && room.participants.length >= 2 ? (
+                    <button
+                      onClick={handleStartDebate}
+                      className="w-full px-6 py-3 bg-indigo-600 text-white rounded-md
+                        hover:bg-indigo-700 transition font-bold text-lg"
+                    >
+                      Start Debate
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        disabled
+                        className="w-full px-6 py-3 bg-gray-400 text-white rounded-md
+                          opacity-50 cursor-not-allowed font-bold text-lg"
+                      >
+                        Start Debate
+                      </button>
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p className="text-sm text-amber-800">
+                          {room.participants.length < 2
+                            ? "Need at least 2 participants"
+                            : `Waiting for ${room.participants.length - readyCount} participant(s) to ready up`}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </>
               )}
 
               <button

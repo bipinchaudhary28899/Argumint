@@ -40,7 +40,7 @@ export function initializeSocketIO(
           return callback({ success: false, error: "Room code required" });
         }
 
-        const room = await RoomService.getRoomByCode(roomCode);
+        let room = await RoomService.getRoomByCode(roomCode);
 
         if (!room) {
           return callback({ success: false, error: "Room not found" });
@@ -49,27 +49,29 @@ export function initializeSocketIO(
         // Check if user already in participants
         const isParticipant = room.participants.some((p) => p.userId === userId);
 
+        // If not already a participant, add them
+        if (!isParticipant) {
+          room = await RoomService.joinRoom(roomCode, userId, username);
+        }
+
         // Join socket.io room with room ID
         socket.join(`room:${room._id}`);
-
-        // Broadcast participant joined to all in room
-        io.to(`room:${room._id}`).emit("room:participant-joined", {
-          participant: {
-            userId,
-            username,
-            status: "joined",
-            joinedAt: new Date(),
-          },
-          participants: room.participants,
-        });
 
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
 
+        // Respond to client with updated room
         callback({
           success: true,
           room: room.toObject(),
+        });
+
+        // Broadcast participant joined to all in room (including the one who just joined)
+        io.to(`room:${room._id}`).emit("room:participant-joined", {
+          roomId: room._id,
+          participants: room.participants,
+          message: `${username} joined the room`,
         });
 
         console.log(
