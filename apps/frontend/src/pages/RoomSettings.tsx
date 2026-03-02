@@ -345,19 +345,27 @@ export function RoomSettings() {
 
                 {/* Buttons */}
                 {isCreator && (
-                  <div className="flex gap-4 pt-4">
+                  <div className="flex flex-col gap-4 pt-4">
                     <button
                       type="submit"
                       disabled={isSaving}
-                      className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-md
+                      className="w-full px-6 py-3 bg-indigo-600 text-white rounded-md
                         hover:bg-indigo-700 disabled:opacity-50 transition font-medium"
                     >
                       {isSaving ? "Saving..." : "Save Settings"}
                     </button>
                     <button
                       type="button"
+                      onClick={() => navigate(`/room/${code}/lobby`)}
+                      className="w-full px-6 py-3 bg-green-600 text-white rounded-md
+                        hover:bg-green-700 transition font-medium"
+                    >
+                      Start Room
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => navigate("/")}
-                      className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-md
+                      className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-md
                         hover:bg-gray-50 transition font-medium"
                     >
                       Cancel
