@@ -62,7 +62,7 @@ export function initializeSocketIO(
         socket.data.roomCode = roomCode;
 
         console.log(
-          `[Socket] User ${username} joined room ${roomCode} (${room._id})`
+          `[v0] User ${username} joined room ${roomCode} (${room._id}), isParticipant: ${isParticipant}, totalParticipants: ${room.participants.length}`
         );
 
         // Respond to client with updated room
@@ -72,6 +72,7 @@ export function initializeSocketIO(
         });
 
         // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
+        console.log(`[v0] Broadcasting room:participant-joined to room:${room._id} with ${room.participants.length} participants`);
         io.to(`room:${room._id}`).emit("room:participant-joined", {
           roomId: room._id.toString(),
           participants: room.participants,
@@ -184,7 +185,7 @@ export function initializeSocketIO(
 
     socket.on("disconnect", async () => {
       console.log(
-        `[Socket] User ${username} (${userId}) disconnected:`,
+        `[v0] User ${username} (${userId}) disconnected:`,
         socket.id
       );
 

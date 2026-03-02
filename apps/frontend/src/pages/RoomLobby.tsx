@@ -46,11 +46,21 @@ export function RoomLobby() {
   useEffect(() => {
     if (!socket || !isConnected || !room || !code) return;
 
-    console.log("[v0] Setting up room listeners", { roomId: room._id, code, participants: room.participants.length });
+    console.log("[v0] Setting up room listeners", { 
+      roomId: room._id, 
+      code, 
+      participants: room.participants.length,
+      socketId: socket.id,
+      isConnected
+    });
 
     // Join room via socket
     socket.emit("room:join", { roomCode: code }, (response: any) => {
-      console.log("[Socket] Join room response:", response);
+      console.log("[v0] Join room response:", { 
+        success: response.success,
+        totalParticipants: response.room?.participants?.length,
+        error: response.error
+      });
       if (!response.success) {
         setError(response.error || "Failed to join room");
       }
@@ -58,15 +68,21 @@ export function RoomLobby() {
 
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
-      console.log("[v0] Participant joined event:", { 
+      console.log("[v0] Received room:participant-joined event:", { 
         message: data.message, 
-        totalParticipants: data.participants?.length 
+        totalParticipants: data.participants?.length,
+        participants: data.participants?.map((p: any) => p.username),
+        socketId: socket.id
       });
       if (data.participants) {
-        setLocalRoom((prev) => ({
-          ...prev!,
-          participants: data.participants,
-        }));
+        console.log("[v0] Updating local room state with new participants");
+        setLocalRoom((prev) => {
+          console.log("[v0] State update - old participants:", prev?.participants.length, "new participants:", data.participants.length);
+          return {
+            ...prev!,
+            participants: data.participants,
+          };
+        });
       }
     });
 

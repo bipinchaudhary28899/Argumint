@@ -9,33 +9,39 @@ export function useSocket() {
 
   useEffect(() => {
     // Initialize socket connection
+    const token = localStorage.getItem("token");
+    
+    console.log("[v0] Initializing socket with token:", token ? "present" : "missing");
+
     const socket = io(SOCKET_URL, {
       withCredentials: true,
       auth: {
-        token: document.cookie
-          .split("; ")
-          .find((row) => row.startsWith("authToken="))
-          ?.split("=")[1],
+        token: token,
       },
     });
 
     socket.on("connect", () => {
-      console.log("[Socket] Connected:", socket.id);
+      console.log("[v0] Socket connected:", socket.id);
       setIsConnected(true);
     });
 
     socket.on("disconnect", () => {
-      console.log("[Socket] Disconnected");
+      console.log("[v0] Socket disconnected");
       setIsConnected(false);
     });
 
     socket.on("error", (error) => {
-      console.error("[Socket] Error:", error);
+      console.error("[v0] Socket error:", error);
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("[v0] Socket connection error:", error);
     });
 
     socketRef.current = socket;
 
     return () => {
+      console.log("[v0] Disconnecting socket");
       socket.disconnect();
     };
   }, []);
