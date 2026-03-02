@@ -65,11 +65,14 @@ export function initializeSocketIO(
           `[v0] User ${username} joined room ${roomCode} (${room._id}), isParticipant: ${isParticipant}, totalParticipants: ${room.participants.length}`
         );
 
+        console.log("[v0] About to respond to callback");
         // Respond to client with updated room
         callback({
           success: true,
           room: room.toObject(),
         });
+
+        console.log("[v0] Callback sent, now about to broadcast");
 
         // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
         const broadcastData = {
@@ -77,9 +80,15 @@ export function initializeSocketIO(
           participants: room.participants,
           message: `${username} joined the room`,
         };
-        console.log(`[v0] Broadcasting room:participant-joined to room:${room._id} with ${room.participants.length} participants`);
+        console.log(`[v0] About to emit broadcast to room:${room._id}`);
         console.log("[v0] Broadcast data:", broadcastData);
-        io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
+        
+        try {
+          io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
+          console.log(`[v0] Broadcast emitted successfully to room:${room._id}`);
+        } catch (broadcastError) {
+          console.error("[v0] Error during broadcast:", broadcastError);
+        }
       } catch (error) {
         console.error("[Socket] Room join error:", error);
         callback({ success: false, error: "Failed to join room" });

@@ -79,8 +79,11 @@ export function RoomLobby() {
   useEffect(() => {
     if (!socket) return;
 
+    console.log("[v0] Setting up socket event listeners on socket:", socket.id);
+
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
+      console.log("[v0] LISTENER TRIGGERED: room:participant-joined");
       console.log("[v0] Received room:participant-joined event:", { 
         message: data.message, 
         totalParticipants: data.participants?.length,
