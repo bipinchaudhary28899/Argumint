@@ -90,11 +90,13 @@ export function RoomLobby() {
       if (data.participants) {
         console.log("[v0] Updating local room state with new participants");
         setLocalRoom((prev) => {
-          console.log("[v0] State update - old participants:", prev?.participants.length, "new participants:", data.participants.length);
-          return {
+          const newRoom = {
             ...prev!,
             participants: data.participants,
           };
+          console.log("[v0] State update - old participants:", prev?.participants.length, "new participants:", data.participants.length);
+          console.log("[v0] New room object created:", newRoom);
+          return newRoom;
         });
       }
     });
@@ -185,12 +187,24 @@ export function RoomLobby() {
     }
   };
 
+  // Debug: Log current render state
+  console.log("[v0-RENDER] RoomLobby render called with:", {
+    roomCode: code,
+    roomTopic: room?.topic,
+    participantCount: room?.participants.length,
+    roomState: room,
+    userReadyState: userReady,
+    isConnected,
+    socketId: socket?.id,
+    userId: user?.id,
+  });
+
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center">
-        <div className="text-gray-600">Loading room...</div>
-      </div>
-    );
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+
+  if (!room) {
+    return <div className="flex items-center justify-center min-h-screen">Room not found</div>;
   }
 
   if (!room) {

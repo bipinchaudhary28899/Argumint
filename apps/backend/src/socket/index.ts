@@ -72,12 +72,14 @@ export function initializeSocketIO(
         });
 
         // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
-        console.log(`[v0] Broadcasting room:participant-joined to room:${room._id} with ${room.participants.length} participants`);
-        io.to(`room:${room._id}`).emit("room:participant-joined", {
+        const broadcastData = {
           roomId: room._id.toString(),
           participants: room.participants,
           message: `${username} joined the room`,
-        });
+        };
+        console.log(`[v0] Broadcasting room:participant-joined to room:${room._id} with ${room.participants.length} participants`);
+        console.log("[v0] Broadcast data:", broadcastData);
+        io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
       } catch (error) {
         console.error("[Socket] Room join error:", error);
         callback({ success: false, error: "Failed to join room" });
