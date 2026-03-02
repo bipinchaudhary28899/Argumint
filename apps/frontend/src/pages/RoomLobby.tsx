@@ -44,9 +44,17 @@ export function RoomLobby() {
 
   // Setup socket connection and listeners
   useEffect(() => {
-    if (!socket || !isConnected || !room || !code) return;
+    if (!socket || !isConnected || !room || !code) {
+      console.log("[v0] Socket not ready, skipping room join:", {
+        hasSocket: !!socket,
+        isConnected,
+        hasRoom: !!room,
+        code
+      });
+      return;
+    }
 
-    console.log("[v0] Setting up room listeners", { 
+    console.log("[v0] Socket ready! Setting up room listeners", { 
       roomId: room._id, 
       code, 
       participants: room.participants.length,

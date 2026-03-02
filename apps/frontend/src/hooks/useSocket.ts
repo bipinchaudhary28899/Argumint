@@ -8,20 +8,32 @@ export function useSocket() {
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    // Initialize socket connection
+    // Get token from localStorage
     const token = localStorage.getItem("token");
     
-    console.log("[v0] Initializing socket with token:", token ? "present" : "missing");
+    console.log("[v0] Token check:", token ? "Token found" : "Token missing");
+
+    // Only initialize socket if token exists
+    if (!token) {
+      console.log("[v0] No token available, waiting for authentication...");
+      return;
+    }
+
+    console.log("[v0] Initializing socket connection with valid token");
 
     const socket = io(SOCKET_URL, {
       withCredentials: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
       auth: {
         token: token,
       },
     });
 
     socket.on("connect", () => {
-      console.log("[v0] Socket connected:", socket.id);
+      console.log("[v0] Socket connected successfully:", socket.id);
       setIsConnected(true);
     });
 
@@ -35,14 +47,16 @@ export function useSocket() {
     });
 
     socket.on("connect_error", (error) => {
-      console.error("[v0] Socket connection error:", error);
+      console.error("[v0] Socket connect_error:", error);
     });
 
     socketRef.current = socket;
 
     return () => {
-      console.log("[v0] Disconnecting socket");
-      socket.disconnect();
+      console.log("[v0] Cleaning up socket connection");
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, []);
 
