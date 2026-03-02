@@ -23,3 +23,4 @@ export const connectRedis = (url: string) => {
 };
 
 export const isRedisConnected = () => redisConnected;
+export const getRedisClient = () => redisClient;
