@@ -7,9 +7,6 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@argumint/shared": ["packages/shared/src"]
-    }
+    "baseUrl": "."
   }
 }
