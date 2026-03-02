@@ -7,6 +7,7 @@ export function Register() {
   const navigate = useNavigate();
   const { register, isLoading } = useAuth();
   const [formData, setFormData] = useState<RegisterInput>({
+    username: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -48,7 +49,11 @@ export function Register() {
     } else if (formData.password !== formData.confirmPassword) {
       errors.confirmPassword = "Passwords do not match";
     }
-
+    if (!formData.username) {
+      errors.username = "Username is required";
+    } else if (formData.username.length < 3 || formData.username.length > 30) {
+      errors.username = "Username must be between 3 and 30 characters";
+    }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -66,7 +71,8 @@ export function Register() {
       await register(data);
       navigate("/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Registration failed";
+      const message =
+        err instanceof Error ? err.message : "Registration failed";
       setError(message);
     }
   };
@@ -90,6 +96,31 @@ export function Register() {
           <div className="space-y-4">
             <div>
               <label
+                htmlFor="username"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Username
+              </label>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
+      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
+      ${fieldErrors.username ? "border-red-300" : "border-gray-300"}`}
+                placeholder="Enter a username"
+                value={formData.username}
+                onChange={handleChange}
+              />
+              {fieldErrors.username && (
+                <p className="mt-1 text-sm text-red-600">
+                  {fieldErrors.username}
+                </p>
+              )}
+            </div>
+            <div>
+              <label
                 htmlFor="email"
                 className="block text-sm font-medium text-gray-700"
               >
@@ -102,17 +133,13 @@ export function Register() {
                 autoComplete="email"
                 className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
                   focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
-                  ${
-                    fieldErrors.email ? "border-red-300" : "border-gray-300"
-                  }`}
+                  ${fieldErrors.email ? "border-red-300" : "border-gray-300"}`}
                 placeholder="you@example.com"
                 value={formData.email}
                 onChange={handleChange}
               />
               {fieldErrors.email && (
-                <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.email}
-                </p>
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
               )}
             </div>
 

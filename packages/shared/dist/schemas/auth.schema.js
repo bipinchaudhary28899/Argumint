@@ -1,5 +1,9 @@
 import { z } from "zod";
 export const RegisterSchema = z.object({
+    username: z
+        .string()
+        .min(3, "Username must be at least 3 characters")
+        .max(30, "Username cannot exceed 30 characters"),
     email: z.string().email("Invalid email address"),
     password: z
         .string()
@@ -19,19 +23,37 @@ export const LoginSchema = z.object({
 export const AuthResponseSchema = z.object({
     user: z.object({
         id: z.string(),
+        username: z.string(),
         email: z.string(),
+        stats: z.object({
+            debatesWon: z.number(),
+            debatesLost: z.number(),
+            totalDebates: z.number(),
+        }),
         createdAt: z.date(),
     }),
 });
 export const UserSchema = z.object({
     id: z.string(),
+    username: z.string(),
     email: z.string(),
-    password: z.string(), // hashed password
+    passwordHash: z.string(), // hashed password
+    stats: z.object({
+        debatesWon: z.number(),
+        debatesLost: z.number(),
+        totalDebates: z.number(),
+    }),
     createdAt: z.date(),
     updatedAt: z.date(),
 });
 export const PublicUserSchema = z.object({
     id: z.string(),
+    username: z.string(),
     email: z.string(),
+    stats: z.object({
+        debatesWon: z.number(),
+        debatesLost: z.number(),
+        totalDebates: z.number(),
+    }),
     createdAt: z.date(),
 });
