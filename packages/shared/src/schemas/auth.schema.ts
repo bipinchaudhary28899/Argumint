@@ -35,6 +35,7 @@ export const AuthResponseSchema = z.object({
     }),
     createdAt: z.date(),
   }),
+  token: z.string().optional(),
 });
 
 export const UserSchema = z.object({

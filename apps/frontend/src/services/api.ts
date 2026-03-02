@@ -19,6 +19,22 @@ const apiClient = axios.create({
   },
 });
 
+// Response interceptor to store token from response
+apiClient.interceptors.response.use(
+  (response) => {
+    // Check if response contains a token (for login/register)
+    const data = response.data as { token?: string };
+    if (data.token) {
+      console.log("[v0] Storing token to localStorage");
+      localStorage.setItem("token", data.token);
+    }
+    return response;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Error handler
 const handleError = (error: AxiosError) => {
   if (error.response?.data && typeof error.response.data === "object") {
