@@ -45,8 +45,8 @@ export function CreateRoom() {
       setError(null);
       const newRoom = await roomApi.createRoom(formData);
       setRoom(newRoom);
-      // Redirect to room settings page
-      navigate(`/room/${newRoom.code}`);
+      // Go straight to lobby
+      navigate(`/room/${newRoom.code}/lobby`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create room";
       setError(message);

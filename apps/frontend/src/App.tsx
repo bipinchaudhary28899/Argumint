@@ -7,7 +7,6 @@ import { Register } from "./pages/Register";
 import { Home } from "./pages/Home";
 import { CreateRoom } from "./pages/CreateRoom";
 import { JoinRoom } from "./pages/JoinRoom";
-import { RoomSettings } from "./pages/RoomSettings";
 import { RoomLobby } from "./pages/RoomLobby";
 
 function App() {
@@ -38,14 +37,6 @@ function App() {
             element={
               <ProtectedRoute>
                 <JoinRoom />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/room/:code"
-            element={
-              <ProtectedRoute>
-                <RoomSettings />
               </ProtectedRoute>
             }
           />

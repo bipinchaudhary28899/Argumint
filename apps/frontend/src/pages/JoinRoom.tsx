@@ -25,7 +25,7 @@ export function JoinRoom() {
       const code = roomCode.toUpperCase().trim();
       const room = await roomApi.joinRoom({ code });
       setRoom(room);
-      navigate(`/room/${room.code}`);
+      navigate(`/room/${room.code}/lobby`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to join room";
       setError(message);
