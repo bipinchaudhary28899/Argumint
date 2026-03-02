@@ -66,6 +66,19 @@ export function RoomLobby() {
       }
     });
 
+    // Cleanup on unmount
+    return () => {
+      socket.off("room:participant-joined");
+      socket.off("room:participant-left");
+      socket.off("room:participant-status-updated");
+      socket.off("room:participant-disconnected");
+    };
+  }, [socket, isConnected, code]);
+
+  // Separate effect for socket event listeners - only depends on socket
+  useEffect(() => {
+    if (!socket) return;
+
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
       console.log("[v0] Received room:participant-joined event:", { 
@@ -88,7 +101,7 @@ export function RoomLobby() {
 
     // Listen for participant left
     socket.on("room:participant-left", (data: any) => {
-      console.log("[Socket] Participant left:", data);
+      console.log("[v0] Participant left:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -99,7 +112,7 @@ export function RoomLobby() {
 
     // Listen for participant status update
     socket.on("room:participant-status-updated", (data: any) => {
-      console.log("[Socket] Participant status updated:", data);
+      console.log("[v0] Participant status updated:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -110,7 +123,7 @@ export function RoomLobby() {
 
     // Listen for participant disconnected
     socket.on("room:participant-disconnected", (data: any) => {
-      console.log("[Socket] Participant disconnected:", data);
+      console.log("[v0] Participant disconnected:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -119,14 +132,14 @@ export function RoomLobby() {
       }
     });
 
-    // Cleanup on unmount
+    // Cleanup listeners
     return () => {
       socket.off("room:participant-joined");
       socket.off("room:participant-left");
       socket.off("room:participant-status-updated");
       socket.off("room:participant-disconnected");
     };
-  }, [socket, isConnected, room, code]);
+  }, [socket]);
 
   const handleReady = async () => {
     if (!room || !socket) return;
