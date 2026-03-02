@@ -42,7 +42,7 @@ export class AuthController {
       const loginResult = await this.authService.login({ email, password });
       res.cookie("authToken", loginResult.token, COOKIE_OPTIONS);
 
-      res.status(201).json({ user });
+      res.status(201).json({ user, token: loginResult.token });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Registration failed";
@@ -69,7 +69,7 @@ export class AuthController {
       // Set HTTP-only cookie
       res.cookie("authToken", token, COOKIE_OPTIONS);
 
-      res.json({ user });
+      res.json({ user, token });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
       res.status(401).json({ error: message });
