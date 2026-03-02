@@ -2,26 +2,46 @@ import { PublicUser } from "./auth.types";
 
 export interface UserDocument {
   _id: string;
-  email: string;
-  password: string; // hashed
+  username: string;       // min 3, max 30 chars (enforced at validation layer)
+  email: string;          // valid email
+  passwordHash: string;   // hashed password
+  stats: {
+    debatesWon: number;
+    debatesLost: number;
+    totalDebates: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface PublicUserInfo {
   id: string;
+  username: string;
   email: string;
+  stats: {
+    debatesWon: number;
+    debatesLost: number;
+    totalDebates: number;
+  };
   createdAt: Date;
 }
 
 export function toPublicUser(user: {
   _id: { toString(): string };
+  username: string;
   email: string;
+  stats: {
+    debatesWon: number;
+    debatesLost: number;
+    totalDebates: number;
+  };
   createdAt: Date;
-}): PublicUser {
+}): PublicUserInfo {
   return {
     id: user._id.toString(),
+    username: user.username,
     email: user.email,
+    stats: user.stats,
     createdAt: user.createdAt,
   };
 }

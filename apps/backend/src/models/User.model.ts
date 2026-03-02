@@ -2,8 +2,14 @@ import mongoose, { Schema, Document } from "mongoose";
 import bcrypt from "bcrypt";
 
 export interface IUser extends Document {
+  username: string;
   email: string;
-  password: string;
+  passwordHash: string; // renamed
+  stats: {
+    debatesWon: number;
+    debatesLost: number;
+    totalDebates: number;
+  };
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -11,6 +17,13 @@ export interface IUser extends Document {
 
 const userSchema = new Schema<IUser>(
   {
+    username: {
+      type: String,
+      required: true,
+      minlength: 3,
+      maxlength: 30,
+      trim: true,
+    },
     email: {
       type: String,
       required: true,
@@ -19,26 +32,29 @@ const userSchema = new Schema<IUser>(
       trim: true,
       index: true,
     },
-    password: {
+    passwordHash: {
       type: String,
       required: true,
       minlength: 8,
     },
+    stats: {
+      debatesWon: { type: Number, default: 0 },
+      debatesLost: { type: Number, default: 0 },
+      totalDebates: { type: Number, default: 0 },
+    },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 // Hash password before saving
 userSchema.pre<IUser>("save", async function (next) {
-  if (!this.isModified("password")) {
+  if (!this.isModified("passwordHash")) {
     return next();
   }
 
   try {
-    const hashedPassword = await bcrypt.hash(this.password, 10);
-    this.password = hashedPassword;
+    const hashed = await bcrypt.hash(this.passwordHash, 10);
+    this.passwordHash = hashed;
     next();
   } catch (error) {
     next(error as Error);
@@ -49,7 +65,7 @@ userSchema.pre<IUser>("save", async function (next) {
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
 ): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password);
+  return bcrypt.compare(candidatePassword, this.passwordHash);
 };
 
 export const User = mongoose.model<IUser>("User", userSchema);

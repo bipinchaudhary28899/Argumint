@@ -15,26 +15,37 @@ export class AuthController {
   async register(req: Request, res: Response): Promise<void> {
     try {
       // Extract only email and password (confirmPassword is validated client-side)
-      const { email, password } = req.body;
-      
-      // Validate required fields
-      if (!email || !password) {
+      const { email, username, password } = req.body;
+
+      if (!email || !username || !password) {
         res.status(400).json({
           error: "Validation failed",
-          details: { fieldErrors: { email: !email ? ["Required"] : [], password: !password ? ["Required"] : [] } }
+          details: {
+            fieldErrors: {
+              email: !email ? ["Required"] : [],
+              username: !username ? ["Required"] : [],
+              password: !password ? ["Required"] : [],
+            },
+          },
         });
         return;
       }
 
-      const user = await this.authService.register({ email, password, confirmPassword: password });
-      
+      const user = await this.authService.register({
+        email,
+        username,
+        password,
+        confirmPassword:password
+      });
+
       // Auto-login after successful registration
       const loginResult = await this.authService.login({ email, password });
       res.cookie("authToken", loginResult.token, COOKIE_OPTIONS);
-      
+
       res.status(201).json({ user });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Registration failed";
+      const message =
+        error instanceof Error ? error.message : "Registration failed";
       res.status(400).json({ error: message });
     }
   }
@@ -51,7 +62,9 @@ export class AuthController {
         return;
       }
 
-      const { user, token } = await this.authService.login(validationResult.data);
+      const { user, token } = await this.authService.login(
+        validationResult.data,
+      );
 
       // Set HTTP-only cookie
       res.cookie("authToken", token, COOKIE_OPTIONS);
@@ -90,7 +103,8 @@ export class AuthController {
       const user = await this.authService.getUser(userId);
       res.json({ user });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to get user";
+      const message =
+        error instanceof Error ? error.message : "Failed to get user";
       res.status(400).json({ error: message });
     }
   }
