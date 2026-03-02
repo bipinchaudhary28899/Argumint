@@ -62,39 +62,18 @@ export function initializeSocketIO(
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
 
-        // Get all sockets in this room to verify join worked
-        const roomSockets = await io.in(socketRoomName).fetchSockets();
-        
-        console.log(
-          `[v0] User ${username} joined room ${roomCode} (${room._id}), isParticipant: ${isParticipant}, totalParticipants: ${room.participants.length}`
-        );
-        console.log(`[v0] Socket room name: ${socketRoomName}`);
-        console.log(`[v0] Total sockets in room now: ${roomSockets.length}`);
-
-        console.log("[v0] About to respond to callback");
         // Respond to client with updated room
         callback({
           success: true,
           room: room.toObject(),
         });
 
-        console.log("[v0] Callback sent, now about to broadcast");
-
-        // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
-        const broadcastData = {
+        // Broadcast participant joined to ALL in room
+        io.to(`room:${room._id}`).emit("room:participant-joined", {
           roomId: room._id.toString(),
           participants: room.participants,
           message: `${username} joined the room`,
-        };
-        console.log(`[v0] About to emit broadcast to room:${room._id}`);
-        console.log("[v0] Broadcast data:", broadcastData);
-        
-        try {
-          io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
-          console.log(`[v0] Broadcast emitted successfully to room:${room._id}`);
-        } catch (broadcastError) {
-          console.error("[v0] Error during broadcast:", broadcastError);
-        }
+        });
       } catch (error) {
         console.error("[Socket] Room join error:", error);
         callback({ success: false, error: "Failed to join room" });
