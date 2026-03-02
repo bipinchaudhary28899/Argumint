@@ -13,6 +13,20 @@ export {
   type PublicUser,
 } from "./schemas/auth.schema.js";
 
+// Room Schemas
+export {
+  RoomSchema,
+  PublicRoomSchema,
+  CreateRoomRequestSchema,
+  JoinRoomRequestSchema,
+  ParticipantSchema,
+  type Room,
+  type PublicRoom,
+  type CreateRoomRequest,
+  type JoinRoomRequest,
+  type Participant,
+} from "./schemas/room.schema.js";
+
 // Auth Types
 export {
   type AuthState,

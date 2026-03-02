@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import app, { attachAuthRoutes } from "./app.js";
+import app, { attachAuthRoutes, attachRoomRoutes } from "./app.js";
 import { connectMongo } from "./db/mongo.js";
 import { connectRedis, getRedisClient } from "./db/redis.js";
 
@@ -13,9 +13,10 @@ const start = async () => {
   await connectMongo(MONGODB_URI);
   connectRedis(REDIS_URL);
 
-  // Attach auth routes after Redis is connected
+  // Attach routes after Redis is connected
   const redisClient = getRedisClient();
   await attachAuthRoutes(app, redisClient);
+  await attachRoomRoutes(app, redisClient);
 
   app.listen(PORT, () => {
     console.log(`Backend running at http://localhost:${PORT}`);
