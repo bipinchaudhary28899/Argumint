@@ -55,15 +55,21 @@ export function initializeSocketIO(
         }
 
         // Join socket.io room FIRST with room ID
-        socket.join(`room:${room._id}`);
+        const socketRoomName = `room:${room._id}`;
+        socket.join(socketRoomName);
 
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
 
+        // Get all sockets in this room to verify join worked
+        const roomSockets = await io.in(socketRoomName).fetchSockets();
+        
         console.log(
           `[v0] User ${username} joined room ${roomCode} (${room._id}), isParticipant: ${isParticipant}, totalParticipants: ${room.participants.length}`
         );
+        console.log(`[v0] Socket room name: ${socketRoomName}`);
+        console.log(`[v0] Total sockets in room now: ${roomSockets.length}`);
 
         console.log("[v0] About to respond to callback");
         // Respond to client with updated room

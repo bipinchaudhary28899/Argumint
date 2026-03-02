@@ -80,10 +80,11 @@ export function RoomLobby() {
     if (!socket) return;
 
     console.log("[v0] Setting up socket event listeners on socket:", socket.id);
+    console.log("[v0] Socket listeners setup - registering room:participant-joined");
 
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
-      console.log("[v0] LISTENER TRIGGERED: room:participant-joined");
+      console.log("[v0] ✅✅✅ LISTENER TRIGGERED: room:participant-joined ✅✅✅");
       console.log("[v0] Received room:participant-joined event:", { 
         message: data.message, 
         totalParticipants: data.participants?.length,
@@ -139,6 +140,7 @@ export function RoomLobby() {
 
     // Cleanup listeners
     return () => {
+      console.log("[v0] Cleaning up socket listeners on socket:", socket.id);
       socket.off("room:participant-joined");
       socket.off("room:participant-left");
       socket.off("room:participant-status-updated");
