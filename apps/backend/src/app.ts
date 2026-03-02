@@ -40,7 +40,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Auth routes will be attached in server.ts
+// Routes will be attached in server.ts
 export async function attachAuthRoutes(
   app: express.Application,
   redisClient: Redis | null
@@ -48,6 +48,15 @@ export async function attachAuthRoutes(
   const { createAuthRoutes } = await import("./routes/auth.routes.js");
   const authRoutes = createAuthRoutes(redisClient);
   app.use("/auth", authRoutes);
+}
+
+export async function attachRoomRoutes(
+  app: express.Application,
+  redisClient: Redis | null
+) {
+  const { createRoomRoutes } = await import("./routes/room.routes.js");
+  const roomRoutes = createRoomRoutes(redisClient);
+  app.use("/rooms", roomRoutes);
 }
 
 export default app;
