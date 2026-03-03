@@ -13,6 +13,15 @@ export class RoomService {
   ) {
     const code = await generateUniqueRoomCode();
 
+    // Process voting topics if voting is enabled
+    const votingTopics = data.votingEnabled && data.votingTopics
+      ? data.votingTopics.map((text: string, index: number) => ({
+          id: `topic-${index + 1}`,
+          text,
+          votes: 0,
+        }))
+      : [];
+
     const room = new Room({
       code,
       creatorId,
@@ -21,6 +30,8 @@ export class RoomService {
       description: data.description,
       debateMode: data.debateMode || "buzzer",
       maxParticipants: data.maxParticipants || 10,
+      votingEnabled: data.votingEnabled || false,
+      votingTopics: votingTopics,
       votingDuration: data.votingDuration || 30,
       prepDuration: data.prepDuration || 120,
       turnDuration: data.turnDuration || 300,
