@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useRoom } from "../contexts/RoomContext";
-import { useSocket } from "../hooks/useSocket";
 import type { VotingTopic } from "@argumint/shared";
 import type { Socket } from "socket.io-client";
 
@@ -22,7 +21,6 @@ export function VotingPanel({
   onVotingStatusChange,
 }: VotingPanelProps) {
   const {
-    votingInProgress,
     userVote,
     setUserVote,
     setVotingInProgress,
