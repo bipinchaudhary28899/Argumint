@@ -29,8 +29,6 @@ const io = new Server(httpServer, {
     const userId = socket.data.userId;
     const username = socket.data.username;
 
-    console.log(`[Socket] User ${username} (${userId}) connected:`, socket.id);
-
     // ==================== ROOM EVENTS ====================
 
     /**
@@ -39,7 +37,6 @@ const io = new Server(httpServer, {
      * Server responds: { success: bool, room?: Room, error?: string }
      */
     socket.on("room:join", async (data, callback) => {
-        console.log(`[v0-SOCKET] room:join received from ${username} (${userId}), data:`, data);
       try {
         const { roomCode } = data;
 
@@ -65,24 +62,16 @@ const io = new Server(httpServer, {
         socket.join(`room:${room._id}`);
         // ADD THIS - check who is actually in the channel
     const socketsInRoom = await io.in(`room:${room._id}`).fetchSockets();
-    console.log(`[v0] Sockets in room:${room._id}:`, socketsInRoom.map(s => s.id));
-    console.log(`[v0] Total sockets in room: ${socketsInRoom.length}`);
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
 
-        console.log(
-          `[v0] User ${username} joined room ${roomCode} (${room._id}), isParticipant: ${isParticipant}, totalParticipants: ${room.participants.length}`
-        );
-
-        console.log("[v0] About to respond to callback");
         // Respond to client with updated room
         callback({
           success: true,
           room: room.toObject(),
         });
 
-        console.log("[v0] Callback sent, now about to broadcast");
 
         // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
         const broadcastData = {
@@ -90,12 +79,9 @@ const io = new Server(httpServer, {
           participants: room.participants,
           message: `${username} joined the room`,
         };
-        console.log(`[v0] About to emit broadcast to room:${room._id}`);
-        console.log("[v0] Broadcast data:", broadcastData);
         
         try {
           io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
-          console.log(`[v0] Broadcast emitted successfully to room:${room._id}`);
         } catch (broadcastError) {
           console.error("[v0] Error during broadcast:", broadcastError);
         }
@@ -132,10 +118,6 @@ const io = new Server(httpServer, {
           // Room is empty, notify all clients
           io.emit("room:deleted", { roomId });
         }
-
-        console.log(
-          `[Socket] User ${username} left room ${roomId}`
-        );
       } catch (error) {
         console.error("[Socket] Room leave error:", error);
       }
@@ -165,9 +147,6 @@ const io = new Server(httpServer, {
           participants: room.participants,
         });
 
-        console.log(
-          `[Socket] User ${username} status updated to ${status} in room ${roomId}`
-        );
       } catch (error) {
         console.error("[Socket] Update status error:", error);
       }
@@ -297,10 +276,6 @@ const io = new Server(httpServer, {
     // ==================== DISCONNECT HANDLER ====================
 
     socket.on("disconnect", async () => {
-      console.log(
-        `[v0] User ${username} (${userId}) disconnected:`,
-        socket.id
-      );
 
       // Try to clean up room if user was in one
       if (socket.data.roomId) {

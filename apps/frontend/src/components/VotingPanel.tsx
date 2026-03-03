@@ -53,7 +53,6 @@ export function VotingPanel({
 
     // All listeners in ONE effect so cleanup is consistent
     socket.on("room:voting-started", (data: any) => {
-      console.log("[v0] Voting started:", data);
       setIsVotingStarted(true);
       setVotingEnded(false);
       setVotingTimer(data.votingDuration ?? votingDuration); // prefer server value
@@ -64,14 +63,12 @@ export function VotingPanel({
     });
 
     socket.on("room:voting-update", (data: any) => {
-      console.log("[v0] Voting update:", data);
       if (data.votingTopics) {
         setCurrentTopics(data.votingTopics); // updates vote counts in real time
       }
     });
 
     socket.on("room:voting-ended", (data: any) => {
-      console.log("[v0] Voting ended:", data);
       setVotingEnded(true);
       setIsVotingStarted(false);
       setVotingInProgress(false);
@@ -103,7 +100,6 @@ export function VotingPanel({
       if (isHost) {
         socket?.emit("room:end-voting", { roomId }, (response: any) => {
           if (response.success) {
-            console.log("[v0] Voting ended:", response.room);
             setVotingEnded(true);
             setIsVotingStarted(false);
             setVotingInProgress(false);
@@ -126,7 +122,6 @@ export function VotingPanel({
     socket?.emit("room:vote-topic", { roomId, topicId }, (response: any) => {
       if (response.success) {
         setUserVote(topicId);
-        console.log("[v0] Vote recorded for topic:", topicId);
       } else {
         console.error("[v0] Vote failed:", response.error);
       }
@@ -147,7 +142,6 @@ export function VotingPanel({
 
     socket?.emit("room:start-voting", { roomId }, (response: any) => {
       if (response?.success) {
-        console.log("[v0] Voting started by host");
       } else {
         console.error("[v0] Failed to start voting:", response?.error);
         // Roll back optimistic state on error

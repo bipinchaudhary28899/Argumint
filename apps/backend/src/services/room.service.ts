@@ -72,7 +72,6 @@ export class RoomService {
    * Join room with user
    */
   static async joinRoom(roomCode: string, userId: string, username: string) {
-    console.log("[v0-SERVICE] joinRoom called with:", { roomCode, userId, username });
     
     const room = await this.getRoomByCode(roomCode);
     
@@ -80,7 +79,6 @@ export class RoomService {
       throw new Error("Room not found");
     }
 
-    console.log("[v0-SERVICE] Room found:", { roomId: room._id, participantCount: room.participants.length });
 
     // Check if room is full
     if (room.participants.length >= room.maxParticipants) {
@@ -92,10 +90,8 @@ export class RoomService {
       (p) => p.userId === userId
     );
 
-    console.log("[v0-SERVICE] User already joined?", alreadyJoined);
 
     if (alreadyJoined) {
-      console.log("[v0-SERVICE] User already in room, returning existing room");
       return room; // Already joined, return room as is
     }
 
@@ -108,9 +104,7 @@ export class RoomService {
       status: "joined",
     });
 
-    console.log("[v0-SERVICE] Participant added, saving room with", room.participants.length, "participants");
     await room.save();
-    console.log("[v0-SERVICE] Room saved successfully");
     return room;
   }
 
