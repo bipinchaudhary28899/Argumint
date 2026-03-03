@@ -18,8 +18,14 @@ export function VotingPanel({
   roomId,
   onVotingStatusChange,
 }: VotingPanelProps) {
-  const { votingInProgress, userVote, setUserVote, setVotingInProgress, selectedTopic } =
-    useRoom();
+  const {
+    votingInProgress,
+    userVote,
+    setUserVote,
+    setVotingInProgress,
+    selectedTopic,
+    setSelectedTopic,
+  } = useRoom();
   const { socket } = useSocket();
   const [votingTimer, setVotingTimer] = useState(votingDuration);
   const [isVotingStarted, setIsVotingStarted] = useState(false);
@@ -63,6 +69,7 @@ export function VotingPanel({
       setVotingTimer(votingDuration);
       setCurrentTopics(data.votingTopics);
       setVotingInProgress(true);
+      setUserVote(null);
       onVotingStatusChange?.(true);
     });
 
@@ -77,6 +84,7 @@ export function VotingPanel({
       setIsVotingStarted(false);
       setVotingInProgress(false);
       setCurrentTopics(data.votingTopics);
+      setSelectedTopic(data.selectedTopic);
       onVotingStatusChange?.(false);
     });
 
@@ -88,7 +96,8 @@ export function VotingPanel({
   }, [socket, votingDuration, setVotingInProgress, onVotingStatusChange]);
 
   const handleVote = (topicId: string) => {
-    if (!votingInProgress || !isVotingStarted) return;
+    // Allow any participant to vote while the local voting session is active
+    if (!isVotingStarted || votingEnded) return;
 
     socket?.emit("room:vote-topic", { roomId, topicId }, (response: any) => {
       if (response.success) {
@@ -103,11 +112,24 @@ export function VotingPanel({
   const handleStartVoting = () => {
     if (!isHost) return;
 
+    // Optimistic UI update so host immediately sees voting state and timer
+    setIsVotingStarted(true);
+    setVotingEnded(false);
+    setVotingTimer(votingDuration);
+    setCurrentTopics(votingTopics);
+    setVotingInProgress(true);
+    setUserVote(null);
+    onVotingStatusChange?.(true);
+
     socket?.emit("room:start-voting", { roomId }, (response: any) => {
-      if (response.success) {
+      if (response?.success) {
         console.log("[v0] Voting started by host");
       } else {
-        console.error("[v0] Failed to start voting:", response.error);
+        console.error("[v0] Failed to start voting:", response?.error);
+        // Roll back optimistic state on error
+        setIsVotingStarted(false);
+        setVotingEnded(false);
+        setVotingInProgress(false);
       }
     });
   };

@@ -238,7 +238,8 @@ export function RoomLobby() {
   }
 
   const isCreator = room.creatorId === user?.username;
-  const currentUser = room.participants.find((p) => p.userId === user?.username);
+  const currentUser = room.participants.find((p) => p.userId === user?.id);
+  const isHost = isCreator || currentUser?.role === "moderator";
   const allReady = room.participants.every((p) => p.status === "ready");
   const readyCount = room.participants.filter((p) => p.status === "ready").length;
 
@@ -320,7 +321,7 @@ export function RoomLobby() {
               <VotingPanel
                 votingTopics={room.votingTopics}
                 votingDuration={room.votingDuration}
-                isHost={isCreator}
+                isHost={isHost}
                 roomId={room._id!}
               />
             )}
@@ -373,10 +374,10 @@ export function RoomLobby() {
           {/* Sidebar - Actions */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-4 space-y-4">
-              <h3 className="text-lg font-bold text-gray-900">{isCreator ? "Host Controls" : "Your Status"}</h3>
+            <h3 className="text-lg font-bold text-gray-900">{isHost ? "Host Controls" : "Your Status"}</h3>
 
-              {/* Ready buttons only for non-creator participants */}
-              {!isCreator && (
+              {/* Ready buttons only for non-host participants */}
+              {!isHost && (
                 <>
                   {!userReady ? (
                     <button
@@ -406,8 +407,8 @@ export function RoomLobby() {
                 </>
               )}
 
-              {/* Start Debate button - only for creator */}
-              {isCreator && (
+              {/* Start Debate button - only for host */}
+              {isHost && (
                 <>
                   {allReady && room.participants.length >= 2 ? (
                     <button
