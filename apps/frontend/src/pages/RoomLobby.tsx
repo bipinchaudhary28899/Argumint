@@ -323,6 +323,7 @@ export function RoomLobby() {
                 votingDuration={room.votingDuration}
                 isHost={isHost}
                 roomId={room._id!}
+                socket={socket}
               />
             )}
 
