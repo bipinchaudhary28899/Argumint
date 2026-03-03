@@ -20,7 +20,13 @@ export function createRoomRoutes(redisClient: Redis | null) {
       // Validate input
       const parsed = CreateRoomSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error });
+        console.error("[RoomRoutes] Validation error:", parsed.error.flatten());
+        const errorMessages = parsed.error.flatten().fieldErrors;
+        return res.status(400).json({ 
+          error: "Invalid input", 
+          details: errorMessages,
+          message: Object.values(errorMessages).flat().join("; ")
+        });
       }
 
       const room = await RoomService.createRoom(

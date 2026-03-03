@@ -75,6 +75,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         };
         createdAt: Date;
     }>;
+    token: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     user: {
         username: string;
@@ -87,6 +88,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         };
         createdAt: Date;
     };
+    token?: string | undefined;
 }, {
     user: {
         username: string;
@@ -99,6 +101,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         };
         createdAt: Date;
     };
+    token?: string | undefined;
 }>;
 export declare const UserSchema: z.ZodObject<{
     id: z.ZodString;

@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import { roomApi } from "../services/api";
+import { VotingPanel } from "../components/VotingPanel";
 import type { Room, Participant } from "@argumint/shared";
 
 export function RoomLobby() {
@@ -237,7 +238,8 @@ export function RoomLobby() {
   }
 
   const isCreator = room.creatorId === user?.username;
-  const currentUser = room.participants.find((p) => p.userId === user?.username);
+  const currentUser = room.participants.find((p) => p.userId === user?.id);
+  const isHost = isCreator || currentUser?.role === "moderator";
   const allReady = room.participants.every((p) => p.status === "ready");
   const readyCount = room.participants.filter((p) => p.status === "ready").length;
 
@@ -263,11 +265,30 @@ export function RoomLobby() {
       </nav>
 
       <main className="max-w-6xl mx-auto py-12 px-4">
+        {/* Room Code Display */}
+        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl shadow-xl p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm uppercase font-semibold opacity-90">Room Code</p>
+              <p className="text-4xl font-bold tracking-widest">{room.code}</p>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(room.code);
+                // Optional: Show toast notification
+              }}
+              className="px-6 py-3 bg-white text-indigo-600 rounded-md hover:bg-gray-100 transition font-semibold"
+            >
+              Copy Code
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Room Info */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">{room.topic}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">{room.topic || "Voting Room"}</h1>
               {room.description && (
                 <p className="text-gray-600 mb-6">{room.description}</p>
               )}
@@ -294,6 +315,17 @@ export function RoomLobby() {
                 </div>
               </div>
             </div>
+
+            {/* Voting Panel - Only show if voting enabled */}
+            {room.votingEnabled && (
+              <VotingPanel
+                votingTopics={room.votingTopics}
+                votingDuration={room.votingDuration}
+                isHost={isHost}
+                roomId={room._id!}
+                socket={socket}
+              />
+            )}
 
             {/* Participants List */}
             <div className="bg-white rounded-2xl shadow-xl p-8">
@@ -343,10 +375,10 @@ export function RoomLobby() {
           {/* Sidebar - Actions */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-4 space-y-4">
-              <h3 className="text-lg font-bold text-gray-900">{isCreator ? "Host Controls" : "Your Status"}</h3>
+            <h3 className="text-lg font-bold text-gray-900">{isHost ? "Host Controls" : "Your Status"}</h3>
 
-              {/* Ready buttons only for non-creator participants */}
-              {!isCreator && (
+              {/* Ready buttons only for non-host participants */}
+              {!isHost && (
                 <>
                   {!userReady ? (
                     <button
@@ -376,8 +408,8 @@ export function RoomLobby() {
                 </>
               )}
 
-              {/* Start Debate button - only for creator */}
-              {isCreator && (
+              {/* Start Debate button - only for host */}
+              {isHost && (
                 <>
                   {allReady && room.participants.length >= 2 ? (
                     <button
