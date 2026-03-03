@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import { roomApi } from "../services/api";
+import { VotingPanel } from "../components/VotingPanel";
 import type { Room, Participant } from "@argumint/shared";
 
 export function RoomLobby() {
@@ -263,11 +264,30 @@ export function RoomLobby() {
       </nav>
 
       <main className="max-w-6xl mx-auto py-12 px-4">
+        {/* Room Code Display */}
+        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl shadow-xl p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm uppercase font-semibold opacity-90">Room Code</p>
+              <p className="text-4xl font-bold tracking-widest">{room.code}</p>
+            </div>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(room.code);
+                // Optional: Show toast notification
+              }}
+              className="px-6 py-3 bg-white text-indigo-600 rounded-md hover:bg-gray-100 transition font-semibold"
+            >
+              Copy Code
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Room Info */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">{room.topic}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">{room.topic || "Voting Room"}</h1>
               {room.description && (
                 <p className="text-gray-600 mb-6">{room.description}</p>
               )}
@@ -294,6 +314,16 @@ export function RoomLobby() {
                 </div>
               </div>
             </div>
+
+            {/* Voting Panel - Only show if voting enabled */}
+            {room.votingEnabled && (
+              <VotingPanel
+                votingTopics={room.votingTopics}
+                votingDuration={room.votingDuration}
+                isHost={isCreator}
+                roomId={room._id}
+              />
+            )}
 
             {/* Participants List */}
             <div className="bg-white rounded-2xl shadow-xl p-8">
