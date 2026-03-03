@@ -35,17 +35,39 @@ export const RoomSchema = z.object({
   updatedAt: z.date(),
 });
 
-export const CreateRoomSchema = z.object({
-  topic: z.string().min(5).max(500),
-  description: z.string().max(2000).optional(),
-  debateMode: z.enum(["buzzer", "round-robin"]).default("buzzer"),
-  maxParticipants: z.number().min(2).max(100).default(10),
-  votingEnabled: z.boolean().default(false),
-  votingTopics: z.array(z.string().min(5).max(500)).default([]),
-  votingDuration: z.number().default(30),
-  prepDuration: z.number().default(120),
-  turnDuration: z.number().default(300),
-});
+export const CreateRoomSchema = z
+  .object({
+    topic: z.string().min(5).max(500),
+    description: z.string().max(2000).optional(),
+    debateMode: z.enum(["buzzer", "round-robin"]).default("buzzer"),
+    maxParticipants: z.number().min(2).max(100).default(10),
+    votingEnabled: z.boolean().default(false),
+    votingTopics: z.array(z.string().min(5).max(500)).default([]),
+    votingDuration: z.number().default(30),
+    prepDuration: z.number().default(120),
+    turnDuration: z.number().default(300),
+  })
+  .refine(
+    (data) => {
+      // If voting is disabled, topic must be provided
+      if (!data.votingEnabled && (!data.topic || data.topic.trim().length < 5)) {
+        return false;
+      }
+      // If voting is enabled, at least one voting topic must be provided
+      if (
+        data.votingEnabled &&
+        (!data.votingTopics || data.votingTopics.length === 0)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message:
+        "Either provide a topic (when voting disabled) or voting topics (when voting enabled)",
+      path: ["topic"], // This will show error on topic field
+    }
+  );
 
 export const JoinRoomSchema = z.object({
   code: z.string().regex(/^[A-Z0-9]{6}$/),
