@@ -50,12 +50,13 @@ export const CreateRoomSchema = z
     }
     // If voting is enabled, at least one voting topic must be provided
     if (data.votingEnabled) {
-        return data.votingTopics && data.votingTopics.length > 0;
+        return data.votingTopics && data.votingTopics.length > 0 &&
+            data.votingTopics.every((topic) => topic.trim().length > 0);
     }
     return true;
 }, {
     message: "Either provide a topic (when voting disabled) or voting topics (when voting enabled)",
-    path: ["topic"],
+    path: ["votingTopics"],
 });
 export const JoinRoomSchema = z.object({
     code: z.string().regex(/^[A-Z0-9]{6}$/),
