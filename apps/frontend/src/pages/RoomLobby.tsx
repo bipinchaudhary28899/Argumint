@@ -28,7 +28,8 @@ export function RoomLobby() {
           setLocalRoom(fetchedRoom);
           setRoom(fetchedRoom);
         } catch (err) {
-          const message = err instanceof Error ? err.message : "Failed to fetch room";
+          const message =
+            err instanceof Error ? err.message : "Failed to fetch room";
           setError(message);
           console.error("Fetch room error:", err);
         } finally {
@@ -46,30 +47,11 @@ export function RoomLobby() {
   // Setup socket connection and listeners
   useEffect(() => {
     if (!socket || !isConnected || !room || !code) {
-      console.log("[v0] Socket not ready, skipping room join:", {
-        hasSocket: !!socket,
-        isConnected,
-        hasRoom: !!room,
-        code
-      });
       return;
     }
 
-    console.log("[v0] Socket ready! Setting up room listeners", { 
-      roomId: room._id, 
-      code, 
-      participants: room.participants.length,
-      socketId: socket.id,
-      isConnected
-    });
-
     // Join room via socket
     socket.emit("room:join", { roomCode: code }, (response: any) => {
-      console.log("[v0] Join room response:", { 
-        success: response.success,
-        totalParticipants: response.room?.participants?.length,
-        error: response.error
-      });
       if (!response.success) {
         setError(response.error || "Failed to join room");
       }
@@ -88,27 +70,14 @@ export function RoomLobby() {
   useEffect(() => {
     if (!socket) return;
 
-    console.log("[v0] Setting up socket event listeners on socket:", socket.id);
-    console.log("[v0] Socket listeners setup - registering room:participant-joined");
-
     // Listen for participant joined
     socket.on("room:participant-joined", (data: any) => {
-      console.log("[v0] ✅✅✅ LISTENER TRIGGERED: room:participant-joined ✅✅✅");
-      console.log("[v0] Received room:participant-joined event:", { 
-        message: data.message, 
-        totalParticipants: data.participants?.length,
-        participants: data.participants?.map((p: any) => p.username),
-        socketId: socket.id
-      });
       if (data.participants) {
-        console.log("[v0] Updating local room state with new participants");
         setLocalRoom((prev) => {
           const newRoom = {
             ...prev!,
             participants: data.participants,
           };
-          console.log("[v0] State update - old participants:", prev?.participants.length, "new participants:", data.participants.length);
-          console.log("[v0] New room object created:", newRoom);
           return newRoom;
         });
       }
@@ -116,7 +85,6 @@ export function RoomLobby() {
 
     // Listen for participant left
     socket.on("room:participant-left", (data: any) => {
-      console.log("[v0] Participant left:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -127,7 +95,6 @@ export function RoomLobby() {
 
     // Listen for participant status update
     socket.on("room:participant-status-updated", (data: any) => {
-      console.log("[v0] Participant status updated:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -138,7 +105,6 @@ export function RoomLobby() {
 
     // Listen for participant disconnected
     socket.on("room:participant-disconnected", (data: any) => {
-      console.log("[v0] Participant disconnected:", data);
       if (data.participants) {
         setLocalRoom((prev) => ({
           ...prev!,
@@ -149,7 +115,6 @@ export function RoomLobby() {
 
     // Cleanup listeners
     return () => {
-      console.log("[v0] Cleaning up socket listeners on socket:", socket.id);
       socket.off("room:participant-joined");
       socket.off("room:participant-left");
       socket.off("room:participant-status-updated");
@@ -201,24 +166,20 @@ export function RoomLobby() {
     }
   };
 
-  // Debug: Log current render state
-  console.log("[v0-RENDER] RoomLobby render called with:", {
-    roomCode: code,
-    roomTopic: room?.topic,
-    participantCount: room?.participants.length,
-    roomState: room,
-    userReadyState: userReady,
-    isConnected,
-    socketId: socket?.id,
-    userId: user?.id,
-  });
-
   if (isLoading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Loading...
+      </div>
+    );
   }
 
   if (!room) {
-    return <div className="flex items-center justify-center min-h-screen">Room not found</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        Room not found
+      </div>
+    );
   }
 
   if (!room) {
@@ -241,7 +202,9 @@ export function RoomLobby() {
   const currentUser = room.participants.find((p) => p.userId === user?.id);
   const isHost = isCreator || currentUser?.role === "moderator";
   const allReady = room.participants.every((p) => p.status === "ready");
-  const readyCount = room.participants.filter((p) => p.status === "ready").length;
+  const readyCount = room.participants.filter(
+    (p) => p.status === "ready",
+  ).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100">
@@ -269,7 +232,9 @@ export function RoomLobby() {
         <div className="bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl shadow-xl p-6 mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm uppercase font-semibold opacity-90">Room Code</p>
+              <p className="text-sm uppercase font-semibold opacity-90">
+                Room Code
+              </p>
               <p className="text-4xl font-bold tracking-widest">{room.code}</p>
             </div>
             <button
@@ -288,30 +253,44 @@ export function RoomLobby() {
           {/* Room Info */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">{room.topic || "Voting Room"}</h1>
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">
+                {room.topic || "Voting Room"}
+              </h1>
               {room.description && (
                 <p className="text-gray-600 mb-6">{room.description}</p>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">Mode</p>
+                  <p className="text-xs text-gray-600 uppercase font-semibold">
+                    Mode
+                  </p>
                   <p className="text-lg font-bold text-indigo-600 capitalize">
                     {room.debateMode}
                   </p>
                 </div>
                 <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">Ready</p>
+                  <p className="text-xs text-gray-600 uppercase font-semibold">
+                    Ready
+                  </p>
                   <p className="text-lg font-bold text-indigo-600">
                     {readyCount}/{room.participants.length}
                   </p>
                 </div>
                 <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">Voting</p>
-                  <p className="text-lg font-bold text-indigo-600">{room.votingDuration}s</p>
+                  <p className="text-xs text-gray-600 uppercase font-semibold">
+                    Voting
+                  </p>
+                  <p className="text-lg font-bold text-indigo-600">
+                    {room.votingDuration}s
+                  </p>
                 </div>
                 <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">Turn</p>
-                  <p className="text-lg font-bold text-indigo-600">{room.turnDuration}s</p>
+                  <p className="text-xs text-gray-600 uppercase font-semibold">
+                    Turn
+                  </p>
+                  <p className="text-lg font-bold text-indigo-600">
+                    {room.turnDuration}s
+                  </p>
                 </div>
               </div>
             </div>
@@ -343,9 +322,13 @@ export function RoomLobby() {
                         {participant.username.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-gray-900">{participant.username}</p>
+                        <p className="font-medium text-gray-900">
+                          {participant.username}
+                        </p>
                         <p className="text-xs text-gray-600">
-                          {participant.role === "moderator" ? "Host" : "Participant"}
+                          {participant.role === "moderator"
+                            ? "Host"
+                            : "Participant"}
                         </p>
                       </div>
                     </div>
@@ -355,15 +338,15 @@ export function RoomLobby() {
                           participant.status === "ready"
                             ? "bg-green-100 text-green-700"
                             : participant.status === "disconnected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-blue-100 text-blue-700"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-blue-100 text-blue-700"
                         }`}
                       >
-                        {participant.status === "disconnected" 
-                          ? "Offline" 
-                          : participant.status === "ready" 
-                          ? "Ready" 
-                          : "Waiting"}
+                        {participant.status === "disconnected"
+                          ? "Offline"
+                          : participant.status === "ready"
+                            ? "Ready"
+                            : "Waiting"}
                       </span>
                     </div>
                   </div>
@@ -375,7 +358,9 @@ export function RoomLobby() {
           {/* Sidebar - Actions */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-4 space-y-4">
-            <h3 className="text-lg font-bold text-gray-900">{isHost ? "Host Controls" : "Your Status"}</h3>
+              <h3 className="text-lg font-bold text-gray-900">
+                {isHost ? "Host Controls" : "Your Status"}
+              </h3>
 
               {/* Ready buttons only for non-host participants */}
               {!isHost && (
@@ -453,7 +438,9 @@ export function RoomLobby() {
                 <p className="text-xs text-gray-600 uppercase font-semibold mb-2">
                   Connection
                 </p>
-                <p className={`text-sm font-medium ${isConnected ? "text-green-600" : "text-red-600"}`}>
+                <p
+                  className={`text-sm font-medium ${isConnected ? "text-green-600" : "text-red-600"}`}
+                >
                   {isConnected ? "Connected" : "Disconnected"}
                 </p>
               </div>

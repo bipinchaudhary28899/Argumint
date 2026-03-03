@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import Redis from "ioredis";
+import { User } from "../models/User.model.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
@@ -9,6 +10,7 @@ declare global {
     interface Request {
       userId?: string;
       email?: string;
+      username?: string; // ← added
     }
   }
 }
@@ -36,8 +38,15 @@ export function createAuthMiddleware(redisClient: Redis | null) {
         }
       }
 
+      // Fetch actual username from DB instead of deriving from email
+      const user = await User.findById(decoded.userId).select("username").lean();
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
       req.userId = decoded.userId;
       req.email = decoded.email;
+      req.username = user.username; // ← attach real username
       next();
     } catch (error) {
       res.status(401).json({ error: "Unauthorized" });

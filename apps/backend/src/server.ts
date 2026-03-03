@@ -26,11 +26,6 @@ const start = async () => {
 
   // Initialize Socket.io
   initializeSocketIO(httpServer, redisClient, FRONTEND_URL);
-
-  httpServer.listen(PORT, () => {
-  console.log(`Backend running at http://localhost:${PORT}`);
-  console.log(`Socket.io enabled with dynamic CORS (allows all localhost ports + ${FRONTEND_URL})`);
-});
 };
 
 start();

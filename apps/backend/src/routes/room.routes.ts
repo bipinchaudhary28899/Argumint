@@ -17,21 +17,20 @@ export function createRoomRoutes(redisClient: Redis | null) {
    */
   router.post("/create", authMiddleware, async (req: Request, res: Response) => {
     try {
-      // Validate input
       const parsed = CreateRoomSchema.safeParse(req.body);
       if (!parsed.success) {
         console.error("[RoomRoutes] Validation error:", parsed.error.flatten());
         const errorMessages = parsed.error.flatten().fieldErrors;
-        return res.status(400).json({ 
-          error: "Invalid input", 
+        return res.status(400).json({
+          error: "Invalid input",
           details: errorMessages,
-          message: Object.values(errorMessages).flat().join("; ")
+          message: Object.values(errorMessages).flat().join("; "),
         });
       }
 
       const room = await RoomService.createRoom(
         req.userId!,
-        req.email!.split("@")[0], // Use email prefix as username if not provided
+        req.username!, // ← was: req.email!.split("@")[0]
         parsed.data
       );
 
@@ -65,7 +64,6 @@ export function createRoomRoutes(redisClient: Redis | null) {
    */
   router.post("/join", authMiddleware, async (req: Request, res: Response) => {
     try {
-      // Validate input
       const parsed = JoinRoomSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error });
@@ -74,13 +72,13 @@ export function createRoomRoutes(redisClient: Redis | null) {
       const room = await RoomService.joinRoom(
         parsed.data.code,
         req.userId!,
-        req.email!.split("@")[0]
+        req.username! // ← was: req.email!.split("@")[0]
       );
 
       res.json(room);
     } catch (error: any) {
       console.error("[RoomRoutes] Join room error:", error);
-      
+
       if (error.message === "Room not found") {
         return res.status(404).json({ error: "Room not found" });
       }
@@ -100,7 +98,6 @@ export function createRoomRoutes(redisClient: Redis | null) {
     authMiddleware,
     async (req: Request, res: Response) => {
       try {
-        // Validate input
         const parsed = UpdateRoomSettingsSchema.safeParse(req.body);
         if (!parsed.success) {
           return res.status(400).json({ error: "Invalid input", details: parsed.error });

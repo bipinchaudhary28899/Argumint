@@ -25,7 +25,6 @@ apiClient.interceptors.response.use(
     // Check if response contains a token (for login/register)
     const data = response.data as { token?: string };
     if (data.token) {
-      console.log("[v0] Storing token to localStorage");
       localStorage.setItem("token", data.token);
     }
     return response;

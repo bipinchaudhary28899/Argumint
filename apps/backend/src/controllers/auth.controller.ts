@@ -2,11 +2,12 @@ import { Request, Response } from "express";
 import { RegisterSchema, LoginSchema } from "@argumint/shared";
 import { AuthService } from "../services/auth.service.js";
 
+const sameSite: "none" | "lax" = process.env.NODE_ENV === "production" ? "none" : "lax";
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "strict" as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  sameSite,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 export class AuthController {
