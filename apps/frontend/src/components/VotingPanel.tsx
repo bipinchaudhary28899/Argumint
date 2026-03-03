@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import type { VotingTopic } from "@argumint/shared";
+import type { Socket } from "socket.io-client";
 
 interface VotingPanelProps {
   votingTopics: VotingTopic[];
   votingDuration: number;
   isHost: boolean;
   roomId: string;
+  socket: Socket | null; // FIX 1: Pass socket as prop instead of using useSocket inside VotingPanel to avoid multiple socket instances and ensure consistent listeners
   onVotingStatusChange?: (status: boolean) => void;
 }
 
@@ -16,6 +18,7 @@ export function VotingPanel({
   votingDuration,
   isHost,
   roomId,
+  socket,  // ← use this instead of useSocket()
   onVotingStatusChange,
 }: VotingPanelProps) {
   const {
@@ -26,18 +29,79 @@ export function VotingPanel({
     selectedTopic,
     setSelectedTopic,
   } = useRoom();
-  const { socket } = useSocket();
   const [votingTimer, setVotingTimer] = useState(votingDuration);
   const [isVotingStarted, setIsVotingStarted] = useState(false);
   const [votingEnded, setVotingEnded] = useState(false);
   const [currentTopics, setCurrentTopics] = useState(votingTopics);
 
-  // Handle voting timer
+  // FIX 2: Single merged effect for all socket listeners + state sync on mount.
+  // Previously two separate effects caused cleanup from one to remove listeners
+  // registered by the other, so participants never received room:voting-started.
+  useEffect(() => {
+    if (!socket || !roomId) return;
+
+    // Sync state on mount in case this client joined mid-vote
+    socket.emit("room:get-state", { roomId }, (response: any) => {
+      if (!response?.success || !response.room) return;
+      const room = response.room;
+      if (room.votingInProgress) {
+        setIsVotingStarted(true);
+        setVotingEnded(false);
+        setVotingTimer(room.votingDuration ?? votingDuration);
+        setCurrentTopics(room.votingTopics ?? votingTopics);
+        setVotingInProgress(true);
+      }
+    });
+
+    // All listeners in ONE effect so cleanup is consistent
+    socket.on("room:voting-started", (data: any) => {
+      console.log("[v0] Voting started:", data);
+      setIsVotingStarted(true);
+      setVotingEnded(false);
+      setVotingTimer(data.votingDuration ?? votingDuration); // prefer server value
+      setCurrentTopics(data.votingTopics);
+      setVotingInProgress(true);
+      setUserVote(null);
+      onVotingStatusChange?.(true);
+    });
+
+    socket.on("room:voting-update", (data: any) => {
+      console.log("[v0] Voting update:", data);
+      if (data.votingTopics) {
+        setCurrentTopics(data.votingTopics); // updates vote counts in real time
+      }
+    });
+
+    socket.on("room:voting-ended", (data: any) => {
+      console.log("[v0] Voting ended:", data);
+      setVotingEnded(true);
+      setIsVotingStarted(false);
+      setVotingInProgress(false);
+      setCurrentTopics(data.votingTopics);
+      setSelectedTopic(data.selectedTopic);
+      onVotingStatusChange?.(false);
+    });
+
+    return () => {
+      socket.off("room:voting-started");
+      socket.off("room:voting-update");
+      socket.off("room:voting-ended");
+    };
+  }, [socket, roomId]); // minimal deps — avoids re-registering listeners on every render
+
+  // FIX 3: Keep currentTopics in sync with prop changes (e.g. after voting resets)
+  // Only overwrite local state when voting is not actively in progress
+  useEffect(() => {
+    if (!isVotingStarted && !votingEnded) {
+      setCurrentTopics(votingTopics);
+    }
+  }, [votingTopics, isVotingStarted, votingEnded]);
+
+  // Handle voting timer countdown
   useEffect(() => {
     if (!isVotingStarted || votingEnded) return;
 
     if (votingTimer <= 0) {
-      // Voting time ended
       if (isHost) {
         socket?.emit("room:end-voting", { roomId }, (response: any) => {
           if (response.success) {
@@ -58,45 +122,7 @@ export function VotingPanel({
     return () => clearTimeout(timer);
   }, [votingTimer, isVotingStarted, isHost, roomId, socket, votingEnded, setVotingInProgress]);
 
-  // Listen for voting updates
-  useEffect(() => {
-    if (!socket) return;
-
-    socket.on("room:voting-started", (data: any) => {
-      console.log("[v0] Voting started:", data);
-      setIsVotingStarted(true);
-      setVotingEnded(false);
-      setVotingTimer(votingDuration);
-      setCurrentTopics(data.votingTopics);
-      setVotingInProgress(true);
-      setUserVote(null);
-      onVotingStatusChange?.(true);
-    });
-
-    socket.on("room:voting-update", (data: any) => {
-      console.log("[v0] Voting update:", data);
-      setCurrentTopics(data.votingTopics);
-    });
-
-    socket.on("room:voting-ended", (data: any) => {
-      console.log("[v0] Voting ended:", data);
-      setVotingEnded(true);
-      setIsVotingStarted(false);
-      setVotingInProgress(false);
-      setCurrentTopics(data.votingTopics);
-      setSelectedTopic(data.selectedTopic);
-      onVotingStatusChange?.(false);
-    });
-
-    return () => {
-      socket.off("room:voting-started");
-      socket.off("room:voting-update");
-      socket.off("room:voting-ended");
-    };
-  }, [socket, votingDuration, setVotingInProgress, onVotingStatusChange]);
-
   const handleVote = (topicId: string) => {
-    // Allow any participant to vote while the local voting session is active
     if (!isVotingStarted || votingEnded) return;
 
     socket?.emit("room:vote-topic", { roomId, topicId }, (response: any) => {
@@ -112,7 +138,7 @@ export function VotingPanel({
   const handleStartVoting = () => {
     if (!isHost) return;
 
-    // Optimistic UI update so host immediately sees voting state and timer
+    // Optimistic UI update so host immediately sees voting state
     setIsVotingStarted(true);
     setVotingEnded(false);
     setVotingTimer(votingDuration);
@@ -134,7 +160,7 @@ export function VotingPanel({
     });
   };
 
-  // If voting not enabled, don't render
+  // If no voting topics configured, don't render
   if (!votingTopics || votingTopics.length === 0) {
     return null;
   }

@@ -44,7 +44,7 @@ export class RoomService {
           username: creatorUsername,
           role: "moderator",
           joinedAt: new Date(),
-          status: "joined",
+          status: "ready",
         },
       ],
       status: "lobby",
@@ -187,12 +187,38 @@ export class RoomService {
       throw new Error("Room not found");
     }
 
+    // Find the participant being removed so we can tell if they were host/moderator
+    const leavingParticipant = room.participants.find((p) => p.userId === userId);
+
+    // Remove the participant from the room
     room.participants = room.participants.filter((p) => p.userId !== userId);
 
-    // Delete room if no participants left
+    // If no participants left, close (delete) the room
     if (room.participants.length === 0) {
       await Room.deleteOne({ _id: roomId });
       return null;
+    }
+
+    // If the leaving participant was the host/moderator, promote a new host
+    if (leavingParticipant?.role === "moderator") {
+      // Clear any existing moderator roles just in case
+      room.participants.forEach((participant) => {
+        if (participant.role === "moderator") {
+          participant.role = "participant";
+        }
+      });
+
+      // Pick a random remaining participant to become the new host
+      const newHostIndex = Math.floor(Math.random() * room.participants.length);
+      const newHost = room.participants[newHostIndex];
+
+      newHost.role = "moderator";
+      // New host should be considered ready by default
+      newHost.status = "ready" as any;
+
+      // Update creator info so future "creator-only" checks align with the current host
+      room.creatorId = newHost.userId;
+      room.creatorUsername = newHost.username;
     }
 
     await room.save();
