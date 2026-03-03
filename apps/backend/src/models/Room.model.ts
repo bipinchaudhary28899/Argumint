@@ -9,6 +9,12 @@ export interface IParticipant {
   side?: "for" | "against"; // Assigned during debate start
 }
 
+export interface IVotingTopic {
+  id: string;
+  text: string;
+  votes: number;
+}
+
 export interface IRoom extends Document {
   code: string; // Unique room code
   creatorId: string;
@@ -20,6 +26,10 @@ export interface IRoom extends Document {
   participants: IParticipant[];
   status: "lobby" | "voting" | "ready-up" | "prep" | "live" | "finished";
   
+  // Voting configuration
+  votingEnabled: boolean;
+  votingTopics: IVotingTopic[];
+  
   // Timing configuration
   votingDuration: number; // in seconds
   prepDuration: number; // in seconds
@@ -28,6 +38,26 @@ export interface IRoom extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const votingTopicSchema = new Schema<IVotingTopic>(
+  {
+    id: {
+      type: String,
+      required: true,
+    },
+    text: {
+      type: String,
+      required: true,
+      minlength: 5,
+      maxlength: 500,
+    },
+    votes: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { _id: false }
+);
 
 const participantSchema = new Schema<IParticipant>(
   {
@@ -108,6 +138,11 @@ const roomSchema = new Schema<IRoom>(
       enum: ["lobby", "voting", "ready-up", "prep", "live", "finished"],
       default: "lobby",
     },
+    votingEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    votingTopics: [votingTopicSchema],
     votingDuration: {
       type: Number,
       default: 30, // 30 seconds
