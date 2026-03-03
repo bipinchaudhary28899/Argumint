@@ -42,7 +42,7 @@ export const CreateRoomSchema = z
     debateMode: z.enum(["buzzer", "round-robin"]).default("buzzer"),
     maxParticipants: z.number().min(2).max(100).default(10),
     votingEnabled: z.boolean().default(false),
-    votingTopics: z.array(z.string().min(1).max(500)).default([]),
+    votingTopics: z.array(z.string().trim().min(1).max(500)).default([]),
     votingDuration: z.number().default(30),
     prepDuration: z.number().default(120),
     turnDuration: z.number().default(300),
