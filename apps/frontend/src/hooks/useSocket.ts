@@ -23,7 +23,6 @@ export function useSocket() {
     });
 
     newSocket.on("connect", () => {
-      console.log("[v0] Socket connected:", newSocket.id);
       setIsConnected(true);
     });
 
