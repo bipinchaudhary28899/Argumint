@@ -1,7 +1,10 @@
 {
   "name": "argumint",
   "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=apps/backend\" \"npm run dev --workspace=apps/frontend\"",
     "build": "npm run build --workspaces",
@@ -10,5 +13,11 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@argumint/shared": "^1.0.0",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.0",
+    "zod": "^4.3.6"
   }
 }
