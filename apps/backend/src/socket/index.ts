@@ -202,6 +202,98 @@ const io = new Server(httpServer, {
       }
     });
 
+    // ==================== VOTING EVENTS ====================
+
+    /**
+     * Start voting phase
+     * Client emits: { roomId: string }
+     */
+    socket.on("room:start-voting", async (data, callback) => {
+      try {
+        const { roomId } = data;
+
+        if (!roomId) {
+          return callback({ success: false, error: "Room ID required" });
+        }
+
+        const room = await RoomService.startVoting(roomId);
+
+        // Broadcast voting started to all in room
+        io.to(`room:${roomId}`).emit("room:voting-started", {
+          roomId,
+          votingInProgress: true,
+          votingTopics: room.votingTopics,
+          votingStartTime: room.votingStartTime,
+        });
+
+        callback({ success: true, room: room.toObject() });
+      } catch (error) {
+        console.error("[Socket] Start voting error:", error);
+        callback({ success: false, error: (error as any).message || "Failed to start voting" });
+      }
+    });
+
+    /**
+     * Vote on a topic
+     * Client emits: { roomId: string, topicId: string }
+     */
+    socket.on("room:vote-topic", async (data, callback) => {
+      try {
+        const { roomId, topicId } = data;
+
+        if (!roomId || !topicId) {
+          return callback({ success: false, error: "Room ID and topic ID required" });
+        }
+
+        const room = await RoomService.recordVote(roomId, userId, topicId);
+
+        // Broadcast vote update to all in room
+        io.to(`room:${roomId}`).emit("room:voting-update", {
+          roomId,
+          votingTopics: room.votingTopics,
+          userVotes: room.userVotes,
+        });
+
+        callback({ success: true, room: room.toObject() });
+      } catch (error) {
+        console.error("[Socket] Vote topic error:", error);
+        callback({ success: false, error: (error as any).message || "Failed to record vote" });
+      }
+    });
+
+    /**
+     * End voting phase
+     * Client emits: { roomId: string }
+     */
+    socket.on("room:end-voting", async (data, callback) => {
+      try {
+        const { roomId } = data;
+
+        if (!roomId) {
+          return callback({ success: false, error: "Room ID required" });
+        }
+
+        const room = await RoomService.endVoting(roomId);
+
+        // Find the selected topic text
+        const selectedTopicObj = room.votingTopics.find((t) => t.id === room.selectedTopic);
+
+        // Broadcast voting ended to all in room
+        io.to(`room:${roomId}`).emit("room:voting-ended", {
+          roomId,
+          votingInProgress: false,
+          selectedTopic: room.selectedTopic,
+          selectedTopicText: selectedTopicObj?.text,
+          votingTopics: room.votingTopics,
+        });
+
+        callback({ success: true, room: room.toObject() });
+      } catch (error) {
+        console.error("[Socket] End voting error:", error);
+        callback({ success: false, error: (error as any).message || "Failed to end voting" });
+      }
+    });
+
     // ==================== DISCONNECT HANDLER ====================
 
     socket.on("disconnect", async () => {
