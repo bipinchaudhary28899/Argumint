@@ -117,19 +117,11 @@ const roomSchema = new Schema<IRoom>(
       required: function(this: IRoom) {
         return !this.votingEnabled; // topic is required only if voting is disabled
       },
-      minlength: [5, "Topic must be at least 5 characters long"],
-      maxlength: 500,
-      validate: {
-        validator: function(this: IRoom, value: string) {
-          // Skip minlength validation if voting is enabled
-          if (this.votingEnabled) {
-            return true;
-          }
-          // If voting is disabled, topic must be at least 5 chars
-          return !!(value && value.length >= 5);
-        },
-        message: "Topic must be at least 5 characters long when voting is disabled",
+      minlength: function(this: IRoom) {
+        // Only enforce minlength if voting is disabled AND topic is provided
+        return this.votingEnabled ? undefined : [5, "Topic must be at least 5 characters long"];
       },
+      maxlength: 500,
     },
     description: {
       type: String,
