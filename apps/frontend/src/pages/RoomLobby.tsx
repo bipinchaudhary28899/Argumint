@@ -5,7 +5,7 @@ import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import { roomApi } from "../services/api";
 import { VotingPanel } from "../components/VotingPanel";
-import type { Room, Participant } from "@argumint/shared";
+import type { Room } from "@argumint/shared";
 
 export function RoomLobby() {
   const { code } = useParams<{ code: string }>();
@@ -17,7 +17,7 @@ export function RoomLobby() {
   const [room, setLocalRoom] = useState<Room | null>(contextRoom || null);
   const [isLoading, setIsLoading] = useState(!contextRoom);
   const [userReady, setUserReady] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
+  const [isJoining] = useState(false);
 
   // Fetch room if not in context
   useEffect(() => {
