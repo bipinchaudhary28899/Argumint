@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm install && npm run build -w packages/shared && npm run build -w apps/frontend",
+  "buildCommand": "cd packages/shared && npm install && npm run build && cd ../../apps/frontend && npm install && npm run build",
   "outputDirectory": "apps/frontend/dist",
   "installCommand": "npm install",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
