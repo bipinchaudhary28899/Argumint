@@ -37,7 +37,7 @@ export const RoomSchema = z.object({
 
 export const CreateRoomSchema = z
   .object({
-    topic: z.string().min(5).max(500),
+    topic: z.string().max(500).default(""),
     description: z.string().max(2000).optional(),
     debateMode: z.enum(["buzzer", "round-robin"]).default("buzzer"),
     maxParticipants: z.number().min(2).max(100).default(10),
@@ -49,23 +49,20 @@ export const CreateRoomSchema = z
   })
   .refine(
     (data) => {
-      // If voting is disabled, topic must be provided
-      if (!data.votingEnabled && (!data.topic || data.topic.trim().length < 5)) {
-        return false;
+      // If voting is disabled, topic must be provided and at least 5 chars
+      if (!data.votingEnabled) {
+        return data.topic && data.topic.trim().length >= 5;
       }
       // If voting is enabled, at least one voting topic must be provided
-      if (
-        data.votingEnabled &&
-        (!data.votingTopics || data.votingTopics.length === 0)
-      ) {
-        return false;
+      if (data.votingEnabled) {
+        return data.votingTopics && data.votingTopics.length > 0;
       }
       return true;
     },
     {
       message:
         "Either provide a topic (when voting disabled) or voting topics (when voting enabled)",
-      path: ["topic"], // This will show error on topic field
+      path: ["topic"],
     }
   );
 
