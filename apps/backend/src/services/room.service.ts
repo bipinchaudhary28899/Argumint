@@ -15,11 +15,14 @@ export class RoomService {
 
     // Process voting topics if voting is enabled
     const votingTopics = data.votingEnabled && data.votingTopics
-      ? data.votingTopics.map((text: string, index: number) => ({
-          id: `topic-${index + 1}`,
-          text,
-          votes: 0,
-        }))
+      ? data.votingTopics
+          .map((text: string) => text.trim())
+          .filter((text: string) => text.length > 0)
+          .map((text: string, index: number) => ({
+            id: `topic-${index + 1}`,
+            text,
+            votes: 0,
+          }))
       : [];
 
     const room = new Room({
