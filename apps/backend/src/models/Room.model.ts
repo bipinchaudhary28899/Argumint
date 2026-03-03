@@ -117,10 +117,6 @@ const roomSchema = new Schema<IRoom>(
       required: function(this: IRoom) {
         return !this.votingEnabled; // topic is required only if voting is disabled
       },
-      minlength: function(this: IRoom) {
-        // Only enforce minlength if voting is disabled AND topic is provided
-        return this.votingEnabled ? undefined : [5, "Topic must be at least 5 characters long"];
-      },
       maxlength: 500,
     },
     description: {
@@ -164,5 +160,14 @@ const roomSchema = new Schema<IRoom>(
   },
   { timestamps: true }
 );
+
+// Custom validator for topic field
+roomSchema.pre("validate", function(next) {
+  // If voting is disabled, topic must be at least 5 characters
+  if (!this.votingEnabled && this.topic && this.topic.length < 5) {
+    this.invalidate("topic", "Topic must be at least 5 characters long when voting is disabled");
+  }
+  next();
+});
 
 export const Room = mongoose.model<IRoom>("Room", roomSchema);
