@@ -43,7 +43,7 @@ export function Home() {
       <main className="flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-10 space-y-6 text-center">
           <h1 className="text-4xl font-extrabold text-indigo-600">
-            Welcome{user ? `, ${user.email}` : ""}!
+            Welcome{user ? `, ${user.username}` : ""}!
           </h1>
           <p className="text-gray-600">
             You are successfully logged in to Argumint 2.0
