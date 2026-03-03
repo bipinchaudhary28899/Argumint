@@ -113,7 +113,9 @@ const roomSchema = new Schema<IRoom>(
     },
     topic: {
       type: String,
-      required: true,
+      required: function(this: IRoom) {
+        return !this.votingEnabled; // topic is required only if voting is disabled
+      },
       minlength: 5,
       maxlength: 500,
     },
