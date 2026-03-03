@@ -125,7 +125,7 @@ const roomSchema = new Schema<IRoom>(
             return true;
           }
           // If voting is disabled, topic must be at least 5 chars
-          return value && value.length >= 5;
+          return !!(value && value.length >= 5);
         },
         message: "Topic must be at least 5 characters long when voting is disabled",
       },
