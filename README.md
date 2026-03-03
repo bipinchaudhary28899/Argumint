@@ -832,4 +832,28 @@ npm run dev
 
 ---
 
+## Deployment
+
+The app is split across two platforms:
+
+**Frontend** → Vercel
+- URL: https://argumint-frontend.vercel.app
+- Preview URL: https://argumint-frontend-git-main-bkumar28899-4688s-projects.vercel.app
+- Auto-deploys on push to `main`
+- Built from repo root using npm workspaces (`packages/shared` is built first)
+
+**Backend** → Render
+- URL: https://argumint-backend.onrender.com
+- Auto-deploys on push to `main`
+- Built from repo root, serves from `apps/backend/dist/server.js`
+- Note: free tier spins down after 15 minutes of inactivity — first request after idle may take ~30 seconds to wake up
+
+**Databases**
+- MongoDB: MongoDB Atlas (M0 free tier)
+- Redis: Upstash (free tier, TLS enabled)
+
+**Environment Variables**
+- Frontend (`VITE_API_BASE_URL`): set in Vercel dashboard
+- Backend (`JWT_SECRET`, `MONGODB_URI`, `REDIS_URL`, `FRONTEND_URL`, `PORT`): set in Render dashboard
+
 *Argumint 2.0 — Built with React, Node.js, MongoDB, Redis*
