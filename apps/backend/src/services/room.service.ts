@@ -13,6 +13,18 @@ export class RoomService {
   ) {
     const code = await generateUniqueRoomCode();
 
+    // Process voting topics if voting is enabled
+    const votingTopics = data.votingEnabled && data.votingTopics
+      ? data.votingTopics
+          .map((text: string) => text.trim())
+          .filter((text: string) => text.length > 0)
+          .map((text: string, index: number) => ({
+            id: `topic-${index + 1}`,
+            text,
+            votes: 0,
+          }))
+      : [];
+
     const room = new Room({
       code,
       creatorId,
@@ -21,6 +33,8 @@ export class RoomService {
       description: data.description,
       debateMode: data.debateMode || "buzzer",
       maxParticipants: data.maxParticipants || 10,
+      votingEnabled: data.votingEnabled || false,
+      votingTopics: votingTopics,
       votingDuration: data.votingDuration || 30,
       prepDuration: data.prepDuration || 120,
       turnDuration: data.turnDuration || 300,
@@ -30,7 +44,7 @@ export class RoomService {
           username: creatorUsername,
           role: "moderator",
           joinedAt: new Date(),
-          status: "joined",
+          status: "ready",
         },
       ],
       status: "lobby",
@@ -173,13 +187,132 @@ export class RoomService {
       throw new Error("Room not found");
     }
 
+    // Find the participant being removed so we can tell if they were host/moderator
+    const leavingParticipant = room.participants.find((p) => p.userId === userId);
+
+    // Remove the participant from the room
     room.participants = room.participants.filter((p) => p.userId !== userId);
 
-    // Delete room if no participants left
+    // If no participants left, close (delete) the room
     if (room.participants.length === 0) {
       await Room.deleteOne({ _id: roomId });
       return null;
     }
+
+    // If the leaving participant was the host/moderator, promote a new host
+    if (leavingParticipant?.role === "moderator") {
+      // Clear any existing moderator roles just in case
+      room.participants.forEach((participant) => {
+        if (participant.role === "moderator") {
+          participant.role = "participant";
+        }
+      });
+
+      // Pick a random remaining participant to become the new host
+      const newHostIndex = Math.floor(Math.random() * room.participants.length);
+      const newHost = room.participants[newHostIndex];
+
+      newHost.role = "moderator";
+      // New host should be considered ready by default
+      newHost.status = "ready" as any;
+
+      // Update creator info so future "creator-only" checks align with the current host
+      room.creatorId = newHost.userId;
+      room.creatorUsername = newHost.username;
+    }
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * Start voting phase
+   */
+  static async startVoting(roomId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingEnabled || room.votingTopics.length === 0) {
+      throw new Error("Voting is not enabled for this room");
+    }
+
+    // Reset voting state
+    room.votingInProgress = true;
+    room.userVotes = [];
+    room.votingTopics.forEach((topic) => {
+      topic.votes = 0;
+    });
+    room.votingStartTime = new Date();
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * Record user vote
+   */
+  static async recordVote(roomId: string, userId: string, topicId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingInProgress) {
+      throw new Error("Voting is not in progress");
+    }
+
+    // Check if topic exists
+    const topic = room.votingTopics.find((t) => t.id === topicId);
+    if (!topic) {
+      throw new Error("Topic not found");
+    }
+
+    // Remove previous vote by this user (if any)
+    room.userVotes = room.userVotes.filter((v) => v.userId !== userId);
+
+    // Add new vote
+    room.userVotes.push({
+      userId,
+      topicId,
+    });
+
+    // Update vote count
+    room.votingTopics.forEach((t) => {
+      t.votes = room.userVotes.filter((v) => v.topicId === t.id).length;
+    });
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * End voting and select winner
+   */
+  static async endVoting(roomId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingInProgress) {
+      throw new Error("Voting is not in progress");
+    }
+
+    // Find topic with most votes
+    let winnerTopic = room.votingTopics[0];
+    for (const topic of room.votingTopics) {
+      if (topic.votes > winnerTopic.votes) {
+        winnerTopic = topic;
+      }
+    }
+
+    room.votingInProgress = false;
+    room.selectedTopic = winnerTopic.id;
 
     await room.save();
     return room;
