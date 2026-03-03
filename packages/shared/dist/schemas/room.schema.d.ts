@@ -145,7 +145,7 @@ export declare const RoomSchema: z.ZodObject<{
     }[] | undefined;
 }>;
 export declare const CreateRoomSchema: z.ZodEffects<z.ZodObject<{
-    topic: z.ZodDefault<z.ZodString>;
+    topic: z.ZodDefault<z.ZodOptional<z.ZodString>>;
     description: z.ZodOptional<z.ZodString>;
     debateMode: z.ZodDefault<z.ZodEnum<["buzzer", "round-robin"]>>;
     maxParticipants: z.ZodDefault<z.ZodNumber>;
