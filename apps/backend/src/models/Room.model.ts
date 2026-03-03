@@ -51,13 +51,6 @@ const votingTopicSchema = new Schema<IVotingTopic>(
       minlength: [1, "Voting topic cannot be empty"],
       maxlength: 500,
       trim: true,
-      validate: {
-        validator: function(value: string) {
-          // Ensure at least 1 character after trimming
-          return value && value.trim().length > 0;
-        },
-        message: "Voting topic cannot be empty after trimming whitespace",
-      },
     },
     votes: {
       type: Number,
