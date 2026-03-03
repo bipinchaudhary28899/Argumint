@@ -26,6 +26,9 @@ const start = async () => {
 
   // Initialize Socket.io
   initializeSocketIO(httpServer, redisClient, FRONTEND_URL);
+    httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 };
 
 start();
