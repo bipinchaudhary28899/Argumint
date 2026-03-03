@@ -6,20 +6,33 @@ import Redis from "ioredis";
 export function initializeSocketIO(
   httpServer: any,
   redisClient: Redis | null,
-  corsOrigin: string
+  corsOrigin: string,
 ) {
   // In your socket initialization
-const io = new Server(httpServer, {
-  cors: {
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) return callback(null, true);
-      if (origin === process.env.FRONTEND_URL) return callback(null, true);
-      callback(new Error(`CORS policy rejects origin: ${origin}`));
+  const io = new Server(httpServer, {
+    cors: {
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+
+        const allowed = [
+          corsOrigin, // passed-in FRONTEND_URL env var
+          "http://localhost:5173",
+          "https://argumint-frontend.vercel.app",
+        ].filter(Boolean);
+
+        if (
+          allowed.includes(origin) ||
+          /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+          /https:\/\/argumint.*\.vercel\.app$/.test(origin) // all Vercel preview URLs
+        ) {
+          return callback(null, true);
+        }
+
+        callback(new Error(`CORS policy rejects origin: ${origin}`));
+      },
+      credentials: true,
     },
-    credentials: true,
-  },
-});
+  });
 
   // Apply authentication middleware
   io.use(createSocketAuthMiddleware(redisClient));
@@ -51,7 +64,9 @@ const io = new Server(httpServer, {
         }
 
         // Check if user already in participants
-        const isParticipant = room.participants.some((p) => p.userId === userId);
+        const isParticipant = room.participants.some(
+          (p) => p.userId === userId,
+        );
 
         // If not already a participant, add them
         if (!isParticipant) {
@@ -61,7 +76,7 @@ const io = new Server(httpServer, {
         // Join socket.io room FIRST with room ID
         socket.join(`room:${room._id}`);
         // ADD THIS - check who is actually in the channel
-    const socketsInRoom = await io.in(`room:${room._id}`).fetchSockets();
+        const socketsInRoom = await io.in(`room:${room._id}`).fetchSockets();
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;
@@ -72,16 +87,18 @@ const io = new Server(httpServer, {
           room: room.toObject(),
         });
 
-
         // THEN broadcast participant joined to ALL in room (this will reach the new user since they just joined the socket room)
         const broadcastData = {
           roomId: room._id.toString(),
           participants: room.participants,
           message: `${username} joined the room`,
         };
-        
+
         try {
-          io.to(`room:${room._id}`).emit("room:participant-joined", broadcastData);
+          io.to(`room:${room._id}`).emit(
+            "room:participant-joined",
+            broadcastData,
+          );
         } catch (broadcastError) {
           console.error("[v0] Error during broadcast:", broadcastError);
         }
@@ -136,7 +153,7 @@ const io = new Server(httpServer, {
         const room = await RoomService.updateParticipantStatus(
           roomId,
           userId,
-          status
+          status,
         );
 
         // Broadcast status update to room
@@ -146,7 +163,6 @@ const io = new Server(httpServer, {
           status,
           participants: room.participants,
         });
-
       } catch (error) {
         console.error("[Socket] Update status error:", error);
       }
@@ -208,7 +224,10 @@ const io = new Server(httpServer, {
         callback({ success: true, room: room.toObject() });
       } catch (error) {
         console.error("[Socket] Start voting error:", error);
-        callback({ success: false, error: (error as any).message || "Failed to start voting" });
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to start voting",
+        });
       }
     });
 
@@ -221,7 +240,10 @@ const io = new Server(httpServer, {
         const { roomId, topicId } = data;
 
         if (!roomId || !topicId) {
-          return callback({ success: false, error: "Room ID and topic ID required" });
+          return callback({
+            success: false,
+            error: "Room ID and topic ID required",
+          });
         }
 
         const room = await RoomService.recordVote(roomId, userId, topicId);
@@ -236,7 +258,10 @@ const io = new Server(httpServer, {
         callback({ success: true, room: room.toObject() });
       } catch (error) {
         console.error("[Socket] Vote topic error:", error);
-        callback({ success: false, error: (error as any).message || "Failed to record vote" });
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to record vote",
+        });
       }
     });
 
@@ -255,7 +280,9 @@ const io = new Server(httpServer, {
         const room = await RoomService.endVoting(roomId);
 
         // Find the selected topic text
-        const selectedTopicObj = room.votingTopics.find((t) => t.id === room.selectedTopic);
+        const selectedTopicObj = room.votingTopics.find(
+          (t) => t.id === room.selectedTopic,
+        );
 
         // Broadcast voting ended to all in room
         io.to(`room:${roomId}`).emit("room:voting-ended", {
@@ -269,21 +296,23 @@ const io = new Server(httpServer, {
         callback({ success: true, room: room.toObject() });
       } catch (error) {
         console.error("[Socket] End voting error:", error);
-        callback({ success: false, error: (error as any).message || "Failed to end voting" });
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to end voting",
+        });
       }
     });
 
     // ==================== DISCONNECT HANDLER ====================
 
     socket.on("disconnect", async () => {
-
       // Try to clean up room if user was in one
       if (socket.data.roomId) {
         try {
           const room = await RoomService.updateParticipantStatus(
             socket.data.roomId,
             userId,
-            "disconnected"
+            "disconnected",
           );
 
           io.to(`room:${socket.data.roomId}`).emit(
@@ -292,7 +321,7 @@ const io = new Server(httpServer, {
               userId,
               username,
               participants: room.participants,
-            }
+            },
           );
         } catch (error) {
           console.error("[Socket] Disconnect cleanup error:", error);
