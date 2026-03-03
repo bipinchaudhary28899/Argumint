@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm run build -w packages/shared && npm run build -w apps/frontend",
+  "buildCommand": "npm install && npm run build -w packages/shared && npm run build -w apps/frontend",
   "outputDirectory": "apps/frontend/dist",
-  "installCommand": "npm install --legacy-peer-deps",
+  "installCommand": "npm install",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
