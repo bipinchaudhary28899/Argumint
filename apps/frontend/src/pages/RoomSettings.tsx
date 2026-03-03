@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { roomApi } from "../services/api";
-import type { Room, UpdateRoomSettingsInput } from "@argumint/shared";
+import type { UpdateRoomSettingsInput } from "@argumint/shared";
 
 export function RoomSettings() {
   const { code } = useParams<{ code: string }>();
