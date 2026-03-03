@@ -198,4 +198,97 @@ export class RoomService {
     await room.save();
     return room;
   }
+
+  /**
+   * Start voting phase
+   */
+  static async startVoting(roomId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingEnabled || room.votingTopics.length === 0) {
+      throw new Error("Voting is not enabled for this room");
+    }
+
+    // Reset voting state
+    room.votingInProgress = true;
+    room.userVotes = [];
+    room.votingTopics.forEach((topic) => {
+      topic.votes = 0;
+    });
+    room.votingStartTime = new Date();
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * Record user vote
+   */
+  static async recordVote(roomId: string, userId: string, topicId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingInProgress) {
+      throw new Error("Voting is not in progress");
+    }
+
+    // Check if topic exists
+    const topic = room.votingTopics.find((t) => t.id === topicId);
+    if (!topic) {
+      throw new Error("Topic not found");
+    }
+
+    // Remove previous vote by this user (if any)
+    room.userVotes = room.userVotes.filter((v) => v.userId !== userId);
+
+    // Add new vote
+    room.userVotes.push({
+      userId,
+      topicId,
+    });
+
+    // Update vote count
+    room.votingTopics.forEach((t) => {
+      t.votes = room.userVotes.filter((v) => v.topicId === t.id).length;
+    });
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * End voting and select winner
+   */
+  static async endVoting(roomId: string) {
+    const room = await this.getRoomById(roomId);
+
+    if (!room) {
+      throw new Error("Room not found");
+    }
+
+    if (!room.votingInProgress) {
+      throw new Error("Voting is not in progress");
+    }
+
+    // Find topic with most votes
+    let winnerTopic = room.votingTopics[0];
+    for (const topic of room.votingTopics) {
+      if (topic.votes > winnerTopic.votes) {
+        winnerTopic = topic;
+      }
+    }
+
+    room.votingInProgress = false;
+    room.selectedTopic = winnerTopic.id;
+
+    await room.save();
+    return room;
+  }
 }

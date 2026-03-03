@@ -15,6 +15,11 @@ export interface IVotingTopic {
   votes: number;
 }
 
+export interface IUserVote {
+  userId: string;
+  topicId: string;
+}
+
 export interface IRoom extends Document {
   code: string; // Unique room code
   creatorId: string;
@@ -30,6 +35,12 @@ export interface IRoom extends Document {
   votingEnabled: boolean;
   votingTopics: IVotingTopic[];
   
+  // Voting state
+  votingInProgress: boolean;
+  userVotes: IUserVote[]; // Track which user voted for which topic
+  selectedTopic?: string; // Selected topic ID after voting ends
+  votingStartTime?: Date; // When voting started
+  
   // Timing configuration
   votingDuration: number; // in seconds
   prepDuration: number; // in seconds
@@ -38,6 +49,20 @@ export interface IRoom extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const userVoteSchema = new Schema<IUserVote>(
+  {
+    userId: {
+      type: String,
+      required: true,
+    },
+    topicId: {
+      type: String,
+      required: true,
+    },
+  },
+  { _id: false }
+);
 
 const votingTopicSchema = new Schema<IVotingTopic>(
   {
@@ -145,6 +170,19 @@ const roomSchema = new Schema<IRoom>(
       default: false,
     },
     votingTopics: [votingTopicSchema],
+    votingInProgress: {
+      type: Boolean,
+      default: false,
+    },
+    userVotes: [userVoteSchema],
+    selectedTopic: {
+      type: String,
+      required: false,
+    },
+    votingStartTime: {
+      type: Date,
+      required: false,
+    },
     votingDuration: {
       type: Number,
       default: 30, // 30 seconds

@@ -35,6 +35,7 @@ export {
   UpdateRoomSettingsSchema,
   type Participant,
   type Room,
+  type VotingTopic,
   type CreateRoomInput,
   type JoinRoomInput,
   type UpdateRoomSettingsInput,
