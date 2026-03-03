@@ -16,6 +16,8 @@ export function CreateRoom() {
     description: "",
     debateMode: "buzzer",
     maxParticipants: 10,
+    votingEnabled: false,
+    votingTopics: [],
     votingDuration: 30,
     prepDuration: 120,
     turnDuration: 300,
@@ -24,20 +26,59 @@ export function CreateRoom() {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
-    const { name, value, type } = e.target;
+    const { name, value, type, checked } = e.target as HTMLInputElement;
     setFormData((prev) => ({
       ...prev,
       [name]:
+        type === "checkbox" ? checked :
         type === "number" ? (value ? parseInt(value, 10) : 0) : value,
+    }));
+  };
+
+  const handleAddTopic = () => {
+    if (formData.votingTopics.length < 4) {
+      setFormData((prev) => ({
+        ...prev,
+        votingTopics: [...(prev.votingTopics || []), ""],
+      }));
+    }
+  };
+
+  const handleRemoveTopic = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      votingTopics: (prev.votingTopics || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleTopicChange = (index: number, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      votingTopics: (prev.votingTopics || []).map((topic, i) =>
+        i === index ? value : topic
+      ),
     }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.topic.trim()) {
+    if (!formData.topic.trim() && !formData.votingEnabled) {
       setError("Topic is required");
       return;
+    }
+
+    if (formData.votingEnabled && (!formData.votingTopics || formData.votingTopics.length === 0)) {
+      setError("At least one topic is required for voting");
+      return;
+    }
+
+    if (formData.votingEnabled) {
+      const invalidTopics = formData.votingTopics.filter((t: string) => !t.trim());
+      if (invalidTopics.length > 0) {
+        setError("All voting topics must be filled");
+        return;
+      }
     }
 
     try {
@@ -79,27 +120,91 @@ export function CreateRoom() {
           </h1>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Topic */}
-            <div>
-              <label htmlFor="topic" className="block text-sm font-medium text-gray-700">
-                Debate Topic *
-              </label>
+            {/* Voting Mode Toggle */}
+            <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg">
               <input
-                type="text"
-                id="topic"
-                name="topic"
-                value={formData.topic}
+                type="checkbox"
+                id="votingEnabled"
+                name="votingEnabled"
+                checked={formData.votingEnabled || false}
                 onChange={handleChange}
-                placeholder="e.g., Should social media be regulated by governments?"
-                maxLength={500}
-                required
-                className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md
-                  focus:ring-indigo-500 focus:border-indigo-500"
+                className="h-4 w-4 text-indigo-600 rounded"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                {formData.topic.length}/500
-              </p>
+              <div>
+                <label htmlFor="votingEnabled" className="block text-sm font-medium text-gray-700">
+                  Enable Topic Voting
+                </label>
+                <p className="text-xs text-gray-600">
+                  Allow users to vote on debate topics in the lobby
+                </p>
+              </div>
             </div>
+
+            {/* Topic - Conditional based on voting mode */}
+            {!formData.votingEnabled ? (
+              <div>
+                <label htmlFor="topic" className="block text-sm font-medium text-gray-700">
+                  Debate Topic *
+                </label>
+                <input
+                  type="text"
+                  id="topic"
+                  name="topic"
+                  value={formData.topic}
+                  onChange={handleChange}
+                  placeholder="e.g., Should social media be regulated by governments?"
+                  maxLength={500}
+                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md
+                    focus:ring-indigo-500 focus:border-indigo-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {formData.topic.length}/500
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Voting Topics (2-4) *
+                </label>
+                <div className="space-y-2">
+                  {(formData.votingTopics || []).map((topic, index) => (
+                    <div key={index} className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          value={topic}
+                          onChange={(e) => handleTopicChange(index, e.target.value)}
+                          placeholder={`Topic ${index + 1}`}
+                          maxLength={500}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-md
+                            focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTopic(index)}
+                        className="px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {(formData.votingTopics || []).length < 4 && (
+                  <button
+                    type="button"
+                    onClick={handleAddTopic}
+                    className="mt-3 px-4 py-2 bg-green-100 text-green-700 rounded-md
+                      hover:bg-green-200 transition font-medium"
+                  >
+                    + Add Topic
+                  </button>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  Added: {(formData.votingTopics || []).length}/4 topics
+                </p>
+              </div>
+            )}
 
             {/* Description */}
             <div>
@@ -160,22 +265,24 @@ export function CreateRoom() {
 
             {/* Timings */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="votingDuration" className="block text-sm font-medium text-gray-700">
-                  Voting Time (sec)
-                </label>
-                <input
-                  type="number"
-                  id="votingDuration"
-                  name="votingDuration"
-                  value={formData.votingDuration}
-                  onChange={handleChange}
-                  min={10}
-                  max={300}
-                  className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md
-                    focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
+              {formData.votingEnabled && (
+                <div>
+                  <label htmlFor="votingDuration" className="block text-sm font-medium text-gray-700">
+                    Voting Time (sec) *
+                  </label>
+                  <input
+                    type="number"
+                    id="votingDuration"
+                    name="votingDuration"
+                    value={formData.votingDuration}
+                    onChange={handleChange}
+                    min={10}
+                    max={300}
+                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md
+                      focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+              )}
 
               <div>
                 <label htmlFor="prepDuration" className="block text-sm font-medium text-gray-700">
