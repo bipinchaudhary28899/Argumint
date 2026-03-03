@@ -10,16 +10,17 @@ const app = express();
 // Middleware
 app.use(cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
 
-    const allowed = [process.env.FRONTEND_URL]
-      // always allow our default dev host
-      .concat("http://localhost:5173")
-      // support any localhost port for development
-      .concat(origin.match(/^https?:\/\/localhost(:\d+)?$/) ? [origin] : []);
+    const allowed = [
+      process.env.FRONTEND_URL,
+      "http://localhost:5173",
+      "https://argumint-frontend.vercel.app",
+      "https://argumint-frontend-git-main-bkumar28899-4688s-projects.vercel.app",
+    ].filter(Boolean);
 
-    if (allowed.includes(origin)) {
+    // allow any vercel preview deployments too
+    if (allowed.includes(origin) || origin.match(/https:\/\/argumint.*\.vercel\.app$/)) {
       return callback(null, true);
     }
 
