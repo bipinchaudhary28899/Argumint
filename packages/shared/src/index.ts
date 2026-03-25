@@ -40,3 +40,25 @@ export {
   type JoinRoomInput,
   type UpdateRoomSettingsInput,
 } from "./schemas/room.schema.js";
+
+// Debate Schemas and Types
+export {
+  startDebateSchema,
+  claimMicSchema,
+  releaseMicSchema,
+  nextRoundSchema,
+  endDebateSchema,
+  getDebateStateSchema,
+  argumentSchema,
+  debateRoundSchema,
+  debateStateSchema,
+  type StartDebateInput,
+  type ClaimMicInput,
+  type ReleaseMicInput,
+  type NextRoundInput,
+  type EndDebateInput,
+  type GetDebateStateInput,
+  type Argument,
+  type DebateRound,
+  type DebateState,
+} from "./schemas/debate.schema.js";

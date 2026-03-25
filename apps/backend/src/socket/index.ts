@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 import { createSocketAuthMiddleware } from "../middleware/socket.middleware.js";
 import { RoomService } from "../services/room.service.js";
+import { DebateService } from "../services/debate.service.js";
 import Redis from "ioredis";
 
 export function initializeSocketIO(
@@ -299,6 +300,231 @@ export function initializeSocketIO(
         callback({
           success: false,
           error: (error as any).message || "Failed to end voting",
+        });
+      }
+    });
+
+    // ==================== DEBATE EVENTS ====================
+
+    /**
+     * Start debate
+     * Client emits: { roomId: string, topic: string, maxDurationPerTurn: number }
+     */
+    socket.on("debate:start", async (data, callback) => {
+      try {
+        const { roomId, topic, maxDurationPerTurn } = data;
+
+        if (!roomId || !topic) {
+          return callback({ success: false, error: "Room ID and topic required" });
+        }
+
+        const room = await RoomService.getRoomById(roomId);
+        if (!room) {
+          return callback({ success: false, error: "Room not found" });
+        }
+
+        const participantIds = room.participants.map((p) => p.userId);
+
+        // Check if debate already exists for this room
+        let debate = await DebateService.getDebateByRoomId(roomId);
+        if (debate) {
+          return callback({ success: false, error: "Debate already started" });
+        }
+
+        debate = await DebateService.createDebate(
+          roomId,
+          topic,
+          participantIds,
+          maxDurationPerTurn || 300
+        );
+
+        // Update room status
+        await RoomService.getRoomById(roomId);
+
+        io.to(`room:${roomId}`).emit("debate:started", {
+          debateId: debate._id.toString(),
+          roomId,
+          topic,
+          participants: room.participants,
+          currentRound: 1,
+        });
+
+        callback({ success: true, debateId: debate._id.toString() });
+      } catch (error) {
+        console.error("[Socket] Start debate error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to start debate",
+        });
+      }
+    });
+
+    /**
+     * Claim mic for current round
+     * Client emits: { debateId: string, roomId: string }
+     */
+    socket.on("debate:claim-mic", async (data, callback) => {
+      try {
+        const { debateId, roomId } = data;
+
+        if (!debateId || !roomId) {
+          return callback({ success: false, error: "Debate ID and room ID required" });
+        }
+
+        const result = await DebateService.claimMic(debateId, userId, username);
+
+        io.to(`room:${roomId}`).emit("debate:mic-claimed", {
+          debateId,
+          speaker: {
+            userId,
+            username,
+          },
+          roundNumber: result.roundNumber,
+          maxDuration: result.maxDuration,
+        });
+
+        callback({ success: true, ...result });
+      } catch (error) {
+        console.error("[Socket] Claim mic error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to claim mic",
+        });
+      }
+    });
+
+    /**
+     * Release mic and submit transcript
+     * Client emits: { debateId: string, roomId: string, transcript: string, duration: number }
+     */
+    socket.on("debate:release-mic", async (data, callback) => {
+      try {
+        const { debateId, roomId, transcript, duration } = data;
+
+        if (!debateId || !roomId || !transcript) {
+          return callback({
+            success: false,
+            error: "Debate ID, room ID, and transcript required",
+          });
+        }
+
+        const result = await DebateService.releaseMic(
+          debateId,
+          userId,
+          transcript,
+          duration || 0
+        );
+
+        // Broadcast to room that mic has been released
+        io.to(`room:${roomId}`).emit("debate:mic-released", {
+          debateId,
+          speaker: {
+            userId,
+            username,
+          },
+          roundNumber: result.roundNumber,
+          transcript,
+          duration,
+          argumentId: result.argumentId,
+        });
+
+        callback({ success: true, ...result });
+      } catch (error) {
+        console.error("[Socket] Release mic error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to release mic",
+        });
+      }
+    });
+
+    /**
+     * Move to next round
+     * Client emits: { debateId: string, roomId: string }
+     */
+    socket.on("debate:next-round", async (data, callback) => {
+      try {
+        const { debateId, roomId } = data;
+
+        if (!debateId || !roomId) {
+          return callback({ success: false, error: "Debate ID and room ID required" });
+        }
+
+        const result = await DebateService.moveToNextRound(debateId);
+
+        io.to(`room:${roomId}`).emit("debate:round-started", {
+          debateId,
+          roundNumber: result.roundNumber,
+        });
+
+        callback({ success: true, ...result });
+      } catch (error) {
+        console.error("[Socket] Next round error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to move to next round",
+        });
+      }
+    });
+
+    /**
+     * End debate
+     * Client emits: { debateId: string, roomId: string }
+     */
+    socket.on("debate:end", async (data, callback) => {
+      try {
+        const { debateId, roomId } = data;
+
+        if (!debateId || !roomId) {
+          return callback({ success: false, error: "Debate ID and room ID required" });
+        }
+
+        const debate = await DebateService.endDebate(debateId);
+
+        io.to(`room:${roomId}`).emit("debate:finished", {
+          debateId,
+          summary: {
+            topic: debate.topic,
+            totalRounds: debate.currentRoundNumber,
+            totalArguments: debate.arguments.length,
+          },
+        });
+
+        callback({ success: true, debate: debate.toObject() });
+      } catch (error) {
+        console.error("[Socket] End debate error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to end debate",
+        });
+      }
+    });
+
+    /**
+     * Get debate state
+     * Client emits: { debateId: string }
+     */
+    socket.on("debate:get-state", async (data, callback) => {
+      try {
+        const { debateId } = data;
+
+        if (!debateId) {
+          return callback({ success: false, error: "Debate ID required" });
+        }
+
+        const debate = await DebateService.getDebateById(debateId);
+        const arguments = await DebateService.getArgumentsInOrder(debateId);
+
+        callback({
+          success: true,
+          debate: debate?.toObject(),
+          arguments: arguments,
+        });
+      } catch (error) {
+        console.error("[Socket] Get debate state error:", error);
+        callback({
+          success: false,
+          error: (error as any).message || "Failed to get debate state",
         });
       }
     });
