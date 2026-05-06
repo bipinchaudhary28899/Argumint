@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
+import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { roomApi } from "../services/api";
 import { VotingPanel } from "../components/VotingPanel";
 import type { Room } from "@argumint/shared";
@@ -16,10 +17,10 @@ export function RoomLobby() {
 
   const [room, setLocalRoom] = useState<Room | null>(contextRoom || null);
   const [isLoading, setIsLoading] = useState(!contextRoom);
-  const [userReady, setUserReady] = useState(false);
-  const [isJoining] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // Fetch room if not in context
+  useLeaveRoomOnNavigate(code, room?._id, socket);
+
   useEffect(() => {
     if (!contextRoom && code) {
       const fetchRoom = async () => {
@@ -28,15 +29,11 @@ export function RoomLobby() {
           setLocalRoom(fetchedRoom);
           setRoom(fetchedRoom);
         } catch (err) {
-          const message =
-            err instanceof Error ? err.message : "Failed to fetch room";
-          setError(message);
-          console.error("Fetch room error:", err);
+          setError(err instanceof Error ? err.message : "Failed to fetch room");
         } finally {
           setIsLoading(false);
         }
       };
-
       fetchRoom();
     } else if (contextRoom) {
       setLocalRoom(contextRoom);
@@ -44,408 +41,335 @@ export function RoomLobby() {
     }
   }, [contextRoom, code]);
 
-  // Setup socket connection and listeners
   useEffect(() => {
-    if (!socket || !isConnected || !room || !code) {
-      return;
-    }
-
-    // Join room via socket
+    if (!socket || !isConnected || !room || !code) return;
     socket.emit("room:join", { roomCode: code }, (response: any) => {
-      if (!response.success) {
-        setError(response.error || "Failed to join room");
-      }
+      if (!response.success) setError(response.error || "Failed to join room");
     });
+  }, [socket, isConnected, code, room]);
 
-    // Cleanup on unmount
-    return () => {
-      socket.off("room:participant-joined");
-      socket.off("room:participant-left");
-      socket.off("room:participant-status-updated");
-      socket.off("room:participant-disconnected");
-    };
-  }, [socket, isConnected, code]);
-
-  // Separate effect for socket event listeners - only depends on socket
   useEffect(() => {
     if (!socket) return;
 
-    // Listen for participant joined
-    socket.on("room:participant-joined", (data: any) => {
-      if (data.participants) {
-        setLocalRoom((prev) => {
-          const newRoom = {
-            ...prev!,
-            participants: data.participants,
-          };
-          return newRoom;
-        });
-      }
-    });
-
-    // Listen for participant left
-    socket.on("room:participant-left", (data: any) => {
-      if (data.participants) {
-        setLocalRoom((prev) => ({
-          ...prev!,
-          participants: data.participants,
-        }));
-      }
-    });
-
-    // Listen for participant status update
-    socket.on("room:participant-status-updated", (data: any) => {
-      if (data.participants) {
-        setLocalRoom((prev) => ({
-          ...prev!,
-          participants: data.participants,
-        }));
-      }
-    });
-
-    // Listen for participant disconnected
-    socket.on("room:participant-disconnected", (data: any) => {
-      if (data.participants) {
-        setLocalRoom((prev) => ({
-          ...prev!,
-          participants: data.participants,
-        }));
-      }
-    });
-
-    // Cleanup listeners
-    return () => {
-      socket.off("room:participant-joined");
-      socket.off("room:participant-left");
-      socket.off("room:participant-status-updated");
-      socket.off("room:participant-disconnected");
+    const onParticipantJoined = (data: any) => {
+      if (data.participants) setLocalRoom((prev) => prev ? { ...prev, participants: data.participants } : prev);
     };
-  }, [socket]);
-
-  const handleReady = async () => {
-    if (!room || !socket) return;
-
-    try {
-      setUserReady(true);
-      socket.emit("room:update-status", {
-        roomId: room._id,
-        status: "ready",
+    const onParticipantLeft = (data: any) => {
+      setLocalRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          participants: data.participants ?? prev.participants,
+          // Sync updated host after host-promotion on leave
+          creatorId: data.creatorId ?? prev.creatorId,
+          creatorUsername: data.creatorUsername ?? prev.creatorUsername,
+        };
       });
-    } catch (err) {
-      console.error("Ready error:", err);
-      setUserReady(false);
-    }
-  };
+    };
+    const onParticipantStatusUpdated = (data: any) => {
+      if (data.participants) setLocalRoom((prev) => prev ? { ...prev, participants: data.participants } : prev);
+    };
+    const onParticipantDisconnected = (data: any) => {
+      if (data.participants) setLocalRoom((prev) => prev ? { ...prev, participants: data.participants } : prev);
+    };
+    const onVotingEnded = (data: any) => {
+      setLocalRoom((prev) => prev ? { ...prev, topic: data.topic ?? prev.topic, status: data.status ?? prev.status, votingTopics: data.votingTopics ?? prev.votingTopics } : prev);
+    };
+    const onVotingStarted = (data: any) => {
+      setLocalRoom((prev) => prev ? { ...prev, status: data.status ?? prev.status, votingTopics: data.votingTopics ?? prev.votingTopics } : prev);
+    };
+    const onDebateStarted = (data: any) => {
+      try {
+        if (data?.debateId) sessionStorage.setItem("activeDebateId", data.debateId);
+        // Store host status so DebatePage can show the "End Debate" button.
+        const isCurrentUserHost =
+          room?.creatorId === user?.id ||
+          room?.participants.find((p) => p.userId === user?.id)?.role === "moderator";
+        sessionStorage.setItem("isHost", isCurrentUserHost ? "true" : "false");
+      } catch {}
+      if (data?.roomCode) navigate(`/room/${data.roomCode}/prep`);
+    };
 
-  const handleUnready = async () => {
+    socket.on("room:participant-joined", onParticipantJoined);
+    socket.on("room:participant-left", onParticipantLeft);
+    socket.on("room:participant-status-updated", onParticipantStatusUpdated);
+    socket.on("room:participant-disconnected", onParticipantDisconnected);
+    socket.on("room:voting-ended", onVotingEnded);
+    socket.on("room:voting-started", onVotingStarted);
+    socket.on("debate:started", onDebateStarted);
+
+    return () => {
+      socket.off("room:participant-joined", onParticipantJoined);
+      socket.off("room:participant-left", onParticipantLeft);
+      socket.off("room:participant-status-updated", onParticipantStatusUpdated);
+      socket.off("room:participant-disconnected", onParticipantDisconnected);
+      socket.off("room:voting-ended", onVotingEnded);
+      socket.off("room:voting-started", onVotingStarted);
+      socket.off("debate:started", onDebateStarted);
+    };
+  }, [socket, navigate]);
+
+  const handleReady = () => {
     if (!room || !socket) return;
-
-    try {
-      setUserReady(false);
-      socket.emit("room:update-status", {
-        roomId: room._id,
-        status: "joined",
-      });
-    } catch (err) {
-      console.error("Unready error:", err);
-      setUserReady(true);
-    }
+    socket.emit("room:update-status", { roomId: room._id, status: "ready" });
   };
-
+  const handleUnready = () => {
+    if (!room || !socket) return;
+    socket.emit("room:update-status", { roomId: room._id, status: "joined" });
+  };
   const handleStartDebate = () => {
-    if (room && isCreator && allReady) {
-      // TODO: Move to voting phase
-      console.log("Starting debate...");
-    }
+    if (!room || !socket || !isHost || !allReady || room.participants.length < 2) return;
+    socket.emit("room:start-debate", { roomId: room._id }, (response: any) => {
+      if (!response?.success) setError(response?.error || "Failed to start debate");
+    });
   };
-
   const handleLeave = () => {
-    if (room && socket) {
-      socket.emit("room:leave", { roomId: room._id });
-      navigate("/");
+    if (room && socket) socket.emit("room:leave", { roomId: room._id });
+    navigate("/");
+  };
+  const handleCopy = () => {
+    if (code) {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        Loading...
-      </div>
-    );
-  }
-
-  if (!room) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        Room not found
-      </div>
-    );
-  }
-
-  if (!room) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600 mb-4">Room not found</p>
-          <button
-            onClick={() => navigate("/")}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
-          >
-            Back to Home
-          </button>
+      <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+        <div style={{ textAlign: "center" }}>
+          <div className="spin" style={{ width: 40, height: 40, border: "3px solid var(--border2)", borderTopColor: "var(--cyan)", borderRadius: "50%", margin: "0 auto 1rem" }} />
+          <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>Loading room…</p>
         </div>
       </div>
     );
   }
 
-  const isCreator = room.creatorId === user?.username;
+  if (!room) {
+    return (
+      <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+        <div className="glass" style={{ padding: "2.5rem", textAlign: "center", maxWidth: 400 }}>
+          <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>Room not found</p>
+          <button onClick={() => navigate("/")} className="btn-primary">Back to Home</button>
+        </div>
+      </div>
+    );
+  }
+
+  const isCreator = room.creatorId === user?.id;
   const currentUser = room.participants.find((p) => p.userId === user?.id);
   const isHost = isCreator || currentUser?.role === "moderator";
+  const userReady = currentUser?.status === "ready";
   const allReady = room.participants.every((p) => p.status === "ready");
-  const readyCount = room.participants.filter(
-    (p) => p.status === "ready",
-  ).length;
+  const readyCount = room.participants.filter((p) => p.status === "ready").length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <button
-              onClick={() => navigate("/")}
-              className="text-2xl font-extrabold text-indigo-600 hover:opacity-80"
-            >
-              Argumint
-            </button>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
-                {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
-              </span>
-              <span className="text-gray-700">{user?.email}</span>
-            </div>
+    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <nav className="game-nav">
+        <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
+            <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
           </div>
+          <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
         </div>
       </nav>
 
-      <main className="max-w-6xl mx-auto py-12 px-4">
-        {/* Room Code Display */}
-        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl shadow-xl p-6 mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm uppercase font-semibold opacity-90">
-                Room Code
-              </p>
-              <p className="text-4xl font-bold tracking-widest">{room.code}</p>
-            </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(room.code);
-                // Optional: Show toast notification
-              }}
-              className="px-6 py-3 bg-white text-indigo-600 rounded-md hover:bg-gray-100 transition font-semibold"
-            >
-              Copy Code
+      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "0.875rem 1rem 0" }}>
+        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", gap: "0.875rem" }}>
+
+        {/* Room code hero */}
+        <div className="glass fade-up" style={{ flexShrink: 0, padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.3rem" }}>Room Code</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "2.2rem", fontWeight: 800, letterSpacing: "0.18em", color: "var(--cyan)", textShadow: "0 0 20px rgba(34,211,238,0.4)" }}>{room.code}</div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={handleCopy} className="btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1.1rem" }}>
+              {copied ? "✓ Copied!" : "Copy Code"}
             </button>
+            <div style={{ display: "flex", gap: "1.25rem" }}>
+              {[
+                { label: "Ready", value: `${readyCount}/${room.participants.length}` },
+                { label: "Mode", value: room.debateMode },
+                { label: "Turn", value: `${room.turnDuration}s` },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
+                  <div style={{ fontWeight: 800, color: "var(--text)", fontSize: "0.95rem", marginTop: "0.15rem", textTransform: "capitalize" }}>{value}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Room Info */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                {room.topic || "Voting Room"}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "0.875rem", flex: 1, overflow: "hidden", minHeight: 0, paddingBottom: "0.875rem" }}>
+          {/* Left column — scrollable */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", overflowY: "auto", paddingRight: "0.25rem" }}>
+
+            {/* Topic */}
+            <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
+              <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.5rem" }}>Motion</div>
+              <h1 style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--text)", margin: 0, lineHeight: 1.35 }}>
+                {room.topic || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Voting in progress…</span>}
               </h1>
               {room.description && (
-                <p className="text-gray-600 mb-6">{room.description}</p>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0 }}>{room.description}</p>
               )}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">
-                    Mode
-                  </p>
-                  <p className="text-lg font-bold text-indigo-600 capitalize">
-                    {room.debateMode}
-                  </p>
-                </div>
-                <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">
-                    Ready
-                  </p>
-                  <p className="text-lg font-bold text-indigo-600">
-                    {readyCount}/{room.participants.length}
-                  </p>
-                </div>
-                <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">
-                    Voting
-                  </p>
-                  <p className="text-lg font-bold text-indigo-600">
-                    {room.votingDuration}s
-                  </p>
-                </div>
-                <div className="bg-indigo-50 p-4 rounded-lg">
-                  <p className="text-xs text-gray-600 uppercase font-semibold">
-                    Turn
-                  </p>
-                  <p className="text-lg font-bold text-indigo-600">
-                    {room.turnDuration}s
-                  </p>
-                </div>
-              </div>
             </div>
 
-            {/* Voting Panel - Only show if voting enabled */}
+            {/* Voting panel */}
             {room.votingEnabled && (
-              <VotingPanel
-                votingTopics={room.votingTopics}
-                votingDuration={room.votingDuration}
-                isHost={isHost}
-                roomId={room._id!}
-                socket={socket}
-              />
+              <div className="fade-up">
+                <VotingPanel
+                  votingTopics={room.votingTopics}
+                  votingDuration={room.votingDuration}
+                  isHost={isHost}
+                  roomId={room._id!}
+                  socket={socket}
+                />
+              </div>
             )}
 
-            {/* Participants List */}
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                Participants ({room.participants.length}/{room.maxParticipants})
-              </h2>
-              <div className="space-y-3">
-                {room.participants.map((participant) => (
-                  <div
-                    key={participant.userId}
-                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold">
-                        {participant.username.charAt(0).toUpperCase()}
+            {/* Players */}
+            <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
+                <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>
+                  Players — {room.participants.length}/{room.maxParticipants}
+                </span>
+                <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {room.participants.map((p) => {
+                  const isYou = p.userId === user?.id;
+                  const ready = p.status === "ready";
+                  const offline = p.status === "disconnected";
+                  const host = p.role === "moderator" || room.creatorId === p.userId;
+                  return (
+                    <div key={p.userId}
+                      className={ready ? "active-speaker-for" : ""}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "0.875rem",
+                        padding: "0.75rem 1rem", borderRadius: "0.625rem",
+                        background: isYou ? "rgba(224,242,254,0.6)" : "rgba(249,247,255,0.4)",
+                        border: `1px solid ${ready ? "rgba(16,185,129,0.35)" : isYou ? "rgba(34,211,238,0.2)" : "var(--border)"}`,
+                        opacity: offline ? 0.45 : 1,
+                        transition: "all 0.2s",
+                      }}>
+                      <div className={`avatar ${ready ? "avatar-for" : "avatar-neutral"}`}
+                        style={{ background: ready ? "rgba(16,185,129,0.2)" : "rgba(79,142,247,0.15)", color: ready ? "#10b981" : "#4f8ef7", border: `1px solid ${ready ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.3)"}` }}>
+                        {p.username.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-900">
-                          {participant.username}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {participant.role === "moderator"
-                            ? "Host"
-                            : "Participant"}
-                        </p>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <span style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem" }}>{p.username}</span>
+                          {isYou && <span className="badge badge-cyan" style={{ fontSize: "0.6rem" }}>YOU</span>}
+                          {host && <span className="badge badge-gold" style={{ fontSize: "0.6rem" }}>HOST</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        {offline ? (
+                          <span className="badge badge-muted">Offline</span>
+                        ) : ready ? (
+                          <>
+                            <div className="pulse-dot pulse-dot-green" />
+                            <span className="badge badge-for">Ready</span>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--border2)" }} />
+                            <span className="badge badge-muted">Waiting</span>
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          participant.status === "ready"
-                            ? "bg-green-100 text-green-700"
-                            : participant.status === "disconnected"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {participant.status === "disconnected"
-                          ? "Offline"
-                          : participant.status === "ready"
-                            ? "Ready"
-                            : "Waiting"}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
+
+                {room.participants.length === 0 && (
+                  <p style={{ color: "var(--muted)", textAlign: "center", fontSize: "0.875rem", padding: "1rem" }}>
+                    No players yet — share the code!
+                  </p>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Sidebar - Actions */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-4 space-y-4">
-              <h3 className="text-lg font-bold text-gray-900">
+          {/* Right sidebar — scrollable */}
+          <div style={{ overflowY: "auto" }}>
+            <div className="glass fade-up" style={{ padding: "1.25rem" }}>
+              <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "1.25rem" }}>
                 {isHost ? "Host Controls" : "Your Status"}
-              </h3>
+              </div>
 
-              {/* Ready buttons only for non-host participants */}
+              {/* Non-host ready buttons */}
               {!isHost && (
-                <>
+                <div style={{ marginBottom: "1rem" }}>
                   {!userReady ? (
-                    <button
-                      onClick={handleReady}
-                      disabled={isJoining}
-                      className="w-full px-6 py-3 bg-green-600 text-white rounded-md
-                        hover:bg-green-700 disabled:opacity-50 transition font-medium"
-                    >
-                      {isJoining ? "Marking ready..." : "Ready Up"}
+                    <button onClick={handleReady} className="btn-for" style={{ width: "100%", marginBottom: "0.75rem" }}>
+                      ✓ Ready Up
                     </button>
                   ) : (
-                    <button
-                      onClick={handleUnready}
-                      className="w-full px-6 py-3 bg-orange-600 text-white rounded-md
-                        hover:bg-orange-700 transition font-medium"
-                    >
-                      Not Ready
+                    <button onClick={handleUnready} className="btn-danger" style={{ width: "100%", marginBottom: "0.75rem" }}>
+                      ✕ Not Ready
                     </button>
                   )}
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800">
+                  <div style={{ padding: "0.75rem 1rem", background: "rgba(224,242,254,0.55)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "0.625rem" }}>
+                    <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
                       {allReady && room.participants.length >= 2
-                        ? "Waiting for host to start the debate..."
+                        ? "All ready — waiting for host…"
                         : "Ready up to start the debate"}
                     </p>
                   </div>
-                </>
+                </div>
               )}
 
-              {/* Start Debate button - only for host */}
+              {/* Host start button */}
               {isHost && (
-                <>
-                  {allReady && room.participants.length >= 2 ? (
-                    <button
-                      onClick={handleStartDebate}
-                      className="w-full px-6 py-3 bg-indigo-600 text-white rounded-md
-                        hover:bg-indigo-700 transition font-bold text-lg"
-                    >
-                      Start Debate
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        disabled
-                        className="w-full px-6 py-3 bg-gray-400 text-white rounded-md
-                          opacity-50 cursor-not-allowed font-bold text-lg"
-                      >
-                        Start Debate
-                      </button>
-                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                        <p className="text-sm text-amber-800">
-                          {room.participants.length < 2
-                            ? "Need at least 2 participants"
-                            : `Waiting for ${room.participants.length - readyCount} participant(s) to ready up`}
-                        </p>
-                      </div>
-                    </>
+                <div style={{ marginBottom: "1rem" }}>
+                  <button
+                    onClick={handleStartDebate}
+                    disabled={!allReady || room.participants.length < 2}
+                    className="btn-primary"
+                    style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800, marginBottom: "0.75rem" }}>
+                    {!isConnected ? "Connecting…" : "Start Debate →"}
+                  </button>
+                  {(!allReady || room.participants.length < 2) && (
+                    <div style={{ padding: "0.75rem 1rem", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "0.625rem" }}>
+                      <p style={{ color: "var(--gold)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
+                        {room.participants.length < 2
+                          ? "Need at least 2 players"
+                          : `${room.participants.length - readyCount} player(s) not ready`}
+                      </p>
+                    </div>
                   )}
-                </>
+                </div>
               )}
 
-              <button
-                onClick={handleLeave}
-                className="w-full px-6 py-3 border border-red-600 text-red-600 rounded-md
-                  hover:bg-red-50 transition font-medium"
-              >
+              {/* Ready progress */}
+              <div style={{ marginBottom: "1.25rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Ready</span>
+                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text)" }}>{readyCount}/{room.participants.length}</span>
+                </div>
+                <div className="score-bar-track">
+                  <div className="score-bar-fill score-bar-fill-for"
+                    style={{ width: room.participants.length ? `${(readyCount / room.participants.length) * 100}%` : "0%" }} />
+                </div>
+              </div>
+
+              <div className="divider" />
+
+              <button onClick={handleLeave} className="btn-ghost"
+                style={{ width: "100%", color: "var(--against)", borderColor: "rgba(244,63,94,0.3)" }}>
                 Leave Room
               </button>
-
-              {/* Connection Status */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-xs text-gray-600 uppercase font-semibold mb-2">
-                  Connection
-                </p>
-                <p
-                  className={`text-sm font-medium ${isConnected ? "text-green-600" : "text-red-600"}`}
-                >
-                  {isConnected ? "Connected" : "Disconnected"}
-                </p>
-              </div>
             </div>
           </div>
+        </div>
         </div>
       </main>
     </div>

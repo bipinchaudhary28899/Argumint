@@ -34,25 +34,25 @@ export class AuthService {
 
   // ------------------- LOGIN -------------------
   async login(data: LoginInput): Promise<{ user: PublicUser; token: string }> {
-  const normalizedEmail = data.email.toLowerCase().trim();
-  const user = await User.findOne({ email: normalizedEmail });
-  if (!user) throw new Error("Invalid email or password");
+    const normalizedEmail = data.email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) throw new Error("Invalid email or password");
 
-  // Use Mongoose method
-  const isPasswordValid = await user.comparePassword(data.password);
-  if (!isPasswordValid) throw new Error("Invalid email or password");
+    const isPasswordValid = await user.comparePassword(data.password);
+    if (!isPasswordValid) throw new Error("Invalid email or password");
 
-  // Generate JWT
-  const token = jwt.sign({ userId: user._id.toString(), email: user.email }, JWT_SECRET, {
-    expiresIn: JWT_EXPIRY,
-  });
+    const token = jwt.sign(
+      { userId: user._id.toString(), email: user.email, username: user.username },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY },
+    );
 
-  if (this.redisClient) {
-    await this.redisClient.setex(`session:${user._id}`, SESSION_EXPIRY, token);
+    if (this.redisClient) {
+      await this.redisClient.setex(`session:${user._id}`, SESSION_EXPIRY, token);
+    }
+
+    return { user: toPublicUser(user), token };
   }
-
-  return { user: toPublicUser(user), token };
-}
 
   // ------------------- VERIFY TOKEN -------------------
   async verifyToken(token: string): Promise<{ userId: string; email: string }> {

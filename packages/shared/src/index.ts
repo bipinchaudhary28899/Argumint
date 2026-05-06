@@ -40,3 +40,31 @@ export {
   type JoinRoomInput,
   type UpdateRoomSettingsInput,
 } from "./schemas/room.schema.js";
+
+// Level System
+export {
+  LEVEL_TABLE,
+  getLevelInfo,
+  type LevelEntry,
+  type LevelInfo,
+} from "./utils/levels.js";
+
+// Debate Schemas and Types
+export {
+  RoundSchema,
+  CurrentTurnSchema,
+  TurnOrderEntrySchema,
+  ScoreBreakdownSchema,
+  DebateResultSchema,
+  DebateSchema,
+  BuzzerStateSchema,
+  BuzzerCooldownEntrySchema,
+  type Round,
+  type CurrentTurn,
+  type TurnOrderEntry,
+  type ScoreBreakdown,
+  type DebateResult,
+  type Debate,
+  type BuzzerState,
+  type BuzzerCooldownEntry,
+} from "./schemas/debate.schema.js";

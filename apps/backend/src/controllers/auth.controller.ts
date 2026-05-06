@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { RegisterSchema, LoginSchema } from "@argumint/shared";
 import { AuthService } from "../services/auth.service.js";
+import { evictUserSocket } from "../socket/index.js";
 
 const sameSite: "none" | "lax" = process.env.NODE_ENV === "production" ? "none" : "lax";
 const COOKIE_OPTIONS = {
@@ -66,6 +67,11 @@ export class AuthController {
       const { user, token } = await this.authService.login(
         validationResult.data,
       );
+
+      // Evict any existing socket for this user instantly —
+      // fires session:evicted on Device A and disconnects it before
+      // we even respond to Device B.
+      evictUserSocket(user.id);
 
       // Set HTTP-only cookie
       res.cookie("authToken", token, COOKIE_OPTIONS);

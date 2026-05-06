@@ -1,38 +1,28 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import type { LoginInput } from "@argumint/shared";
 
 export function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login, isLoading } = useAuth();
-  const [formData, setFormData] = useState<LoginInput>({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState<LoginInput>({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
+  const evicted = searchParams.get("reason") === "evicted";
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    if (fieldErrors[name]) {
-      setFieldErrors((prev) => ({ ...prev, [name]: "" }));
-    }
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = () => {
     const errs: Record<string, string> = {};
-    if (!formData.email) {
-      errs.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errs.email = "Invalid email format";
-    }
-
-    if (!formData.password) {
-      errs.password = "Password is required";
-    }
-
+    if (!formData.email) errs.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errs.email = "Invalid email";
+    if (!formData.password) errs.password = "Password is required";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -40,118 +30,55 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-
     if (!validateForm()) return;
-
     try {
       await login(formData);
       navigate("/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Login failed";
-      setError(message);
+      setError(err instanceof Error ? err.message : "Login failed");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-purple-700 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-12 space-y-8 border-4 border-indigo-500">
-        <div className="text-center">
-          <h1 className="text-5xl font-black text-indigo-600 drop-shadow-lg">Argumint</h1>
-          <p className="mt-3 text-lg font-semibold text-purple-600">
-            Sign in to continue debating
-          </p>
-          <div className="mt-4 h-1 w-20 bg-indigo-500 mx-auto rounded-full"></div>
+    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", background: "var(--bg)" }}>
+      <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 600, height: 300, background: "radial-gradient(ellipse, rgba(79,142,247,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+      <div className="fade-up w-full" style={{ maxWidth: 420 }}>
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <div style={{ fontSize: "2.8rem", fontWeight: 900, letterSpacing: "-0.03em", background: "linear-gradient(135deg, #22d3ee, #4f8ef7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1 }}>ARGUMINT</div>
+          <div style={{ marginTop: "0.5rem", color: "var(--muted)", fontSize: "0.8rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 600 }}>Debate Arena</div>
         </div>
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="rounded-xl bg-red-100 border-2 border-red-500 p-5 shadow-md">
-              <div className="text-sm font-bold text-red-800">⚠️ {error}</div>
+        <div className="glass" style={{ padding: "2.25rem" }}>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--text)", margin: "0 0 0.35rem" }}>Welcome back</h1>
+          <p style={{ color: "var(--muted)", fontSize: "0.875rem", margin: "0 0 1.75rem" }}>Sign in to your arena account</p>
+          {evicted && (
+            <div style={{ padding: "0.75rem 1rem", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: "0.625rem", color: "var(--gold)", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>
+              ⚠ You were signed out because your account logged in on another device.
             </div>
           )}
-
-          <div className="space-y-5">
+          {error && (
+            <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>{error}</div>
+          )}
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-bold text-gray-800 uppercase tracking-wide"
-              >
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                className={`mt-2 appearance-none block w-full px-4 py-3 border-2 rounded-lg shadow-md placeholder-gray-400
-                  focus:outline-none focus:ring-4 focus:ring-indigo-300 focus:border-indigo-600 sm:text-sm transition font-semibold
-                  ${
-                    fieldErrors.email ? "border-red-400 bg-red-50" : "border-gray-300 bg-gray-50"
-                  }`}
-                placeholder="you@example.com"
-                value={formData.email}
-                onChange={handleChange}
-              />
-              {fieldErrors.email && (
-                <p className="mt-2 text-sm font-bold text-red-600">
-                  ❌ {fieldErrors.email}
-                </p>
-              )}
+              <label className="label">Email</label>
+              <input name="email" type="email" autoComplete="email" className="input-dark" placeholder="you@example.com" value={formData.email} onChange={handleChange} style={fieldErrors.email ? { borderColor: "var(--against)" } : {}} />
+              {fieldErrors.email && <p style={{ color: "var(--against)", fontSize: "0.75rem", marginTop: "0.3rem" }}>{fieldErrors.email}</p>}
             </div>
-
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-bold text-gray-800 uppercase tracking-wide"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                className={`mt-2 appearance-none block w-full px-4 py-3 border-2 rounded-lg shadow-md placeholder-gray-400
-                  focus:outline-none focus:ring-4 focus:ring-indigo-300 focus:border-indigo-600 sm:text-sm transition font-semibold
-                  ${
-                    fieldErrors.password ? "border-red-400 bg-red-50" : "border-gray-300 bg-gray-50"
-                  }`}
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={handleChange}
-              />
-              {fieldErrors.password && (
-                <p className="mt-2 text-sm font-bold text-red-600">
-                  ❌ {fieldErrors.password}
-                </p>
-              )}
+              <label className="label">Password</label>
+              <input name="password" type="password" autoComplete="current-password" className="input-dark" placeholder="••••••••" value={formData.password} onChange={handleChange} style={fieldErrors.password ? { borderColor: "var(--against)" } : {}} />
+              {fieldErrors.password && <p style={{ color: "var(--against)", fontSize: "0.75rem", marginTop: "0.3rem" }}>{fieldErrors.password}</p>}
             </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-base font-bold
-                rounded-lg text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700
-                focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition duration-150 shadow-lg"
-            >
-              {isLoading ? "⏳ Signing in..." : "✨ Sign in"}
+            <button type="submit" className="btn-primary" disabled={isLoading} style={{ width: "100%", marginTop: "0.5rem", padding: "0.875rem", fontSize: "1rem" }}>
+              {isLoading ? "Signing in…" : "Enter the Arena →"}
             </button>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-700 font-semibold">
-              Don't have an account?{" "}
-              <Link
-                to="/register"
-                className="font-bold text-indigo-600 hover:text-purple-600 underline decoration-2"
-              >
-                Sign up here
-              </Link>
-            </p>
-          </div>
-        </form>
+          </form>
+          <div className="divider" />
+          <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.875rem" }}>
+            No account?{" "}
+            <Link to="/register" style={{ color: "var(--cyan)", fontWeight: 700, textDecoration: "none" }}>Create one</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

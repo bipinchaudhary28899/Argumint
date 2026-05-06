@@ -263,7 +263,7 @@ export function RoomSettings() {
                       focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50"
                   >
                     <option value="buzzer">Buzzer Mode</option>
-                    <option value="round-robin">Round-robin Mode</option>
+                    <option value="alternate">Alternate Mode</option>
                   </select>
                 </div>
 

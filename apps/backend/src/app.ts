@@ -60,4 +60,13 @@ export async function attachRoomRoutes(
   app.use("/rooms", roomRoutes);
 }
 
+export async function attachDebateRoutes(
+  app: express.Application,
+  redisClient: Redis | null
+) {
+  const { createDebateRoutes } = await import("./routes/debate.routes.js");
+  const debateRoutes = createDebateRoutes(redisClient);
+  app.use("/debates", debateRoutes);
+}
+
 export default app;

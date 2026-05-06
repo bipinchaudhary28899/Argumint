@@ -1,6 +1,10 @@
 {
+  "framework": null,
+  "installCommand": "npm install",
   "buildCommand": "npm run build -w packages/shared && npm run build -w apps/frontend",
   "outputDirectory": "apps/frontend/dist",
-  "installCommand": "npm install",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "env": {
+    "NODE_VERSION": "20"
+  }
 }

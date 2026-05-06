@@ -15,6 +15,7 @@ export interface PublicUserInfo {
     id: string;
     username: string;
     email: string;
+    xp: number;
     stats: {
         debatesWon: number;
         debatesLost: number;
@@ -28,6 +29,7 @@ export declare function toPublicUser(user: {
     };
     username: string;
     email: string;
+    xp?: number;
     stats: {
         debatesWon: number;
         debatesLost: number;

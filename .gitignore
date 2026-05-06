@@ -1,1 +1,24 @@
+# Dependencies
 node_modules
+**/node_modules
+
+# Build outputs
+dist
+apps/frontend/dist
+
+# Environment — NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+apps/**/.env
+apps/**/.env.local
+packages/**/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea
+.vscode

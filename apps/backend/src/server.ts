@@ -2,7 +2,11 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import http from "http";
-import app, { attachAuthRoutes, attachRoomRoutes } from "./app.js";
+import app, {
+  attachAuthRoutes,
+  attachRoomRoutes,
+  attachDebateRoutes,
+} from "./app.js";
 import { connectMongo } from "./db/mongo.js";
 import { connectRedis, getRedisClient } from "./db/redis.js";
 import { initializeSocketIO } from "./socket/index.js";
@@ -20,6 +24,7 @@ const start = async () => {
   const redisClient = getRedisClient();
   await attachAuthRoutes(app, redisClient);
   await attachRoomRoutes(app, redisClient);
+  await attachDebateRoutes(app, redisClient);
 
   // Create HTTP server for Socket.io
   const httpServer = http.createServer(app);

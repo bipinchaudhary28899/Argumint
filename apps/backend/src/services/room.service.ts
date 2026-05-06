@@ -38,6 +38,10 @@ export class RoomService {
       votingDuration: data.votingDuration || 30,
       prepDuration: data.prepDuration || 120,
       turnDuration: data.turnDuration || 300,
+      totalRounds: data.totalRounds || 2,
+      transcriptionMode: data.transcriptionMode || "whisper",
+      whisperBudgetMinutes: data.whisperBudgetMinutes,
+      whisperMinutesUsed: 0,
       participants: [
         {
           userId: creatorId,
@@ -69,43 +73,71 @@ export class RoomService {
   }
 
   /**
-   * Join room with user
+   * Join room with user.
+   *
+   * Uses atomic findOneAndUpdate operations to avoid Mongoose VersionError
+   * when multiple sockets emit room:join concurrently for the same room.
    */
   static async joinRoom(roomCode: string, userId: string, username: string) {
-    
-    const room = await this.getRoomByCode(roomCode);
-    
-    if (!room) {
-      throw new Error("Room not found");
-    }
+    const code = roomCode.toUpperCase();
 
+    // ── Case 1: user already has a slot — update it atomically ─────────
+    // Only revive status when "disconnected". Preserve "joined"/"ready" so
+    // the host's auto-ready flag isn't cleared on socket reconnect.
+    const revivedRoom = await Room.findOneAndUpdate(
+      { code, "participants.userId": userId, "participants.status": "disconnected" },
+      {
+        $set: {
+          "participants.$.status": "joined",
+          "participants.$.username": username,
+          "participants.$.joinedAt": new Date(),
+        },
+      },
+      { new: true }
+    );
+    if (revivedRoom) return revivedRoom;
 
-    // Check if room is full
-    if (room.participants.length >= room.maxParticipants) {
+    // ── Case 1b: user slot exists but isn't disconnected — just refresh username/joinedAt ──
+    const refreshedRoom = await Room.findOneAndUpdate(
+      { code, "participants.userId": userId },
+      {
+        $set: {
+          "participants.$.username": username,
+          "participants.$.joinedAt": new Date(),
+        },
+      },
+      { new: true }
+    );
+    if (refreshedRoom) return refreshedRoom;
+
+    // ── Case 2: new participant — check capacity then push atomically ───
+    const room = await Room.findOne({ code });
+    if (!room) throw new Error("Room not found");
+
+    const activeCount = room.participants.filter(
+      (p) => p.status !== "disconnected"
+    ).length;
+    if (activeCount >= room.maxParticipants) {
       throw new Error("Room is full");
     }
 
-    // Check if user already joined
-    const alreadyJoined = room.participants.some(
-      (p) => p.userId === userId
+    const newRoom = await Room.findOneAndUpdate(
+      { code },
+      {
+        $push: {
+          participants: {
+            userId,
+            username,
+            role: "participant",
+            joinedAt: new Date(),
+            status: "joined",
+          },
+        },
+      },
+      { new: true }
     );
-
-
-    if (alreadyJoined) {
-      return room; // Already joined, return room as is
-    }
-
-    // Add participant
-    room.participants.push({
-      userId,
-      username,
-      role: "participant",
-      joinedAt: new Date(),
-      status: "joined",
-    });
-
-    await room.save();
-    return room;
+    if (!newRoom) throw new Error("Room not found");
+    return newRoom;
   }
 
   /**
@@ -142,6 +174,12 @@ export class RoomService {
       room.prepDuration = updates.prepDuration;
     if (updates.turnDuration !== undefined)
       room.turnDuration = updates.turnDuration;
+    if (updates.totalRounds !== undefined)
+      room.totalRounds = updates.totalRounds;
+    if (updates.transcriptionMode !== undefined)
+      room.transcriptionMode = updates.transcriptionMode;
+    if (updates.whisperBudgetMinutes !== undefined)
+      room.whisperBudgetMinutes = updates.whisperBudgetMinutes;
 
     await room.save();
     return room;
@@ -240,6 +278,7 @@ export class RoomService {
       topic.votes = 0;
     });
     room.votingStartTime = new Date();
+    room.status = "voting";
 
     await room.save();
     return room;
@@ -307,6 +346,12 @@ export class RoomService {
 
     room.votingInProgress = false;
     room.selectedTopic = winnerTopic.id;
+    // Promote the winning topic text to room.topic so the lobby
+    // and all downstream phases (prep/live) display the chosen motion.
+    room.topic = winnerTopic.text;
+    // Move room out of the voting phase. We return to lobby so
+    // participants can ready up before the host starts the debate.
+    room.status = "lobby";
 
     await room.save();
     return room;

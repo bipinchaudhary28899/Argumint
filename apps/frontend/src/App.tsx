@@ -8,14 +8,17 @@ import { Home } from "./pages/Home";
 import { CreateRoom } from "./pages/CreateRoom";
 import { JoinRoom } from "./pages/JoinRoom";
 import { RoomLobby } from "./pages/RoomLobby";
+import { PrepScreen } from "./pages/PrepScreen";
+import { DebatePage } from "./pages/DebatePage";
+import { ResultPage } from "./pages/ResultPage";
 
 function App() {
   return (
     <AuthProvider>
       <RoomProvider>
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<ProtectedRoute guestOnly><Login /></ProtectedRoute>} />
+          <Route path="/register" element={<ProtectedRoute guestOnly><Register /></ProtectedRoute>} />
           <Route
             path="/"
             element={
@@ -45,6 +48,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <RoomLobby />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/room/:code/prep"
+            element={
+              <ProtectedRoute>
+                <PrepScreen />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/room/:code/debate"
+            element={
+              <ProtectedRoute>
+                <DebatePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/room/:code/result"
+            element={
+              <ProtectedRoute>
+                <ResultPage />
               </ProtectedRoute>
             }
           />

@@ -4,7 +4,8 @@ import bcrypt from "bcrypt";
 export interface IUser extends Document {
   username: string;
   email: string;
-  passwordHash: string; // renamed
+  passwordHash: string;
+  xp: number;
   stats: {
     debatesWon: number;
     debatesLost: number;
@@ -37,6 +38,7 @@ const userSchema = new Schema<IUser>(
       required: true,
       minlength: 8,
     },
+    xp: { type: Number, default: 0 },
     stats: {
       debatesWon: { type: Number, default: 0 },
       debatesLost: { type: Number, default: 0 },

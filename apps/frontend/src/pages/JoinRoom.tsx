@@ -13,12 +13,7 @@ export function JoinRoom() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!roomCode.trim()) {
-      setError("Room code is required");
-      return;
-    }
-
+    if (!roomCode.trim()) { setError("Room code is required"); return; }
     try {
       setIsLoading(true);
       setError(null);
@@ -27,82 +22,62 @@ export function JoinRoom() {
       setRoom(room);
       navigate(`/room/${room.code}/lobby`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to join room";
-      setError(message);
-      console.error("Join room error:", err);
+      setError(err instanceof Error ? err.message : "Failed to join room");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100">
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <button
-              onClick={() => navigate("/")}
-              className="text-2xl font-extrabold text-indigo-600 hover:opacity-80"
-            >
-              Argumint
-            </button>
-            <span className="text-gray-700">{user?.email}</span>
-          </div>
-        </div>
+    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 500, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+      <nav className="game-nav">
+        <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
       </nav>
 
-      <main className="flex flex-col items-center justify-center py-12 px-4 h-[calc(100vh-64px)]">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-10">
-          <h1 className="text-3xl font-extrabold text-indigo-600 mb-8 text-center">
-            Join a Debate
-          </h1>
+      <main style={{ flex: 1, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+        <div className="fade-up w-full" style={{ maxWidth: 420 }}>
+          <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+            <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🎯</div>
+            <h1 style={{ fontSize: "2rem", fontWeight: 900, margin: "0 0 0.4rem", color: "var(--text)" }}>Join a Debate</h1>
+            <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>Enter the 6-character room code to jump in</p>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="roomCode" className="block text-sm font-medium text-gray-700">
-                Room Code
-              </label>
-              <input
-                type="text"
-                id="roomCode"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                placeholder="e.g., ABC123"
-                maxLength={6}
-                className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md
-                  focus:ring-indigo-500 focus:border-indigo-500 uppercase text-center text-lg
-                  font-mono"
-              />
-              <p className="mt-2 text-sm text-gray-600 text-center">
-                Ask the debate creator for the room code
-              </p>
-            </div>
-
+          <div className="glass" style={{ padding: "2.25rem" }}>
             {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-                {error}
-              </div>
+              <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.5rem", fontWeight: 500 }}>{error}</div>
             )}
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+              <div>
+                <label className="label" style={{ textAlign: "center", display: "block" }}>Room Code</label>
+                <input
+                  type="text"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  placeholder="ABC123"
+                  maxLength={6}
+                  className="input-dark"
+                  style={{ textAlign: "center", fontSize: "2rem", fontWeight: 800, letterSpacing: "0.3em", fontFamily: "'JetBrains Mono', monospace", padding: "1rem" }}
+                />
+              </div>
 
-            <div className="flex flex-col gap-3">
-              <button
-                type="submit"
-                disabled={isLoading || roomCode.length !== 6}
-                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-md
-                  hover:bg-indigo-700 disabled:opacity-50 transition font-medium"
-              >
-                {isLoading ? "Joining..." : "Join Room"}
+              {/* char indicators */}
+              <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem" }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} style={{ width: 32, height: 4, borderRadius: 9999, background: i < roomCode.length ? "var(--for)" : "var(--border2)", transition: "background 0.2s", boxShadow: i < roomCode.length ? "0 0 8px rgba(16,185,129,0.5)" : "none" }} />
+                ))}
+              </div>
+
+              <button type="submit" className="btn-for" disabled={isLoading || roomCode.length !== 6} style={{ width: "100%", padding: "0.9rem", fontSize: "1rem" }}>
+                {isLoading ? "Joining…" : "Join Room →"}
               </button>
-              <button
-                type="button"
-                onClick={() => navigate("/")}
-                className="w-full px-6 py-3 border border-indigo-600 text-indigo-600
-                  rounded-md hover:bg-indigo-50 transition font-medium"
-              >
-                Back to Home
+
+              <button type="button" onClick={() => navigate("/")} className="btn-ghost" style={{ width: "100%", padding: "0.75rem" }}>
+                ← Back to Home
               </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </main>
     </div>

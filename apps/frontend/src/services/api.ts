@@ -35,12 +35,20 @@ apiClient.interceptors.response.use(
 );
 
 // Error handler
-const handleError = (error: AxiosError) => {
+// Error handler — for HTTP errors (4xx/5xx) we throw a plain Error with the
+// server's message but also attach .response so callers can distinguish an
+// HTTP failure from a network failure (no .response = server unreachable).
+// For network errors we rethrow the original AxiosError so its .code /
+// .message ("Network Error") and absent .response are preserved intact.
+const handleError = (error: AxiosError): never => {
   if (error.response?.data && typeof error.response.data === "object") {
     const data = error.response.data as { error?: string };
-    throw new Error(data.error || "An error occurred");
+    const wrapped = Object.assign(new Error(data.error || "An error occurred"), {
+      response: error.response,
+    });
+    throw wrapped;
   }
-  throw new Error(error.message || "An error occurred");
+  throw error; // network error — preserve original AxiosError
 };
 
 export const authApi = {
@@ -125,6 +133,35 @@ export const roomApi = {
         data
       );
       return response.data;
+    } catch (error) {
+      handleError(error as AxiosError);
+      throw error;
+    }
+  },
+};
+
+export const debateApi = {
+  /**
+   * Upload an audio blob to /debates/:id/transcribe and get back the
+   * Whisper transcript text. Caller is responsible for then emitting
+   * `debate:submit-argument` over the socket with the returned text.
+   */
+  async transcribe(debateId: string, audio: Blob): Promise<string> {
+    try {
+      const form = new FormData();
+      // Use a sensible filename so the backend hands Whisper a recognizable extension.
+      const filename = audio.type.includes("ogg")
+        ? "speech.ogg"
+        : audio.type.includes("mp4")
+        ? "speech.mp4"
+        : "speech.webm";
+      form.append("audio", audio, filename);
+      const response = await apiClient.post<{ text: string }>(
+        `/debates/${debateId}/transcribe`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      return response.data.text;
     } catch (error) {
       handleError(error as AxiosError);
       throw error;

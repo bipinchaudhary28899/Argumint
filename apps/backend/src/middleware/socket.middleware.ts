@@ -20,19 +20,31 @@ export function createSocketAuthMiddleware(redisClient: Redis | null) {
         username?: string;
       };
 
-      // Verify session in Redis
+      // Verify session in Redis — with a 1 s timeout so a slow Redis never
+      // blocks the connection handshake. If Redis times out we trust the
+      // JWT signature alone (it was verified above).
       if (redisClient) {
-        const sessionKey = `session:${decoded.userId}`;
-        const sessionToken = await redisClient.get(sessionKey);
-        if (!sessionToken || sessionToken !== token) {
-          return next(new Error("Session invalid or expired"));
+        try {
+          const sessionKey = `session:${decoded.userId}`;
+          const sessionToken = await Promise.race([
+            redisClient.get(sessionKey),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000)),
+          ]);
+          if (sessionToken !== null && sessionToken !== token) {
+            return next(new Error("Session invalid or expired"));
+          }
+        } catch {
+          // Redis unavailable — fall through and trust the JWT
         }
       }
 
-      // Attach user info to socket
+      // Attach user info + the raw token to socket.data.
+      // The token is stored so the periodic session-validity check can compare
+      // it against whatever is currently in Redis (see initializeSocketIO).
       socket.data.userId = decoded.userId;
       socket.data.email = decoded.email;
       socket.data.username = decoded.username || decoded.email.split("@")[0];
+      socket.data.token = token;
 
       next();
     } catch (error) {

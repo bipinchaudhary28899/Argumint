@@ -42,9 +42,9 @@ export function createRoomRoutes(redisClient: Redis | null) {
   });
 
   /**
-   * GET /rooms/:code - Get room details by code
+   * GET /rooms/:code - Get room details by code (auth required)
    */
-  router.get("/:code", async (req: Request, res: Response) => {
+  router.get("/:code", authMiddleware, async (req: Request, res: Response) => {
     try {
       const room = await RoomService.getRoomByCode(req.params.code);
 

@@ -26,7 +26,7 @@ export interface IRoom extends Document {
   creatorUsername: string;
   topic: string;
   description?: string;
-  debateMode: "buzzer" | "round-robin"; // Buzzer or Round-robin
+  debateMode: "buzzer" | "alternate"; // Buzzer or Alternate
   maxParticipants: number;
   participants: IParticipant[];
   status: "lobby" | "voting" | "ready-up" | "prep" | "live" | "finished";
@@ -45,7 +45,18 @@ export interface IRoom extends Document {
   votingDuration: number; // in seconds
   prepDuration: number; // in seconds
   turnDuration: number; // in seconds per turn
-  
+
+  // Debate configuration
+  totalRounds: number; // how many rotations through participants
+
+  // Cost / quality controls for transcription
+  transcriptionMode: "whisper" | "browser" | "off";
+  whisperBudgetMinutes?: number; // optional cap; undefined = unlimited
+  whisperMinutesUsed: number; // running tally (trimmed minutes)
+
+  // Debate runtime — populated once host starts the debate
+  activeDebateId?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -150,7 +161,7 @@ const roomSchema = new Schema<IRoom>(
     },
     debateMode: {
       type: String,
-      enum: ["buzzer", "round-robin"],
+      enum: ["buzzer", "alternate"],
       default: "buzzer",
     },
     maxParticipants: {
@@ -194,6 +205,29 @@ const roomSchema = new Schema<IRoom>(
     turnDuration: {
       type: Number,
       default: 300, // 5 minutes
+    },
+    totalRounds: {
+      type: Number,
+      default: 2,
+      min: 1,
+      max: 5,
+    },
+    transcriptionMode: {
+      type: String,
+      enum: ["whisper", "browser", "off"],
+      default: "whisper",
+    },
+    whisperBudgetMinutes: {
+      type: Number,
+      required: false,
+    },
+    whisperMinutesUsed: {
+      type: Number,
+      default: 0,
+    },
+    activeDebateId: {
+      type: String,
+      required: false,
     },
   },
   { timestamps: true }

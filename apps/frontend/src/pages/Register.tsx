@@ -6,54 +6,27 @@ import type { RegisterInput } from "@argumint/shared";
 export function Register() {
   const navigate = useNavigate();
   const { register, isLoading } = useAuth();
-  const [formData, setFormData] = useState<RegisterInput>({
-    username: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
+  const [formData, setFormData] = useState<RegisterInput>({ username: "", email: "", password: "", confirmPassword: "" });
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-    if (fieldErrors[name]) {
-      setFieldErrors((prev) => ({ ...prev, [name]: "" }));
-    }
+    if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = () => {
     const errors: Record<string, string> = {};
-
-    if (!formData.email) {
-      errors.email = "Email is required";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = "Invalid email format";
-    }
-
-    if (!formData.password) {
-      errors.password = "Password is required";
-    } else if (formData.password.length < 8) {
-      errors.password = "Password must be at least 8 characters";
-    } else if (!/[A-Z]/.test(formData.password)) {
-      errors.password = "Password must contain at least one uppercase letter";
-    } else if (!/[a-z]/.test(formData.password)) {
-      errors.password = "Password must contain at least one lowercase letter";
-    } else if (!/[0-9]/.test(formData.password)) {
-      errors.password = "Password must contain at least one number";
-    }
-
-    if (!formData.confirmPassword) {
-      errors.confirmPassword = "Please confirm your password";
-    } else if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = "Passwords do not match";
-    }
-    if (!formData.username) {
-      errors.username = "Username is required";
-    } else if (formData.username.length < 3 || formData.username.length > 30) {
-      errors.username = "Username must be between 3 and 30 characters";
-    }
+    if (!formData.username) errors.username = "Username is required";
+    else if (formData.username.length < 3 || formData.username.length > 30) errors.username = "3–30 characters";
+    if (!formData.email) errors.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.email = "Invalid email";
+    if (!formData.password) errors.password = "Password is required";
+    else if (formData.password.length < 8) errors.password = "At least 8 characters";
+    else if (!/[A-Z]/.test(formData.password)) errors.password = "Needs an uppercase letter";
+    else if (!/[0-9]/.test(formData.password)) errors.password = "Needs a number";
+    if (formData.password !== formData.confirmPassword) errors.confirmPassword = "Passwords don't match";
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -61,174 +34,57 @@ export function Register() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
-
-    if (!validateForm()) {
-      return;
-    }
-
+    if (!validateForm()) return;
     try {
       const { confirmPassword, ...data } = formData;
       await register(data);
       navigate("/");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Registration failed";
-      setError(message);
+      setError(err instanceof Error ? err.message : "Registration failed");
     }
   };
 
+  const fields = [
+    { name: "username", label: "Username", type: "text", placeholder: "Pick a callsign", autoComplete: "username" },
+    { name: "email", label: "Email", type: "email", placeholder: "you@example.com", autoComplete: "email" },
+    { name: "password", label: "Password", type: "password", placeholder: "Min 8 chars, 1 uppercase, 1 number", autoComplete: "new-password" },
+    { name: "confirmPassword", label: "Confirm Password", type: "password", placeholder: "Repeat password", autoComplete: "new-password" },
+  ] as const;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-10 space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-extrabold text-indigo-600">Argumint</h1>
-          <p className="mt-2 text-sm text-gray-500">
-            Create your account to start debating
+    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", background: "var(--bg)" }}>
+      <div style={{ position: "fixed", top: "15%", left: "50%", transform: "translateX(-50%)", width: 600, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.06) 0%, transparent 70%)", pointerEvents: "none" }} />
+      <div className="fade-up w-full" style={{ maxWidth: 440 }}>
+        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+          <div style={{ fontSize: "2.8rem", fontWeight: 900, letterSpacing: "-0.03em", background: "linear-gradient(135deg, #22d3ee, #4f8ef7)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", lineHeight: 1 }}>ARGUMINT</div>
+          <div style={{ marginTop: "0.5rem", color: "var(--muted)", fontSize: "0.8rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 600 }}>Create your account</div>
+        </div>
+        <div className="glass" style={{ padding: "2.25rem" }}>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--text)", margin: "0 0 0.35rem" }}>Join the arena</h1>
+          <p style={{ color: "var(--muted)", fontSize: "0.875rem", margin: "0 0 1.75rem" }}>Pick a callsign and start debating</p>
+          {error && (
+            <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>{error}</div>
+          )}
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+            {fields.map(({ name, label, type, placeholder, autoComplete }) => (
+              <div key={name}>
+                <label className="label">{label}</label>
+                <input name={name} type={type} autoComplete={autoComplete} className="input-dark" placeholder={placeholder}
+                  value={(formData as any)[name]} onChange={handleChange}
+                  style={(fieldErrors as any)[name] ? { borderColor: "var(--against)" } : {}} />
+                {(fieldErrors as any)[name] && <p style={{ color: "var(--against)", fontSize: "0.75rem", marginTop: "0.3rem" }}>{(fieldErrors as any)[name]}</p>}
+              </div>
+            ))}
+            <button type="submit" className="btn-primary" disabled={isLoading} style={{ width: "100%", marginTop: "0.5rem", padding: "0.875rem", fontSize: "1rem" }}>
+              {isLoading ? "Creating account…" : "Create Account →"}
+            </button>
+          </form>
+          <div className="divider" />
+          <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.875rem" }}>
+            Already have an account?{" "}
+            <Link to="/login" style={{ color: "var(--cyan)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
           </p>
         </div>
-        <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="rounded-md bg-red-100 border border-red-400 p-4">
-              <div className="text-sm text-red-700">{error}</div>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label
-                htmlFor="username"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Username
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
-      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
-      ${fieldErrors.username ? "border-red-300" : "border-gray-300"}`}
-                placeholder="Enter a username"
-                value={formData.username}
-                onChange={handleChange}
-              />
-              {fieldErrors.username && (
-                <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.username}
-                </p>
-              )}
-            </div>
-            <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
-                  ${fieldErrors.email ? "border-red-300" : "border-gray-300"}`}
-                placeholder="you@example.com"
-                value={formData.email}
-                onChange={handleChange}
-              />
-              {fieldErrors.email && (
-                <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
-              )}
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
-                  ${
-                    fieldErrors.password ? "border-red-300" : "border-gray-300"
-                  }`}
-                placeholder="At least 8 characters"
-                value={formData.password}
-                onChange={handleChange}
-              />
-              {fieldErrors.password && (
-                <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.password}
-                </p>
-              )}
-              <p className="mt-2 text-xs text-gray-500">
-                Must contain uppercase, lowercase, and a number
-              </p>
-            </div>
-
-            <div>
-              <label
-                htmlFor="confirmPassword"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Confirm Password
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                className={`mt-1 appearance-none block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400
-                  focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition
-                  ${
-                    fieldErrors.confirmPassword
-                      ? "border-red-300"
-                      : "border-gray-300"
-                  }`}
-                placeholder="Confirm your password"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-              />
-              {fieldErrors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-600">
-                  {fieldErrors.confirmPassword}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium
-                rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2
-                focus:ring-indigo-500 disabled:opacity-50 transition duration-150"
-            >
-              {isLoading ? "Creating account..." : "Sign up"}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              Already have an account?{" "}
-              <Link
-                to="/login"
-                className="font-medium text-indigo-600 hover:text-indigo-500"
-              >
-                Sign in
-              </Link>
-            </p>
-          </div>
-        </form>
       </div>
     </div>
   );

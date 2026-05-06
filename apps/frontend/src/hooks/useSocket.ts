@@ -6,7 +6,7 @@ const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null); // ← ADD THIS
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
@@ -22,20 +22,23 @@ export function useSocket() {
       auth: { token },
     });
 
-    newSocket.on("connect", () => {
-      setIsConnected(true);
-    });
-
-    newSocket.on("disconnect", () => {
-      setIsConnected(false);
-    });
-
+    newSocket.on("connect", () => setIsConnected(true));
+    newSocket.on("disconnect", () => setIsConnected(false));
     newSocket.on("connect_error", (error) => {
-      console.error("[v0] Socket connect_error:", error);
+      console.error("[Socket] connect_error:", error);
+    });
+
+    // Server evicts this socket when the user logs in on another device.
+    // Clear local auth state and redirect to login with an explanation.
+    newSocket.on("session:evicted", () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("argumint_user");
+      // Hard-navigate so all React state is reset cleanly
+      window.location.href = "/login?reason=evicted";
     });
 
     socketRef.current = newSocket;
-    setSocket(newSocket); // ← triggers re-render in consumers
+    setSocket(newSocket);
 
     return () => {
       newSocket.disconnect();

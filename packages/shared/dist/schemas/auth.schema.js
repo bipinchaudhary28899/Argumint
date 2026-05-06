@@ -25,6 +25,7 @@ export const AuthResponseSchema = z.object({
         id: z.string(),
         username: z.string(),
         email: z.string(),
+        xp: z.number().default(0),
         stats: z.object({
             debatesWon: z.number(),
             debatesLost: z.number(),
@@ -51,6 +52,7 @@ export const PublicUserSchema = z.object({
     id: z.string(),
     username: z.string(),
     email: z.string(),
+    xp: z.number().default(0),
     stats: z.object({
         debatesWon: z.number(),
         debatesLost: z.number(),

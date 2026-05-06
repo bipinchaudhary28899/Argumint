@@ -1,7 +1,54 @@
 import { Server, Socket } from "socket.io";
 import { createSocketAuthMiddleware } from "../middleware/socket.middleware.js";
 import { RoomService } from "../services/room.service.js";
+import { DebateService } from "../services/debate.service.js";
+import { JudgeService } from "../services/judge.service.js";
+import { type IDebate, Debate } from "../models/Debate.model.js";
+import { Room } from "../models/Room.model.js";
+import { User } from "../models/User.model.js";
+import { getLevelInfo } from "@argumint/shared";
 import Redis from "ioredis";
+
+/**
+ * In-memory map of active debate timers, keyed by debateId.
+ * Single-node only — for horizontal scaling move to Redis.
+ */
+const activeTimers = new Map<string, NodeJS.Timeout>();
+
+/**
+ * userId → socket.id for every currently-connected socket.
+ * Used to evict a stale connection instantly when the same user
+ * logs in on a second device — no polling needed.
+ */
+const userSocketMap = new Map<string, string>();
+
+/** Reference to the Socket.IO server, set once initializeSocketIO runs. */
+let _io: Server | null = null;
+
+/**
+ * Evict any live socket belonging to userId.
+ * Called by the auth controller immediately after a new session is created,
+ * so Device A is disconnected at the moment Device B logs in.
+ */
+export function evictUserSocket(userId: string): void {
+  if (!_io) return;
+  const socketId = userSocketMap.get(userId);
+  if (!socketId) return;
+  const staleSocket = _io.sockets.sockets.get(socketId);
+  if (staleSocket) {
+    staleSocket.emit("session:evicted");
+    staleSocket.disconnect(true);
+  }
+  userSocketMap.delete(userId);
+}
+
+function clearDebateTimer(debateId: string) {
+  const existing = activeTimers.get(debateId);
+  if (existing) {
+    clearTimeout(existing);
+    activeTimers.delete(debateId);
+  }
+}
 
 export function initializeSocketIO(
   httpServer: any,
@@ -37,6 +84,171 @@ export function initializeSocketIO(
   // Apply authentication middleware
   io.use(createSocketAuthMiddleware(redisClient));
 
+  // Store the server reference so evictUserSocket() can use it
+  _io = io;
+
+  // ── userId → socketId registry ──────────────────────────────────────────
+  // Register every connected socket so evictUserSocket() can find and
+  // disconnect it instantly when the user logs in on another device.
+  io.on("connection", (socket) => {
+    const userId = socket.data.userId as string | undefined;
+    if (userId) userSocketMap.set(userId, socket.id);
+    socket.on("disconnect", () => {
+      // Only delete if this socket is still the registered one
+      // (a rapid reconnect could have already replaced it)
+      if (userSocketMap.get(userId ?? "") === socket.id) {
+        userSocketMap.delete(userId ?? "");
+      }
+    });
+  });
+
+  // ==================== DEBATE FLOW HELPERS ====================
+
+  /**
+   * Schedule a turn-end. Called every time a new turn starts. When the
+   * timer fires the speaker hasn't submitted, so we auto-advance.
+   *
+   * Idempotent: callers should clearDebateTimer first if they're advancing
+   * because the speaker submitted (vs ran out of time).
+   */
+  const scheduleTurnEnd = (debateId: string, roomCode: string, ms: number) => {
+    clearDebateTimer(debateId);
+    const t = setTimeout(async () => {
+      activeTimers.delete(debateId);
+      try {
+        await advanceTurnAndBroadcast(debateId, roomCode, "timeout");
+      } catch (err) {
+        console.error("[Debate] Auto-advance error:", err);
+      }
+    }, ms);
+    activeTimers.set(debateId, t);
+  };
+
+  /**
+   * Fire-and-forget runner for the AI judge. Called after a debate
+   * transitions to "ended". Broadcasts:
+   *   - debate:result-ready { debateId, result } on success
+   *   - debate:result-failed { debateId, error } on hard failure
+   *
+   * We do NOT await this in the calling code — the LLM call takes a
+   * few seconds and would block the turn-advance broadcast. Instead
+   * the result page on each client renders "judging…" until the
+   * result-ready event arrives.
+   */
+  const runJudgeAsync = (debateId: string, roomId: string) => {
+    void (async () => {
+      try {
+        const result = await JudgeService.judge(debateId);
+
+        // Award XP to every participant — score.total XP per debate
+        const xpAwards: { userId: string; xpGained: number; newXP: number; leveledUp: boolean; newLevel: number; newLevelTitle: string }[] = [];
+        await Promise.all(
+          result.scores.map(async (score) => {
+            const xpGained = score.total;
+            const updated = await User.findByIdAndUpdate(
+              score.userId,
+              { $inc: { xp: xpGained } },
+              { new: true, select: "xp" },
+            );
+            const newXP = updated?.xp ?? xpGained;
+            const prevXP = newXP - xpGained;
+            const prev = getLevelInfo(prevXP);
+            const curr = getLevelInfo(newXP);
+            xpAwards.push({
+              userId: score.userId,
+              xpGained,
+              newXP,
+              leveledUp: curr.current.level > prev.current.level,
+              newLevel: curr.current.level,
+              newLevelTitle: curr.current.title,
+            });
+          })
+        );
+
+        io.to(`room:${roomId}`).emit("debate:result-ready", {
+          debateId,
+          result,
+          xpAwards,
+        });
+      } catch (err: any) {
+        console.error("[Judge] Failed:", err?.message);
+        io.to(`room:${roomId}`).emit("debate:result-failed", {
+          debateId,
+          error: err?.message || "Failed to judge debate",
+        });
+      }
+    })();
+  };
+
+  /**
+   * Broadcast the *current* turn (whatever's currently set on the debate)
+   * and schedule its auto-end. Accepts an already-fetched debate to avoid
+   * a redundant DB round-trip after startFirstTurn.
+   */
+  const broadcastCurrentTurn = async (
+    debateId: string,
+    roomCode: string,
+    preloadedDebate?: IDebate | null,
+  ) => {
+    const debate = preloadedDebate ?? await DebateService.getById(debateId);
+    if (!debate || !debate.currentTurn) return;
+    const turn = debate.currentTurn;
+    io.to(`room:${debate.roomId}`).emit("debate:turn-started", {
+      debateId,
+      roomCode,
+      currentTurn: turn,
+      roundNumber: turn.roundNumber,
+      totalRounds: debate.totalRounds,
+      turnIndex: turn.turnIndex,
+    });
+    const msUntilEnd = new Date(turn.endsAt).getTime() - Date.now();
+    scheduleTurnEnd(debateId, roomCode, Math.max(0, msUntilEnd));
+  };
+
+  /**
+   * Advance the debate one step (next speaker / next round / end) and
+   * broadcast the resulting state to the room. Used for both the
+   * "speaker submitted early" and "speaker timed out" transitions —
+   * NOT for the very first turn after prep (that's broadcastCurrentTurn).
+   */
+  const advanceTurnAndBroadcast = async (
+    debateId: string,
+    roomCode: string,
+    reason: "timeout" | "submitted",
+  ) => {
+    const { debate, finished } = await DebateService.advanceTurn(debateId);
+
+    io.to(`room:${debate.roomId}`).emit("debate:turn-ended", {
+      debateId,
+      reason,
+    });
+
+    if (finished) {
+      io.to(`room:${debate.roomId}`).emit("debate:ended", {
+        debateId,
+        rounds: debate.rounds,
+        endedAt: debate.endedAt,
+      });
+      // Kick off the AI judge fire-and-forget. Clients show a "judging…"
+      // state on the result page until we broadcast debate:result-ready.
+      runJudgeAsync(debateId, debate.roomId);
+      return;
+    }
+
+    const turn = debate.currentTurn!;
+    io.to(`room:${debate.roomId}`).emit("debate:turn-started", {
+      debateId,
+      roomCode,
+      currentTurn: turn,
+      roundNumber: turn.roundNumber,
+      totalRounds: debate.totalRounds,
+      turnIndex: turn.turnIndex,
+    });
+
+    const msUntilEnd = new Date(turn.endsAt).getTime() - Date.now();
+    scheduleTurnEnd(debateId, roomCode, Math.max(0, msUntilEnd));
+  };
+
   // Connection handler
   io.on("connection", (socket: Socket) => {
     const userId = socket.data.userId;
@@ -63,15 +275,9 @@ export function initializeSocketIO(
           return callback({ success: false, error: "Room not found" });
         }
 
-        // Check if user already in participants
-        const isParticipant = room.participants.some(
-          (p) => p.userId === userId,
-        );
-
-        // If not already a participant, add them
-        if (!isParticipant) {
-          room = await RoomService.joinRoom(roomCode, userId, username);
-        }
+        // Always call joinRoom — it revives disconnected/left slots instead of
+        // pushing a duplicate entry, and is a no-op upgrade if already active.
+        room = await RoomService.joinRoom(roomCode, userId, username);
 
         // Join socket.io room FIRST with room ID
         socket.join(`room:${room._id}`);
@@ -130,6 +336,9 @@ export function initializeSocketIO(
             userId,
             username,
             participants: room.participants,
+            // Include updated host info so clients re-derive isHost correctly
+            creatorId: room.creatorId,
+            creatorUsername: room.creatorUsername,
           });
         } else {
           // Room is empty, notify all clients
@@ -219,6 +428,7 @@ export function initializeSocketIO(
           votingInProgress: true,
           votingTopics: room.votingTopics,
           votingStartTime: room.votingStartTime,
+          status: room.status,
         });
 
         callback({ success: true, room: room.toObject() });
@@ -284,13 +494,18 @@ export function initializeSocketIO(
           (t) => t.id === room.selectedTopic,
         );
 
-        // Broadcast voting ended to all in room
+        // Broadcast voting ended to all in room.
+        // Include the promoted room.topic and new status so clients can
+        // refresh their lobby view (room.topic now holds the winning text,
+        // status moved out of "voting" back to "lobby").
         io.to(`room:${roomId}`).emit("room:voting-ended", {
           roomId,
           votingInProgress: false,
           selectedTopic: room.selectedTopic,
           selectedTopicText: selectedTopicObj?.text,
           votingTopics: room.votingTopics,
+          topic: room.topic,
+          status: room.status,
         });
 
         callback({ success: true, room: room.toObject() });
@@ -300,6 +515,536 @@ export function initializeSocketIO(
           success: false,
           error: (error as any).message || "Failed to end voting",
         });
+      }
+    });
+
+    // ==================== DEBATE EVENTS ====================
+
+    /**
+     * Host starts the debate.
+     * Client emits: { roomId: string }
+     * Side assignment is randomized server-side. After this returns,
+     * the room is in "prep" and a setTimeout is scheduled for prep-end.
+     */
+    socket.on("room:start-debate", async (data, callback) => {
+      try {
+        const { roomId } = data;
+        if (!roomId) {
+          return callback({ success: false, error: "Room ID required" });
+        }
+
+        const [debate, room] = await Promise.all([
+          DebateService.startDebate(roomId, userId),
+          RoomService.getRoomById(roomId),
+        ]);
+
+        // Broadcast debate-started so clients can navigate to /prep.
+        io.to(`room:${roomId}`).emit("debate:started", {
+          debateId: debate._id.toString(),
+          roomId,
+          roomCode: room?.code,
+          topic: debate.topic,
+          mode: debate.mode,
+          totalRounds: debate.totalRounds,
+          turnDuration: debate.turnDuration,
+          prepDuration: debate.prepDuration,
+          prepEndsAt: debate.prepEndsAt,
+          turnOrder: debate.turnOrder,
+          // Include updated participants so the lobby UI reflects assigned sides.
+          participants: room?.participants ?? [],
+          status: room?.status ?? "prep",
+        });
+
+        // Schedule the prep-end transition. When the timer fires we move
+        // the debate from "prep" to "in_progress".
+        const debateId = debate._id.toString();
+        const roomCode = room?.code ?? "";
+        const msUntilPrepEnd =
+          (debate.prepEndsAt?.getTime() ?? Date.now()) - Date.now();
+
+        // For buzzer mode: emit a 10s "get ready" warning before prep ends.
+        if (debate.mode === "buzzer") {
+          const msWarning = msUntilPrepEnd - 10_000;
+          if (msWarning > 0) {
+            const warnTimer = setTimeout(() => {
+              activeTimers.delete(`${debateId}:warning`);
+              io.to(`room:${roomId}`).emit("buzzer:warning", { secondsLeft: 10 });
+            }, msWarning);
+            activeTimers.set(`${debateId}:warning`, warnTimer);
+          }
+        }
+
+        clearDebateTimer(debateId);
+        const t = setTimeout(async () => {
+          activeTimers.delete(debateId);
+          try {
+            if (debate.mode === "buzzer") {
+              // Open the free-for-all grab window — no fixed first turn.
+              const openedDebate = await DebateService.openBuzzerDebate(debateId);
+              io.to(`room:${roomId}`).emit("buzzer:open", {
+                debateId,
+                roomCode,
+                turnOrder: openedDebate.turnOrder,
+              });
+            } else {
+              // Alternate mode: startFirstTurn sets currentTurn to (round 1, turn 0).
+              // Broadcast directly — advanceTurn would skip the first speaker.
+              const updatedDebate = await DebateService.startFirstTurn(debateId);
+              await broadcastCurrentTurn(debateId, roomCode, updatedDebate);
+            }
+          } catch (err) {
+            console.error("[Debate] Prep-end transition error:", err);
+          }
+        }, Math.max(0, msUntilPrepEnd));
+        activeTimers.set(debateId, t);
+
+        callback({ success: true, debate: debate.toObject() });
+      } catch (error: any) {
+        console.error("[Socket] Start debate error:", error);
+        callback({
+          success: false,
+          error: error?.message || "Failed to start debate",
+        });
+      }
+    });
+
+    /**
+     * Get current debate state (used by clients on page load /
+     * navigation into /prep or /debate). This is also where a freshly
+     * connected socket subscribes to the room broadcast channel —
+     * each page mount creates a new socket via useSocket(), and without
+     * this join the new socket would miss every io.to(`room:...`) emit.
+     * Client emits: { debateId: string }
+     */
+    socket.on("debate:get-state", async (data, callback) => {
+      try {
+        const { debateId } = data;
+        if (!debateId) {
+          return callback({ success: false, error: "Debate ID required" });
+        }
+        const debate = await DebateService.getById(debateId);
+        if (!debate) {
+          return callback({ success: false, error: "Debate not found" });
+        }
+
+        // Subscribe this socket to the room broadcast channel so it
+        // receives debate:turn-started, debate:argument-submitted, etc.
+        socket.join(`room:${debate.roomId}`);
+        socket.data.roomId = debate.roomId;
+        socket.data.roomCode = debate.roomCode;
+
+        callback({ success: true, debate: debate.toObject() });
+      } catch (error: any) {
+        console.error("[Socket] Get debate state error:", error);
+        callback({
+          success: false,
+          error: error?.message || "Failed to get debate state",
+        });
+      }
+    });
+
+    /**
+     * Speaker submits their argument (transcript text from Whisper).
+     * Client emits: { debateId: string, argument: string }
+     * On success, server records the round, broadcasts the new round,
+     * cancels the pending turn-end timer, and immediately advances
+     * (which broadcasts turn-ended + the next turn-started).
+     */
+    socket.on("debate:submit-argument", async (data, callback) => {
+      try {
+        const { debateId, argument } = data;
+        if (!debateId || typeof argument !== "string") {
+          return callback({
+            success: false,
+            error: "debateId and argument required",
+          });
+        }
+
+        const debate = await DebateService.submitArgument(
+          debateId,
+          userId,
+          argument,
+        );
+
+        const lastRound = debate.rounds[debate.rounds.length - 1];
+        io.to(`room:${debate.roomId}`).emit("debate:argument-submitted", {
+          debateId,
+          round: lastRound,
+          rounds: debate.rounds,
+        });
+
+        // Cancel the auto-timeout and advance immediately.
+        clearDebateTimer(debateId);
+        await advanceTurnAndBroadcast(
+          debateId,
+          debate.roomCode,
+          "submitted",
+        );
+
+        callback({ success: true });
+      } catch (error: any) {
+        console.error("[Socket] Submit argument error:", error);
+        callback({
+          success: false,
+          error: error?.message || "Failed to submit argument",
+        });
+      }
+    });
+
+    // ==================== BUZZER MODE EVENTS ====================
+
+    /**
+     * Shared helper: release the mic in buzzer mode. Records the round,
+     * applies anti-starvation cooldown, opens the 5-second re-grab window.
+     * Extracted so both the socket handler AND the server-side auto-timeout
+     * can call it without duplicating logic.
+     */
+    const handleBuzzerRelease = async (
+      debateId: string,
+      speakerId: string,
+      argument: string,
+    ) => {
+      const debate = await Debate.findById(debateId);
+      if (!debate?.buzzerState) return;
+      const bs = debate.buzzerState;
+
+      // Stale event guard — only act if this user still holds the mic.
+      if (bs.currentHolder !== speakerId) return;
+
+      const now = new Date();
+      const holderStart = bs.holderStartedAt ?? now;
+      const elapsedSec = Math.max(
+        0,
+        Math.round((now.getTime() - holderStart.getTime()) / 1000),
+      );
+      const entry = debate.turnOrder.find((t) => t.userId === speakerId);
+      const side = entry?.side ?? "for";
+
+      // Record the round (roundNumber = total rounds so far + 1).
+      debate.rounds.push({
+        roundNumber: debate.rounds.length + 1,
+        speakerId,
+        speakerUsername: entry?.username ?? speakerId,
+        side,
+        argument: argument || "",
+        submittedAt: now,
+        durationSeconds: elapsedSec,
+      });
+
+      // Cancel per-speaker auto-timeout timer (if not already fired).
+      const speakerTimer = activeTimers.get(`${debateId}:speaker`);
+      if (speakerTimer) {
+        clearTimeout(speakerTimer);
+        activeTimers.delete(`${debateId}:speaker`);
+      }
+
+      // Dynamic anti-starvation cooldown:
+      // 1st speech → 15s, 2nd → 25s, 3rd → 35s … capped at 60s.
+      const speakCount = bs.speakHistory.filter((id) => id === speakerId).length;
+      const cooldownSec = Math.min(15 + (speakCount - 1) * 10, 60);
+      const unlocksAt = new Date(now.getTime() + cooldownSec * 1_000);
+
+      const cdIndex = bs.cooldowns.findIndex((c) => c.userId === speakerId);
+      if (cdIndex >= 0) {
+        bs.cooldowns[cdIndex].unlocksAt = unlocksAt;
+      } else {
+        bs.cooldowns.push({ userId: speakerId, unlocksAt });
+      }
+
+      bs.lastSpeaker = speakerId;
+      bs.currentHolder = null;
+      bs.holderStartedAt = null;
+
+      // Open 5-second re-grab window (excludes lastSpeaker).
+      const windowEndsAt = new Date(now.getTime() + 5_000);
+      bs.grabWindowOpen = true;
+      bs.grabWindowEndsAt = windowEndsAt;
+      debate.markModified("buzzerState");
+      await debate.save();
+
+      const lastRound = debate.rounds[debate.rounds.length - 1];
+      io.to(`room:${debate.roomId}`).emit("debate:argument-submitted", {
+        debateId,
+        round: lastRound,
+        rounds: debate.rounds,
+      });
+
+      io.to(`room:${debate.roomId}`).emit("buzzer:holder-changed", {
+        holder: null,
+        username: null,
+        grabWindowOpen: true,
+        grabWindowEndsAt: windowEndsAt,
+        excludedUserId: speakerId,
+      });
+
+      io.to(`room:${debate.roomId}`).emit("buzzer:window-open", {
+        endsAt: windowEndsAt,
+        excludedUserId: speakerId,
+      });
+
+      // Auto-close grab window after 5 seconds if nobody grabbed.
+      const winTimer = setTimeout(async () => {
+        activeTimers.delete(`${debateId}:window`);
+        const d = await Debate.findById(debateId);
+        if (!d?.buzzerState || !d.buzzerState.grabWindowOpen) return;
+        d.buzzerState.grabWindowOpen = false;
+        d.buzzerState.grabWindowEndsAt = null;
+        d.markModified("buzzerState");
+        await d.save();
+        io.to(`room:${d.roomId}`).emit("buzzer:window-closed", { debateId });
+        io.to(`room:${d.roomId}`).emit("buzzer:holder-changed", {
+          holder: null,
+          username: null,
+          grabWindowOpen: false,
+          grabWindowEndsAt: null,
+          excludedUserId: null,
+        });
+      }, 5_000);
+      activeTimers.set(`${debateId}:window`, winTimer);
+    };
+
+    /**
+     * Mic grab — first valid caller wins the floor.
+     * Client emits: { debateId: string }
+     */
+    socket.on("buzzer:grab", async (data, callback) => {
+      try {
+        const { debateId } = data;
+        if (!debateId) {
+          return callback?.({ success: false, error: "debateId required" });
+        }
+
+        const debate = await Debate.findById(debateId);
+        if (!debate || debate.mode !== "buzzer" || debate.status !== "in_progress") {
+          return callback?.({ success: false, error: "Invalid debate state" });
+        }
+
+        const bs = debate.buzzerState;
+        if (!bs) {
+          return callback?.({ success: false, error: "Buzzer not initialized" });
+        }
+
+        const now = new Date();
+
+        // Mic is held and no re-grab window is open → reject.
+        if (bs.currentHolder !== null && !bs.grabWindowOpen) {
+          return callback?.({ success: false, error: "Mic is busy" });
+        }
+
+        // During re-grab window: last speaker cannot immediately re-grab.
+        if (bs.grabWindowOpen && bs.lastSpeaker === userId) {
+          return callback?.({ success: false, error: "You just spoke — let others have a turn" });
+        }
+
+        // Per-user cooldown check.
+        const cd = bs.cooldowns.find((c) => c.userId === userId);
+        if (cd && cd.unlocksAt > now) {
+          const secsLeft = Math.ceil((cd.unlocksAt.getTime() - now.getTime()) / 1000);
+          return callback?.({ success: false, error: `Cooling down — ${secsLeft}s remaining` });
+        }
+
+        // ── Grab is valid ──────────────────────────────────────────────────
+
+        // Cancel any open grab-window timer (someone grabbed in time).
+        const winTimer = activeTimers.get(`${debateId}:window`);
+        if (winTimer) {
+          clearTimeout(winTimer);
+          activeTimers.delete(`${debateId}:window`);
+        }
+
+        const entry = debate.turnOrder.find((t) => t.userId === userId);
+        const side = entry?.side ?? "for";
+
+        bs.currentHolder = userId;
+        bs.holderStartedAt = now;
+        bs.grabWindowOpen = false;
+        bs.grabWindowEndsAt = null;
+        bs.speakHistory.push(userId);
+
+        // First-grab bonus XP (+5) — awarded once per user per debate.
+        let bonusXP = 0;
+        if (!bs.bonusXPAwarded.includes(userId)) {
+          bs.bonusXPAwarded.push(userId);
+          bonusXP = 5;
+          void User.findByIdAndUpdate(userId, { $inc: { xp: bonusXP } });
+        }
+
+        debate.markModified("buzzerState");
+        await debate.save();
+
+        // Per-speaker auto-timeout: server notifies holder when time is up.
+        const speakerMs = debate.turnDuration * 1_000;
+        const speakerTimer = setTimeout(async () => {
+          activeTimers.delete(`${debateId}:speaker`);
+          // Tell the holder's socket to submit immediately.
+          const holderSocketId = userSocketMap.get(userId);
+          if (holderSocketId) {
+            io.to(holderSocketId).emit("buzzer:speaker-timeout", { debateId });
+          } else {
+            // Holder disconnected — server-side release with empty argument.
+            await handleBuzzerRelease(debateId, userId, "");
+          }
+        }, speakerMs);
+        activeTimers.set(`${debateId}:speaker`, speakerTimer);
+
+        io.to(`room:${debate.roomId}`).emit("buzzer:holder-changed", {
+          holder: userId,
+          username,
+          side,
+          grabWindowOpen: false,
+          grabWindowEndsAt: null,
+          excludedUserId: null,
+          bonusXP: bonusXP > 0 ? bonusXP : undefined,
+        });
+
+        callback?.({ success: true, bonusXP });
+      } catch (err: any) {
+        console.error("[Buzzer] Grab error:", err);
+        callback?.({ success: false, error: err?.message || "Failed to grab" });
+      }
+    });
+
+    /**
+     * Speaker releases the mic (voluntary).
+     * Client emits: { debateId: string, argument: string }
+     */
+    socket.on("buzzer:release", async (data, callback) => {
+      try {
+        const { debateId, argument } = data;
+        if (!debateId) {
+          return callback?.({ success: false, error: "debateId required" });
+        }
+
+        const debate = await Debate.findById(debateId);
+        if (!debate?.buzzerState || debate.buzzerState.currentHolder !== userId) {
+          return callback?.({ success: false, error: "You don't hold the mic" });
+        }
+
+        await handleBuzzerRelease(debateId, userId, argument ?? "");
+        callback?.({ success: true });
+      } catch (err: any) {
+        console.error("[Buzzer] Release error:", err);
+        callback?.({ success: false, error: err?.message || "Failed to release" });
+      }
+    });
+
+    /**
+     * Host manually ends a buzzer debate.
+     * Client emits: { debateId: string }
+     */
+    socket.on("debate:host-end", async (data, callback) => {
+      try {
+        const { debateId } = data;
+        if (!debateId) {
+          return callback?.({ success: false, error: "debateId required" });
+        }
+
+        const debate = await Debate.findById(debateId);
+        if (!debate) {
+          return callback?.({ success: false, error: "Debate not found" });
+        }
+
+        const room = await RoomService.getRoomById(debate.roomId);
+        if (!room || room.creatorId !== userId) {
+          return callback?.({ success: false, error: "Only the host can end the debate" });
+        }
+
+        if (debate.status === "ended") {
+          return callback?.({ success: true }); // idempotent
+        }
+
+        // Clear all buzzer timers for this debate.
+        for (const key of [`${debateId}:warning`, `${debateId}:speaker`, `${debateId}:window`, debateId]) {
+          const t = activeTimers.get(key);
+          if (t) { clearTimeout(t); activeTimers.delete(key); }
+        }
+
+        debate.status = "ended";
+        debate.currentTurn = null;
+        debate.endedAt = new Date();
+        await debate.save();
+
+        await Room.updateOne({ _id: debate.roomId }, { status: "finished" });
+
+        io.to(`room:${debate.roomId}`).emit("debate:ended", {
+          debateId,
+          rounds: debate.rounds,
+          endedAt: debate.endedAt,
+        });
+
+        runJudgeAsync(debateId, debate.roomId);
+        callback?.({ success: true });
+      } catch (err: any) {
+        console.error("[Buzzer] Host-end error:", err);
+        callback?.({ success: false, error: err?.message || "Failed to end debate" });
+      }
+    });
+
+    // ==================== WEBRTC SIGNALING ====================
+
+    /**
+     * Forward a WebRTC offer from one peer to another. Each event carries
+     * the target socket id; we route via io.to(targetSocketId). The sender's
+     * own socket id is attached so the recipient knows where to reply.
+     *
+     * Mesh model: every participant maintains an RTCPeerConnection to every
+     * other participant. The active speaker's mic is the only sending track;
+     * everyone else listens. The frontend hook decides who initiates the
+     * offer (deterministic by lower userId) so we don't double-offer.
+     */
+    socket.on("webrtc:offer", (data) => {
+      const { targetSocketId, sdp } = data;
+      if (!targetSocketId || !sdp) return;
+      io.to(targetSocketId).emit("webrtc:offer", {
+        fromSocketId: socket.id,
+        fromUserId: userId,
+        fromUsername: username,
+        sdp,
+      });
+    });
+
+    socket.on("webrtc:answer", (data) => {
+      const { targetSocketId, sdp } = data;
+      if (!targetSocketId || !sdp) return;
+      io.to(targetSocketId).emit("webrtc:answer", {
+        fromSocketId: socket.id,
+        fromUserId: userId,
+        sdp,
+      });
+    });
+
+    socket.on("webrtc:ice-candidate", (data) => {
+      const { targetSocketId, candidate } = data;
+      if (!targetSocketId || !candidate) return;
+      io.to(targetSocketId).emit("webrtc:ice-candidate", {
+        fromSocketId: socket.id,
+        fromUserId: userId,
+        candidate,
+      });
+    });
+
+    /**
+     * After a client joins a debate room, it asks the server "who else is
+     * in this room?" so it knows which peers to open RTCPeerConnections to.
+     */
+    socket.on("webrtc:get-peers", async (data, callback) => {
+      try {
+        const { roomId } = data;
+        if (!roomId) {
+          return callback({ success: false, error: "Room ID required" });
+        }
+        const sockets = await io.in(`room:${roomId}`).fetchSockets();
+        const peers = sockets
+          .filter((s) => s.id !== socket.id)
+          .map((s) => ({
+            socketId: s.id,
+            userId: s.data.userId,
+            username: s.data.username,
+          }));
+        callback({ success: true, peers });
+      } catch (err: any) {
+        console.error("[Socket] webrtc:get-peers error:", err);
+        callback({ success: false, error: err?.message || "Failed" });
       }
     });
 
@@ -323,6 +1068,22 @@ export function initializeSocketIO(
               participants: room.participants,
             },
           );
+
+          // If this user was holding the buzzer mic, auto-release with empty argument.
+          if (room.activeDebateId) {
+            try {
+              const debate = await Debate.findById(room.activeDebateId);
+              if (
+                debate?.mode === "buzzer" &&
+                debate.status === "in_progress" &&
+                debate.buzzerState?.currentHolder === userId
+              ) {
+                await handleBuzzerRelease(room.activeDebateId, userId, "");
+              }
+            } catch (buzzerErr) {
+              console.error("[Buzzer] Disconnect auto-release error:", buzzerErr);
+            }
+          }
         } catch (error) {
           console.error("[Socket] Disconnect cleanup error:", error);
         }

@@ -40,6 +40,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         id: z.ZodString;
         username: z.ZodString;
         email: z.ZodString;
+        xp: z.ZodDefault<z.ZodNumber>;
         stats: z.ZodObject<{
             debatesWon: z.ZodNumber;
             debatesLost: z.ZodNumber;
@@ -58,6 +59,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         username: string;
         email: string;
         id: string;
+        xp: number;
         stats: {
             debatesWon: number;
             debatesLost: number;
@@ -74,6 +76,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
             totalDebates: number;
         };
         createdAt: Date;
+        xp?: number | undefined;
     }>;
     token: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
@@ -81,6 +84,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
         username: string;
         email: string;
         id: string;
+        xp: number;
         stats: {
             debatesWon: number;
             debatesLost: number;
@@ -100,6 +104,7 @@ export declare const AuthResponseSchema: z.ZodObject<{
             totalDebates: number;
         };
         createdAt: Date;
+        xp?: number | undefined;
     };
     token?: string | undefined;
 }>;
@@ -152,6 +157,7 @@ export declare const PublicUserSchema: z.ZodObject<{
     id: z.ZodString;
     username: z.ZodString;
     email: z.ZodString;
+    xp: z.ZodDefault<z.ZodNumber>;
     stats: z.ZodObject<{
         debatesWon: z.ZodNumber;
         debatesLost: z.ZodNumber;
@@ -170,6 +176,7 @@ export declare const PublicUserSchema: z.ZodObject<{
     username: string;
     email: string;
     id: string;
+    xp: number;
     stats: {
         debatesWon: number;
         debatesLost: number;
@@ -186,6 +193,7 @@ export declare const PublicUserSchema: z.ZodObject<{
         totalDebates: number;
     };
     createdAt: Date;
+    xp?: number | undefined;
 }>;
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type RegisterRequest = Omit<RegisterInput, "confirmPassword">;
