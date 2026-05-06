@@ -1,7 +1,7 @@
 {
   "framework": null,
-  "installCommand": "npm install",
-  "buildCommand": "npm run build -w packages/shared && npm run build -w apps/frontend",
+  "installCommand": "npm install --prefix . || true",
+  "buildCommand": "cd packages/shared && npx tsc -b --force && cd ../../apps/frontend && npx vite build",
   "outputDirectory": "apps/frontend/dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "env": {
