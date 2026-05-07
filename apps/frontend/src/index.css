@@ -246,3 +246,27 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: #a78bfa; }
+
+/* ── Mobile responsive ─────────────────────────────────────── */
+@media (max-width: 767px) {
+  html, body { overflow-x: hidden; overflow-y: auto; }
+  #root { overflow-x: hidden; overflow-y: auto; height: auto; }
+
+  .game-nav {
+    padding: 0 0.75rem;
+    height: 50px;
+    gap: 0.5rem;
+  }
+  .nav-logo { font-size: 1.15rem; }
+
+  .glass { border-radius: 0.875rem; }
+
+  /* hide elements on mobile */
+  .hide-mobile { display: none !important; }
+
+  /* full-width buttons on mobile */
+  .mobile-full { width: 100% !important; }
+
+  /* tighter padding on mobile */
+  .mobile-compact { padding: 0.75rem !important; }
+}

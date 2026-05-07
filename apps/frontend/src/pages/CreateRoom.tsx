@@ -2,14 +2,19 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
 import type { CreateRoomInput } from "@argumint/shared";
 
+
+// Numeric field names for CreateRoom
+const NUMERIC_FIELDS = ["maxParticipants", "totalRounds", "prepDuration", "turnDuration", "votingDuration"] as const;
 
 export function CreateRoom() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { setRoom, setError } = useRoom();
+  const isMobile = useIsMobile();
   const [isLoading, setIsLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -20,12 +25,24 @@ export function CreateRoom() {
     totalRounds: 2, transcriptionMode: "whisper" as const,
   });
 
+  // Separate string state for numeric inputs to avoid "010" leading-zero bug
+  const [numRaw, setNumRaw] = useState<Record<string, string>>({
+    maxParticipants: "10", totalRounds: "2",
+    prepDuration: "120", turnDuration: "180", votingDuration: "30",
+  });
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
+    if ((NUMERIC_FIELDS as readonly string[]).includes(name)) {
+      const digits = value.replace(/\D/g, "");
+      setNumRaw((prev) => ({ ...prev, [name]: digits }));
+      setFormData((prev) => ({ ...prev, [name]: digits === "" ? 0 : parseInt(digits, 10) }));
+      return;
+    }
     setFormData((prev) => ({
       ...prev,
-      [name]: type === "checkbox" ? checked : type === "number" ? (value ? parseInt(value, 10) : 0) : value,
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
@@ -59,24 +76,24 @@ export function CreateRoom() {
   };
 
   return (
-    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+    <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <nav className="game-nav">
         <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
-        <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
+        {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
       </nav>
 
-      <main style={{ flex: 1, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", padding: "0 1.25rem" }}>
-        <form onSubmit={handleSubmit} className="fade-up glass" style={{ width: "100%", maxWidth: 860, padding: "1.75rem 2rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      <main style={{ flex: 1, overflow: "auto", display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "0.75rem" : "1rem 1.25rem" }}>
+        <form onSubmit={handleSubmit} className="fade-up glass" style={{ width: "100%", maxWidth: 860, padding: isMobile ? "1.25rem" : "1.75rem 2rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
 
           {/* Title + submit row */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "0.75rem" : 0 }}>
             <div>
               <h1 style={{ fontSize: "1.35rem", fontWeight: 900, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>Host a Debate</h1>
               {localError && <p style={{ color: "#f43f5e", fontSize: "0.78rem", margin: "0.15rem 0 0", fontWeight: 600 }}>⚠ {localError}</p>}
             </div>
-            <div style={{ display: "flex", gap: "0.625rem" }}>
-              <button type="button" onClick={() => navigate("/")} className="btn-ghost" style={{ padding: "0.45rem 1.1rem", fontSize: "0.85rem" }}>Cancel</button>
-              <button type="submit" className="btn-primary" disabled={isLoading} style={{ padding: "0.45rem 1.4rem", fontSize: "0.85rem" }}>
+            <div style={{ display: "flex", gap: "0.625rem", width: isMobile ? "100%" : "auto" }}>
+              <button type="button" onClick={() => navigate("/")} className="btn-ghost" style={{ padding: "0.45rem 1.1rem", fontSize: "0.85rem", flex: isMobile ? 1 : "none" }}>Cancel</button>
+              <button type="submit" className="btn-primary" disabled={isLoading} style={{ padding: "0.45rem 1.4rem", fontSize: "0.85rem", flex: isMobile ? 2 : "none" }}>
                 {isLoading ? "Creating…" : "Create Room →"}
               </button>
             </div>
@@ -89,7 +106,7 @@ export function CreateRoom() {
             onClick={() => setFormData(prev => ({ ...prev, votingEnabled: !prev.votingEnabled }))}>
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <span style={{ fontWeight: 700, fontSize: "0.875rem", color: "var(--text)" }}>Let players vote on the topic</span>
-              <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>— players pick from options you set in the lobby</span>
+              {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>— players pick from options you set in the lobby</span>}
             </div>
             <div style={{ width: 40, height: 22, borderRadius: 9999, background: formData.votingEnabled ? "var(--cyan)" : "var(--border2)", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
               <div style={{ position: "absolute", top: 2, left: formData.votingEnabled ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
@@ -106,7 +123,7 @@ export function CreateRoom() {
           ) : (
             <div>
               <label className="label">Voting Topics (2–4) *</label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "0.5rem" }}>
                 {(formData.votingTopics || []).map((topic, i) => (
                   <div key={i} style={{ display: "flex", gap: "0.4rem" }}>
                     <input type="text" value={topic} onChange={(e) => handleTopicChange(i, e.target.value)}
@@ -121,9 +138,10 @@ export function CreateRoom() {
             </div>
           )}
 
-          {/* All settings in one row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr", gap: "0.75rem", alignItems: "end" }}>
-            <div>
+          {/* All settings */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1.6fr 1fr 1fr 1fr 1fr", gap: "0.75rem", alignItems: "end" }}>
+            {/* Debate Mode spans full width on mobile so native picker has room */}
+            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto" }}>
               <label className="label">Debate Mode</label>
               <select name="debateMode" className="input-dark" value={formData.debateMode} onChange={handleChange}>
                 <option value="alternate">Alternate (For → Against)</option>
@@ -132,19 +150,19 @@ export function CreateRoom() {
             </div>
             <div>
               <label className="label">Max Players</label>
-              <input name="maxParticipants" type="number" className="input-dark" value={formData.maxParticipants} onChange={handleChange} min={2} max={100} />
+              <input name="maxParticipants" type="text" inputMode="numeric" pattern="[0-9]*" className="input-dark" value={numRaw.maxParticipants} onChange={handleChange} />
             </div>
             <div>
               <label className="label">Rounds</label>
-              <input name="totalRounds" type="number" className="input-dark" value={formData.totalRounds} onChange={handleChange} min={1} max={5} />
+              <input name="totalRounds" type="text" inputMode="numeric" pattern="[0-9]*" className="input-dark" value={numRaw.totalRounds} onChange={handleChange} />
             </div>
             <div>
               <label className="label">Prep (sec)</label>
-              <input name="prepDuration" type="number" className="input-dark" value={formData.prepDuration} onChange={handleChange} min={30} max={600} />
+              <input name="prepDuration" type="text" inputMode="numeric" pattern="[0-9]*" className="input-dark" value={numRaw.prepDuration} onChange={handleChange} />
             </div>
             <div>
               <label className="label">Turn (sec)</label>
-              <input name="turnDuration" type="number" className="input-dark" value={formData.turnDuration} onChange={handleChange} min={60} max={900} />
+              <input name="turnDuration" type="text" inputMode="numeric" pattern="[0-9]*" className="input-dark" value={numRaw.turnDuration} onChange={handleChange} />
             </div>
           </div>
         </form>

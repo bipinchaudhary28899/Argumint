@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { getLevelInfo } from "@argumint/shared";
 import type { Debate, ScoreBreakdown } from "@argumint/shared";
 
@@ -77,6 +78,7 @@ export function ResultPage() {
   const navigate   = useNavigate();
   const { user }   = useAuth();
   const { socket, isConnected } = useSocket();
+  const isMobile   = useIsMobile();
 
   const [debate,        setDebate]        = useState<Debate | null>(null);
   const [error,         setError]         = useState<string | null>(null);
@@ -192,7 +194,7 @@ export function ResultPage() {
         .xp-float { animation: xpFloat 1.6s ease-out forwards; }
       `}</style>
 
-      <div className="bg-grid" style={{ height:"100vh", overflow:"hidden", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
+      <div className="bg-grid" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
 
         {/* ── NAV ── */}
         <nav className="game-nav">
@@ -200,19 +202,19 @@ export function ResultPage() {
           <div style={{ display:"flex", alignItems:"center", gap:"0.875rem" }}>
             <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
               <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-              <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
+              {!isMobile && <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>}
             </div>
-            <span style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{user?.username}</span>
+            {!isMobile && <span style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{user?.username}</span>}
           </div>
         </nav>
 
         {/* ── MAIN ── */}
-        <main style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", padding:"0.5rem 0.875rem 0.625rem" }}>
+        <main style={{ flex:1, overflow:"auto", display:"flex", flexDirection:"column", padding: isMobile ? "0.75rem 0.75rem 2rem" : "0.5rem 0.875rem 1.5rem" }}>
 
           {/* Motion strip */}
           <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"0.5rem" }}>
             <span style={{ fontSize:"0.6rem", fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--muted)", flexShrink:0 }}>Motion</span>
-            <span style={{ fontSize:"0.82rem", fontWeight:800, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{debate.topic}</span>
+            <span style={{ fontSize:"0.82rem", fontWeight:800, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace: isMobile ? "normal" : "nowrap" }}>{debate.topic}</span>
           </div>
 
           {/* ── JUDGING ── */}
@@ -241,41 +243,44 @@ export function ResultPage() {
             <>
               {/* ── HERO BANNER ── */}
               <div className={`glass fade-up ${myWon ? "mvp-glow" : ""}`} style={{
-                marginBottom:"0.5rem", padding:"0.625rem 1.25rem",
+                marginBottom:"0.5rem", padding:"0.625rem 1rem",
                 background: myWon ? "rgba(16,185,129,0.08)" : "rgba(249,247,255,0.88)",
                 border:`1px solid ${myWon ? "rgba(16,185,129,0.45)" : "var(--border2)"}`,
-                display:"flex", alignItems:"center", gap:"1.5rem",
+                display:"flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? "0.625rem" : "1.5rem",
               }}>
-                {/* Winning side */}
-                <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", flexShrink:0 }}>
-                  <span style={{ fontSize:"1.35rem", fontWeight:900, letterSpacing:"-0.02em", color: result.winnerSide==="for" ? "var(--for)" : "var(--against)" }}>
+                {/* Top row: winning side + outcome + score */}
+                <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", width:"100%", flexWrap:"wrap" }}>
+                  {/* Winning side */}
+                  <span style={{ fontSize: isMobile ? "1.1rem" : "1.35rem", fontWeight:900, letterSpacing:"-0.02em", color: result.winnerSide==="for" ? "var(--for)" : "var(--against)" }}>
                     {result.winnerSide==="for" ? "FOR" : "AGAINST"} WINS
                   </span>
-                  <div style={{ width:1, height:28, background:"var(--border)" }} />
                   {/* Winner name(s) */}
-                  <div style={{ display:"flex", gap:"0.4rem", flexWrap:"wrap" }}>
+                  <div style={{ display:"flex", gap:"0.4rem", flexWrap:"wrap", flex:1 }}>
                     {rankedAll.filter(s => s.side===result.winnerSide).map(s => (
-                      <span key={s.userId} style={{ fontSize:"0.85rem", fontWeight:800, color:"var(--text)" }}>
+                      <span key={s.userId} style={{ fontSize:"0.82rem", fontWeight:800, color:"var(--text)" }}>
                         {s.username}{s.userId===user?.id ? " 🔥" : ""}
                       </span>
                     ))}
                   </div>
-                </div>
-
-                {/* Divider */}
-                <div style={{ flex:1 }} />
-
-                {/* Outcome badge */}
-                <div style={{ textAlign:"center", flexShrink:0 }}>
-                  <div style={{ fontSize:"1.05rem", fontWeight:900, color:outcome?.color, letterSpacing:"-0.01em" }}>{outcome?.label}</div>
-                  <div style={{ fontSize:"0.6rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em" }}>{outcome?.badge}</div>
+                  {/* Outcome badge */}
+                  <div style={{ textAlign:"right", flexShrink:0 }}>
+                    <div style={{ fontSize: isMobile ? "0.9rem" : "1.05rem", fontWeight:900, color:outcome?.color, letterSpacing:"-0.01em" }}>{outcome?.label}</div>
+                    <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em" }}>{outcome?.badge}</div>
+                  </div>
+                  {/* My score */}
+                  <div style={{ textAlign:"center", flexShrink:0 }}>
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize: isMobile ? "1.6rem" : "2.2rem", fontWeight:900, lineHeight:1, background:scoreGradient(myScore.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>
+                      {myScore.total}
+                    </span>
+                    <div style={{ fontSize:"0.58rem", color:"var(--muted)", fontWeight:600 }}>/ 100</div>
+                  </div>
                 </div>
 
                 {/* XP Gained + Level progress */}
-                <div style={{ display:"flex", alignItems:"center", gap:"1rem", flexShrink:0, minWidth:180 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"0.875rem", flexShrink:0 }}>
                   {/* +XP badge */}
                   <div style={{ textAlign:"center", position:"relative", flexShrink:0 }}>
-                    <div style={{ fontSize:"1.15rem", fontWeight:900, background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", lineHeight:1 }}>
+                    <div style={{ fontSize:"1.1rem", fontWeight:900, background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", lineHeight:1 }}>
                       +{xpGained}
                     </div>
                     <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.1em" }}>XP</div>
@@ -287,8 +292,8 @@ export function ResultPage() {
                   </div>
 
                   {/* Level badge + progress bar */}
-                  <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth:120 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
+                  <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth: isMobile ? 100 : 120 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", flexWrap:"wrap" }}>
                       <span style={{
                         fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", fontWeight:900,
                         padding:"0.1rem 0.4rem", borderRadius:"0.3rem",
@@ -299,16 +304,15 @@ export function ResultPage() {
                         Lv.{levelInfo.current.level}
                       </span>
                       <span style={{ fontSize:"0.72rem", fontWeight:700, color:"var(--text)" }}>{levelInfo.current.title}</span>
-                      {leveledUp && <span style={{ fontSize:"0.62rem", fontWeight:900, color:"var(--for)", animation:"xpFloat 1s ease-out forwards" }}>▲ LEVEL UP!</span>}
+                      {leveledUp && <span style={{ fontSize:"0.62rem", fontWeight:900, color:"var(--for)", animation:"xpFloat 1s ease-out forwards" }}>▲ UP!</span>}
                     </div>
-                    {/* Progress bar to next level */}
                     {levelInfo.next && (
                       <div>
                         <div className="score-bar-track" style={{ height:5 }}>
                           <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${levelInfo.progressPct}%`, transition:"width 1.5s cubic-bezier(.4,0,.2,1)" }} />
                         </div>
                         <div style={{ fontSize:"0.56rem", color:"var(--muted)", marginTop:"0.15rem" }}>
-                          {levelInfo.progressXP}/{levelInfo.neededXP} → Lv.{levelInfo.next.level} {levelInfo.next.title}
+                          {levelInfo.progressXP}/{levelInfo.neededXP} XP
                         </div>
                       </div>
                     )}
@@ -317,21 +321,13 @@ export function ResultPage() {
                     )}
                   </div>
                 </div>
-
-                {/* My score */}
-                <div style={{ textAlign:"center", flexShrink:0 }}>
-                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"2.2rem", fontWeight:900, lineHeight:1, background:scoreGradient(myScore.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>
-                    {myScore.total}
-                  </span>
-                  <div style={{ fontSize:"0.58rem", color:"var(--muted)", fontWeight:600 }}>/ 100</div>
-                </div>
               </div>
 
               {/* ── 3-COLUMN GRID ── */}
-              <div style={{ flex:1, overflow:"hidden", display:"grid", gridTemplateColumns:"1fr 1.1fr 0.85fr", gap:"0.5rem", minWidth:0 }}>
+              <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.1fr 0.85fr", gap:"0.5rem", paddingBottom:"0.5rem" }}>
 
                 {/* ══ COL A: BARS + KEY MOMENTS ══ */}
-                <div style={{ overflow:"hidden", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
 
                   {/* Score bars */}
                   <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:"none" }}>
@@ -345,7 +341,7 @@ export function ResultPage() {
 
                   {/* Key Moments */}
                   {(bestMove || missed) && (
-                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:1 }}>
+                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
                       <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.625rem" }}>
                         Key Moments
                       </div>
@@ -366,11 +362,11 @@ export function ResultPage() {
                 </div>
 
                 {/* ══ COL B: STRONG/WEAK + WHY WON ══ */}
-                <div style={{ overflow:"hidden", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
 
                   {/* Strong / Weak side-by-side */}
-                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:strengths.length+improvements.length > 0 ? 1 : "none", overflow:"hidden", display:"flex", flexDirection:"column" }}>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem", flex:1 }}>
+                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem" }}>
                       {/* Strong */}
                       <div>
                         <div style={{ fontSize:"0.62rem", fontWeight:700, color:"var(--for)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"0.5rem" }}>✅ Strong</div>
@@ -408,7 +404,7 @@ export function ResultPage() {
 
                   {/* Why won — game hints */}
                   {result.winningPoints.length > 0 && (
-                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:1, overflow:"hidden" }}>
+                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
                       <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.55rem" }}>
                         🔥 Why {result.winnerSide==="for" ? "FOR" : "AGAINST"} Won
                       </div>
@@ -425,14 +421,14 @@ export function ResultPage() {
                 </div>
 
                 {/* ══ COL C: LEADERBOARD + TRANSCRIPT + CTA ══ */}
-                <div style={{ overflow:"hidden", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
 
                   {/* Leaderboard */}
-                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:1, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
                     <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.625rem" }}>
                       Standings
                     </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:"0.35rem", overflowY:"auto", flex:1 }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:"0.35rem" }}>
                       {rankedAll.map((s, idx) => {
                         const isMe = s.userId === user?.id;
                         const won  = s.side === result.winnerSide;

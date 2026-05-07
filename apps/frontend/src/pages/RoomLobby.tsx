@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
 import { VotingPanel } from "../components/VotingPanel";
 import type { Room } from "@argumint/shared";
@@ -11,6 +12,7 @@ import type { Room } from "@argumint/shared";
 export function RoomLobby() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { user } = useAuth();
   const { room: contextRoom, setRoom, setError } = useRoom();
   const { socket, isConnected } = useSocket();
@@ -42,11 +44,21 @@ export function RoomLobby() {
   }, [contextRoom, code]);
 
   useEffect(() => {
-    if (!socket || !isConnected || !room || !code) return;
+    if (!socket || !isConnected || !code) return;
+    // NOTE: `room` is intentionally excluded from deps. Every time a participant
+    // joins/leaves, the server broadcasts an update which sets room state — if
+    // `room` were a dep, the effect would re-fire and re-emit room:join for every
+    // state change. Multiple concurrent room:join events race the server's
+    // deduplication check and push duplicate participant entries.
     socket.emit("room:join", { roomCode: code }, (response: any) => {
-      if (!response.success) setError(response.error || "Failed to join room");
+      if (response?.success && response.room) {
+        setLocalRoom(response.room);
+      } else if (!response?.success) {
+        setError(response?.error || "Failed to join room");
+      }
     });
-  }, [socket, isConnected, code, room]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, isConnected, code]);
 
   useEffect(() => {
     if (!socket) return;
@@ -118,7 +130,7 @@ export function RoomLobby() {
     socket.emit("room:update-status", { roomId: room._id, status: "joined" });
   };
   const handleStartDebate = () => {
-    if (!room || !socket || !isHost || !allReady || room.participants.length < 2) return;
+    if (!room || !socket || !isHost || !allReady || participants.length < 2) return;
     socket.emit("room:start-debate", { roomId: room._id }, (response: any) => {
       if (!response?.success) setError(response?.error || "Failed to start debate");
     });
@@ -157,57 +169,68 @@ export function RoomLobby() {
     );
   }
 
+  // Deduplicate participants by userId — safety net against stale DB duplicates.
+  // Keep the last occurrence so that the most recently updated entry wins.
+  const participants = Array.from(
+    room.participants.reduce((map, p) => {
+      map.set(p.userId, p);
+      return map;
+    }, new Map<string, typeof room.participants[number]>()).values()
+  );
+
   const isCreator = room.creatorId === user?.id;
-  const currentUser = room.participants.find((p) => p.userId === user?.id);
+  const currentUser = participants.find((p) => p.userId === user?.id);
   const isHost = isCreator || currentUser?.role === "moderator";
   const userReady = currentUser?.status === "ready";
-  const allReady = room.participants.every((p) => p.status === "ready");
-  const readyCount = room.participants.filter((p) => p.status === "ready").length;
+  const allReady = participants.every((p) => p.status === "ready");
+  const readyCount = participants.filter((p) => p.status === "ready").length;
 
   return (
-    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+    <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflowX: "hidden" }}>
       <nav className="game-nav">
         <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
             <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
           </div>
-          <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
+          {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
         </div>
       </nav>
 
-      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "0.875rem 1rem 0" }}>
-        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", gap: "0.875rem" }}>
+      <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
+        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, gap: "0.875rem" }}>
 
         {/* Room code hero */}
-        <div className="glass fade-up" style={{ flexShrink: 0, padding: "0.875rem 1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.3rem" }}>Room Code</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "2.2rem", fontWeight: 800, letterSpacing: "0.18em", color: "var(--cyan)", textShadow: "0 0 20px rgba(34,211,238,0.4)" }}>{room.code}</div>
-          </div>
-          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={handleCopy} className="btn-ghost" style={{ fontSize: "0.85rem", padding: "0.5rem 1.1rem" }}>
-              {copied ? "✓ Copied!" : "Copy Code"}
-            </button>
-            <div style={{ display: "flex", gap: "1.25rem" }}>
-              {[
-                { label: "Ready", value: `${readyCount}/${room.participants.length}` },
-                { label: "Mode", value: room.debateMode },
-                { label: "Turn", value: `${room.turnDuration}s` },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
-                  <div style={{ fontWeight: 800, color: "var(--text)", fontSize: "0.95rem", marginTop: "0.15rem", textTransform: "capitalize" }}>{value}</div>
-                </div>
-              ))}
+        <div className="glass fade-up" style={{ flexShrink: 0, padding: isMobile ? "0.75rem 1rem" : "0.875rem 1.5rem" }}>
+          {/* Code + copy row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.625rem" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.15rem" }}>Room Code</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: isMobile ? "1.6rem" : "2.2rem", fontWeight: 800, letterSpacing: isMobile ? "0.12em" : "0.18em", color: "var(--cyan)" }}>{room.code}</div>
             </div>
+            <button onClick={handleCopy} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.45rem 0.9rem", flexShrink: 0 }}>
+              {copied ? "✓ Copied!" : "Copy"}
+            </button>
+          </div>
+          {/* Stats row */}
+          <div style={{ display: "flex", gap: isMobile ? "1rem" : "1.5rem" }}>
+            {[
+              { label: "Ready", value: `${readyCount}/${participants.length}` },
+              { label: "Mode", value: room.debateMode },
+              { label: "Turn", value: `${room.turnDuration}s` },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
+                <div style={{ fontWeight: 800, color: "var(--text)", fontSize: "0.88rem", textTransform: "capitalize" }}>{value}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "0.875rem", flex: 1, overflow: "hidden", minHeight: 0, paddingBottom: "0.875rem" }}>
-          {/* Left column — scrollable */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", overflowY: "auto", paddingRight: "0.25rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: "0.875rem", paddingBottom: "0.875rem" }}>
+          {/* Left column */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
 
             {/* Topic */}
             <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
@@ -237,25 +260,25 @@ export function RoomLobby() {
             <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
                 <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>
-                  Players — {room.participants.length}/{room.maxParticipants}
+                  Players — {participants.length}/{room.maxParticipants}
                 </span>
                 <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {room.participants.map((p) => {
+                {participants.map((p) => {
                   const isYou = p.userId === user?.id;
                   const ready = p.status === "ready";
                   const offline = p.status === "disconnected";
                   const host = p.role === "moderator" || room.creatorId === p.userId;
                   return (
                     <div key={p.userId}
-                      className={ready ? "active-speaker-for" : ""}
                       style={{
                         display: "flex", alignItems: "center", gap: "0.875rem",
                         padding: "0.75rem 1rem", borderRadius: "0.625rem",
                         background: isYou ? "rgba(224,242,254,0.6)" : "rgba(249,247,255,0.4)",
-                        border: `1px solid ${ready ? "rgba(16,185,129,0.35)" : isYou ? "rgba(34,211,238,0.2)" : "var(--border)"}`,
+                        border: `1px solid ${ready ? "rgba(16,185,129,0.5)" : isYou ? "rgba(34,211,238,0.2)" : "var(--border)"}`,
+                        boxShadow: ready ? "0 2px 8px rgba(16,185,129,0.12)" : "none",
                         opacity: offline ? 0.45 : 1,
                         transition: "all 0.2s",
                       }}>
@@ -289,7 +312,7 @@ export function RoomLobby() {
                   );
                 })}
 
-                {room.participants.length === 0 && (
+                {participants.length === 0 && (
                   <p style={{ color: "var(--muted)", textAlign: "center", fontSize: "0.875rem", padding: "1rem" }}>
                     No players yet — share the code!
                   </p>
@@ -298,8 +321,8 @@ export function RoomLobby() {
             </div>
           </div>
 
-          {/* Right sidebar — scrollable */}
-          <div style={{ overflowY: "auto" }}>
+          {/* Right sidebar */}
+          <div>
             <div className="glass fade-up" style={{ padding: "1.25rem" }}>
               <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "1.25rem" }}>
                 {isHost ? "Host Controls" : "Your Status"}
@@ -319,7 +342,7 @@ export function RoomLobby() {
                   )}
                   <div style={{ padding: "0.75rem 1rem", background: "rgba(224,242,254,0.55)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "0.625rem" }}>
                     <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
-                      {allReady && room.participants.length >= 2
+                      {allReady && participants.length >= 2
                         ? "All ready — waiting for host…"
                         : "Ready up to start the debate"}
                     </p>
@@ -332,17 +355,17 @@ export function RoomLobby() {
                 <div style={{ marginBottom: "1rem" }}>
                   <button
                     onClick={handleStartDebate}
-                    disabled={!allReady || room.participants.length < 2}
+                    disabled={!allReady || participants.length < 2}
                     className="btn-primary"
                     style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800, marginBottom: "0.75rem" }}>
                     {!isConnected ? "Connecting…" : "Start Debate →"}
                   </button>
-                  {(!allReady || room.participants.length < 2) && (
+                  {(!allReady || participants.length < 2) && (
                     <div style={{ padding: "0.75rem 1rem", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "0.625rem" }}>
                       <p style={{ color: "var(--gold)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
-                        {room.participants.length < 2
+                        {participants.length < 2
                           ? "Need at least 2 players"
-                          : `${room.participants.length - readyCount} player(s) not ready`}
+                          : `${participants.length - readyCount} player(s) not ready`}
                       </p>
                     </div>
                   )}
@@ -353,11 +376,11 @@ export function RoomLobby() {
               <div style={{ marginBottom: "1.25rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
                   <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Ready</span>
-                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text)" }}>{readyCount}/{room.participants.length}</span>
+                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text)" }}>{readyCount}/{participants.length}</span>
                 </div>
                 <div className="score-bar-track">
                   <div className="score-bar-fill score-bar-fill-for"
-                    style={{ width: room.participants.length ? `${(readyCount / room.participants.length) * 100}%` : "0%" }} />
+                    style={{ width: participants.length ? `${(readyCount / participants.length) * 100}%` : "0%" }} />
                 </div>
               </div>
 

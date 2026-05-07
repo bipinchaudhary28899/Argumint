@@ -1,16 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-/**
- * Browser SpeechRecognition wrapper.
- *
- * We use this as the primary transcription path during a debate turn;
- * Whisper is only called as a fallback. Costs nothing per use — runs
- * locally on the speaker's device.
- *
- * Browser support: webkitSpeechRecognition is in Chrome/Edge/Safari.
- * Firefox doesn't ship it. `supported === false` callers should fall
- * back to the server-side transcription endpoint.
- */
 type SRConstructor = new () => SRInstance;
 
 interface SRInstance {
@@ -28,30 +17,21 @@ interface SRInstance {
 
 function getCtor(): SRConstructor | null {
   if (typeof window === "undefined") return null;
-  // @ts-expect-error - vendor prefixed APIs aren't in lib.dom
+  // @ts-expect-error - vendor prefixed
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
 export interface UseSpeechRecognitionResult {
   supported: boolean;
   isListening: boolean;
-  /** Final committed transcript across this listening session. */
   transcript: string;
-  /** Last interim (in-flight) chunk, useful for live captioning UI. */
   interim: string;
   error: string | null;
-  /** Begin recognition. Resets transcript/interim. */
   start: (lang?: string) => void;
-  /** Stop and resolve to whatever final transcript we have so far. */
   stop: () => string;
-  /** Hard-reset state without starting again. */
   reset: () => void;
 }
 
-/**
- * Important: SR's "no-speech" error fires after ~5s of silence. We treat
- * it as recoverable — auto-restart while the caller still wants to listen.
- */
 export function useSpeechRecognition(): UseSpeechRecognitionResult {
   const [supported] = useState(() => !!getCtor());
   const [isListening, setIsListening] = useState(false);
@@ -59,84 +39,99 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const recRef = useRef<SRInstance | null>(null);
-  const wantListeningRef = useRef(false);
-  const transcriptRef = useRef("");
+  const recRef            = useRef<SRInstance | null>(null);
+  const wantListeningRef  = useRef(false);
+  const transcriptRef     = useRef("");
+  const lastInterimRef    = useRef("");   // tracks last interim so we can rescue it on restart
+  const langRef           = useRef("en-US");
+  const restartTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const buildRecognizer = (lang: string) => {
+  // ── Build a fresh recogniser instance ─────────────────────────────────────
+  const buildRecognizer = (lang: string): SRInstance | null => {
     const Ctor = getCtor();
     if (!Ctor) return null;
     const rec = new Ctor();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = lang;
+    rec.continuous      = true;
+    rec.interimResults  = true;
+    rec.lang            = lang;
 
     rec.onresult = (ev: any) => {
-      let finalChunk = "";
+      let finalChunk   = "";
       let interimChunk = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const r = ev.results[i];
+        const r   = ev.results[i];
         const alt = r[0]?.transcript ?? "";
-        if (r.isFinal) finalChunk += alt;
-        else interimChunk += alt;
+        if (r.isFinal) finalChunk   += alt;
+        else           interimChunk += alt;
       }
       if (finalChunk) {
-        const sep = transcriptRef.current && !transcriptRef.current.endsWith(" ")
-          ? " "
-          : "";
+        const sep = transcriptRef.current && !transcriptRef.current.endsWith(" ") ? " " : "";
         transcriptRef.current = transcriptRef.current + sep + finalChunk;
         setTranscript(transcriptRef.current.trim());
+        lastInterimRef.current = "";          // final received — clear rescue buffer
       }
+      lastInterimRef.current = interimChunk; // keep latest interim for rescue on restart
       setInterim(interimChunk.trim());
     };
 
     rec.onerror = (ev: any) => {
-      // "no-speech", "aborted", "audio-capture" are common transient issues.
-      // We surface them but don't treat them as fatal unless the caller
-      // explicitly stops.
       const code = ev?.error || "unknown";
-      if (code === "no-speech") {
-        // recoverable — onend will fire and we'll auto-restart below
-        return;
-      }
-      if (code === "aborted") return;
+      if (code === "no-speech" || code === "aborted") return; // recoverable
       setError(code);
     };
 
     rec.onend = () => {
-      // SR auto-stops after long pauses or browser-imposed timers; if the
-      // caller still wants us listening, restart silently.
-      if (wantListeningRef.current) {
+      // ── Rescue any in-flight interim that never got finalised ─────────────
+      // When the session ends mid-word the browser drops the interim text.
+      // Appending it ourselves keeps the captions complete.
+      if (lastInterimRef.current.trim()) {
+        const rescued = lastInterimRef.current.trim();
+        const sep = transcriptRef.current && !transcriptRef.current.endsWith(" ") ? " " : "";
+        transcriptRef.current = transcriptRef.current + sep + rescued;
+        setTranscript(transcriptRef.current.trim());
+        lastInterimRef.current = "";
+        setInterim("");
+      }
+
+      if (!wantListeningRef.current) {
+        setIsListening(false);
+        return;
+      }
+
+      // ── Restart with a fresh instance after a short delay ─────────────────
+      // Reusing the same object after onend is unreliable on mobile Chrome/Safari.
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = setTimeout(() => {
+        if (!wantListeningRef.current) { setIsListening(false); return; }
         try {
-          rec.start();
+          const fresh = buildRecognizer(langRef.current);
+          if (!fresh) { setIsListening(false); return; }
+          recRef.current = fresh;
+          fresh.start();
+          // isListening stays true — no flicker needed
         } catch {
-          // Some browsers throw if we restart too fast — give up gracefully.
           setIsListening(false);
         }
-      } else {
-        setIsListening(false);
-      }
+      }, 80); // 80 ms gap is enough for the browser to release the mic lock
     };
 
     return rec;
   };
 
+  // ── Public API ─────────────────────────────────────────────────────────────
+
   const start = (lang = "en-US") => {
-    if (!supported) {
-      setError("not-supported");
-      return;
-    }
-    setError(null);
+    if (!supported) { setError("not-supported"); return; }
+    langRef.current        = lang;
+    wantListeningRef.current = true;
+    lastInterimRef.current = "";
+    transcriptRef.current  = "";
     setTranscript("");
     setInterim("");
-    transcriptRef.current = "";
-    wantListeningRef.current = true;
+    setError(null);
 
     const rec = buildRecognizer(lang);
-    if (!rec) {
-      setError("not-supported");
-      return;
-    }
+    if (!rec) { setError("not-supported"); return; }
     recRef.current = rec;
     try {
       rec.start();
@@ -149,61 +144,46 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
 
   const stop = (): string => {
     wantListeningRef.current = false;
-    const rec = recRef.current;
-    if (rec) {
-      try {
-        rec.stop();
-      } catch {
-        /* ignore */
-      }
+    if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
+
+    // Rescue any remaining interim before we stop
+    if (lastInterimRef.current.trim()) {
+      const rescued = lastInterimRef.current.trim();
+      const sep = transcriptRef.current && !transcriptRef.current.endsWith(" ") ? " " : "";
+      transcriptRef.current = transcriptRef.current + sep + rescued;
+      setTranscript(transcriptRef.current.trim());
+      lastInterimRef.current = "";
+      setInterim("");
     }
+
+    const rec = recRef.current;
+    if (rec) { try { rec.stop(); } catch { /* ignore */ } }
     setIsListening(false);
-    // Return the latest committed transcript synchronously — onresult may
-    // still deliver one more chunk but the caller usually wants whatever
-    // is final right now.
     return transcriptRef.current.trim();
   };
 
   const reset = () => {
     wantListeningRef.current = false;
+    lastInterimRef.current   = "";
+    transcriptRef.current    = "";
+    if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
     setTranscript("");
     setInterim("");
     setError(null);
-    transcriptRef.current = "";
     const rec = recRef.current;
-    if (rec) {
-      try {
-        rec.abort?.();
-      } catch {
-        /* ignore */
-      }
-    }
+    if (rec) { try { rec.abort?.(); } catch { /* ignore */ } }
     setIsListening(false);
   };
 
-  // Cleanup on unmount.
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       wantListeningRef.current = false;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       const rec = recRef.current;
-      if (rec) {
-        try {
-          rec.abort?.();
-        } catch {
-          /* ignore */
-        }
-      }
+      if (rec) { try { rec.abort?.(); } catch { /* ignore */ } }
     };
   }, []);
 
-  return {
-    supported,
-    isListening,
-    transcript,
-    interim,
-    error,
-    start,
-    stop,
-    reset,
-  };
+  return { supported, isListening, transcript, interim, error, start, stop, reset };
 }

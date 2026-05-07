@@ -65,17 +65,21 @@ export function createDebateRoutes(redisClient: Redis | null) {
           return res.status(404).json({ error: "Debate not found" });
         }
 
-        // Speaker auth: who is allowed to submit audio depends on mode.
-        if (debate.mode === "buzzer") {
-          // In buzzer mode the current mic holder may transcribe.
-          if (!debate.buzzerState || debate.buzzerState.currentHolder !== req.userId) {
-            return res.status(403).json({ error: "You are not the current mic holder" });
-          }
-        } else {
-          // In alternate mode, only the speaker whose turn it is may transcribe.
-          if (!debate.currentTurn || debate.currentTurn.speakerId !== req.userId) {
-            return res.status(403).json({ error: "It is not your turn" });
-          }
+        // Speaker auth: verify user is a participant in this debate.
+        //
+        // We intentionally do NOT check "is it currently your turn" here.
+        // The client calls this endpoint after stopRecording() resolves
+        // (~200 ms of async work), by which time the server timer may have
+        // already advanced currentTurn / cleared buzzerState.currentHolder —
+        // producing a false-403 that silently discards the transcript.
+        //
+        // The actual submission auth (ensuring the argument is attributed to
+        // the right speaker) happens inside the socket handlers
+        // debate:submit-argument and buzzer:release, which both enforce turn
+        // ownership before persisting anything.
+        const isParticipant = debate.turnOrder.some((t: any) => t.userId === req.userId);
+        if (!isParticipant) {
+          return res.status(403).json({ error: "You are not a participant in this debate" });
         }
 
         // Budget gate: refuse if we've already burned through the cap.

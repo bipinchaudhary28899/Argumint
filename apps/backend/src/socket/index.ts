@@ -279,10 +279,25 @@ export function initializeSocketIO(
         // pushing a duplicate entry, and is a no-op upgrade if already active.
         room = await RoomService.joinRoom(roomCode, userId, username);
 
+        // Auto-ready the host/creator: their status should always be "ready"
+        // because they're the one starting the debate. This handles the case
+        // where the host reconnects (from DebatePage back to RoomLobby) and
+        // their slot was revived to "joined" instead of "ready".
+        const mySlot = room.participants.find((p: any) => p.userId === userId);
+        if (
+          mySlot &&
+          mySlot.status === "joined" &&
+          (room.creatorId === userId || mySlot.role === "moderator")
+        ) {
+          room = await RoomService.updateParticipantStatus(
+            room._id.toString(),
+            userId,
+            "ready",
+          );
+        }
+
         // Join socket.io room FIRST with room ID
         socket.join(`room:${room._id}`);
-        // ADD THIS - check who is actually in the channel
-        const socketsInRoom = await io.in(`room:${room._id}`).fetchSockets();
         // Store room context on socket
         socket.data.roomId = room._id.toString();
         socket.data.roomCode = roomCode;

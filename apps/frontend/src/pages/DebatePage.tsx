@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
 import { useWebRTCMesh } from "../hooks/useWebRTCMesh";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { debateApi } from "../services/api";
 import type { Debate, Round, BuzzerState } from "@argumint/shared";
 
@@ -15,6 +16,7 @@ export function DebatePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { socket, isConnected } = useSocket();
+  const isMobile = useIsMobile();
 
   const [debate, setDebate] = useState<Debate | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,12 @@ export function DebatePage() {
   // ────────────────────────────────────────────────────────────────────────
 
   const sr = useSpeechRecognition();
+  // Ref to keep the captions box scrolled to the bottom as text grows
+  const captionsEndRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    captionsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [sr.transcript, sr.interim]);
+
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
   const debateId = typeof window !== "undefined" ? sessionStorage.getItem("activeDebateId") : null;
@@ -270,20 +278,25 @@ export function DebatePage() {
   const handleSubmit = async () => {
     if (!isMyTurn || !debateId || isUploading || submittedRef.current) return;
     submittedRef.current = true;
+    // Capture SR transcript synchronously BEFORE any await — the isActiveSpeaker
+    // effect may fire sr.reset() during the async stopRecording() call, wiping
+    // the transcript ref and making sr.stop() return "" later.
+    const srFallback = sr.stop();
     setIsUploading(true);
     try {
       const { blob, durationSec } = await stopRecording();
-      sr.stop();
       if (durationSec < MIN_SUBMIT_DURATION_SEC) {
-        socket?.emit("debate:submit-argument", { debateId, argument: "" }, () => {});
+        socket?.emit("debate:submit-argument", { debateId, argument: srFallback }, () => {});
         return;
       }
-      let text = "";
+      let text = srFallback; // start with SR transcript as baseline
       if (blob && blob.size > 0) {
         try {
-          text = await debateApi.transcribe(debateId, blob);
+          const whisperText = await debateApi.transcribe(debateId, blob);
+          // Prefer Whisper if it returned something; otherwise keep SR text.
+          if (whisperText && whisperText.trim().length > 0) text = whisperText;
         } catch {
-          text = "";
+          // Whisper failed (e.g. turn already advanced on server) — SR fallback is already set.
         }
       }
       socket?.emit("debate:submit-argument", { debateId, argument: text }, (res: any) => {
@@ -300,16 +313,20 @@ export function DebatePage() {
   const handleBuzzerRelease = async () => {
     if (!debateId || isUploading || submittedRef.current) return;
     submittedRef.current = true;
+    // Capture SR transcript synchronously BEFORE any await — same race as in
+    // handleSubmit: the isActiveSpeaker effect may call sr.reset() during the
+    // await, wiping the transcript before we can use it as a fallback.
+    const srFallback = sr.stop();
     setIsUploading(true);
     try {
       const { blob, durationSec } = await stopRecording();
-      sr.stop();
-      let text = "";
+      let text = durationSec >= MIN_SUBMIT_DURATION_SEC ? srFallback : "";
       if (durationSec >= MIN_SUBMIT_DURATION_SEC && blob && blob.size > 0) {
         try {
-          text = await debateApi.transcribe(debateId, blob);
+          const whisperText = await debateApi.transcribe(debateId, blob);
+          if (whisperText && whisperText.trim().length > 0) text = whisperText;
         } catch {
-          text = "";
+          // Whisper failed — SR fallback already set above.
         }
       }
       socket?.emit("buzzer:release", { debateId, argument: text }, (res: any) => {
@@ -415,7 +432,7 @@ export function DebatePage() {
   const finished = debate.status === "ended";
 
   return (
-    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+    <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
 
       {/* Prep warning flash (buzzer mode) */}
       {buzzerWarning && (
@@ -439,50 +456,52 @@ export function DebatePage() {
 
       <nav className="game-nav">
         <span className="nav-logo">ARGUMINT</span>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
           {!isBuzzer && turn && !finished && (
             <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem" }}>
               R{turn.roundNumber}/{debate.totalRounds}
             </div>
           )}
-          {isBuzzer && !finished && (
+          {isBuzzer && !finished && !isMobile && (
             <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem" }}>
               {debate.rounds.length} turn{debate.rounds.length !== 1 ? "s" : ""} · Buzzer
             </div>
           )}
           {mySide && (
             <span className={`badge ${mySide === "for" ? "badge-for" : "badge-against"}`}>
-              {mySide === "for" ? "FOR" : "AGAINST"}
+              {mySide === "for" ? "FOR" : "AGN"}
             </span>
           )}
           {isBuzzer && isHost && !finished && (
-            <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.35rem 0.85rem", fontSize: "0.78rem" }}>
-              ⏹ End Debate
+            <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.35rem 0.75rem", fontSize: "0.75rem" }}>
+              ⏹ {isMobile ? "End" : "End Debate"}
             </button>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-            <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
+            {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>}
           </div>
         </div>
       </nav>
 
-      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "0.875rem 1rem 0" }}>
-        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", gap: "0.875rem" }}>
+      <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
+        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, gap: "0.875rem" }}>
 
           {/* Motion strip */}
-          <div className="glass fade-up" style={{ flexShrink: 0, padding: "0.625rem 1.25rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", flexShrink: 0 }}>Motion</div>
-            <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.95rem", flex: 1, minWidth: 200 }}>{debate.topic}</div>
-            <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+          <div className="glass fade-up" style={{ flexShrink: 0, padding: "0.625rem 1rem", display: "flex", alignItems: isMobile ? "flex-start" : "center", flexDirection: isMobile ? "column" : "row", gap: "0.5rem", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", width: "100%" }}>
+              <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", flexShrink: 0 }}>Motion</div>
+              <div style={{ fontWeight: 700, color: "var(--text)", fontSize: isMobile ? "0.85rem" : "0.95rem", flex: 1 }}>{debate.topic}</div>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
               <span className="badge badge-muted" style={{ fontSize: "0.7rem", textTransform: "capitalize" }}>Mode: {debate.mode}</span>
               <span className="badge badge-muted" style={{ fontSize: "0.7rem" }}>Slot: {debate.turnDuration}s</span>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "0.875rem", flex: 1, overflow: "hidden", minHeight: 0, paddingBottom: "0.875rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 280px", gap: "0.875rem", paddingBottom: "0.875rem" }}>
             {/* Main arena */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
 
               {/* ── BUZZER MODE ARENA ── */}
               {isBuzzer && !finished && (
@@ -631,13 +650,23 @@ export function DebatePage() {
                     )}
 
                     {/* Live captions (when holder) */}
-                    {isHolder && (sr.transcript || sr.interim) && (
+                    {isHolder && (
                       <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", borderRadius: "0.625rem", background: "rgba(224,242,254,0.75)", border: "1px solid rgba(14,165,233,0.25)" }}>
-                        <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.3rem" }}>Live captions</div>
-                        <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.5, margin: 0 }}>
-                          <span>{sr.transcript}</span>
-                          {sr.interim && <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{sr.transcript ? " " : ""}{sr.interim}</span>}
-                        </p>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                          <div className="pulse-dot pulse-dot-cyan" />
+                          <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>Live captions</span>
+                        </div>
+                        <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
+                          <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                            {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
+                            {sr.interim && (
+                              <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                                {sr.transcript ? " " : ""}{sr.interim}
+                              </span>
+                            )}
+                          </p>
+                          <div ref={captionsEndRef} />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -717,13 +746,23 @@ export function DebatePage() {
                   </div>
 
                   {/* Live captions */}
-                  {isMyTurn && (sr.transcript || sr.interim) && (
+                  {isMyTurn && (
                     <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", borderRadius: "0.625rem", background: "rgba(224,242,254,0.75)", border: "1px solid rgba(14,165,233,0.25)" }}>
-                      <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.3rem" }}>Live captions</div>
-                      <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.5, margin: 0 }}>
-                        <span>{sr.transcript}</span>
-                        {sr.interim && <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{sr.transcript ? " " : ""}{sr.interim}</span>}
-                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                        <div className="pulse-dot pulse-dot-cyan" />
+                        <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>Live captions</span>
+                      </div>
+                      <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
+                        <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                          {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
+                          {sr.interim && (
+                            <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                              {sr.transcript ? " " : ""}{sr.interim}
+                            </span>
+                          )}
+                        </p>
+                        <div ref={captionsEndRef} />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -783,7 +822,7 @@ export function DebatePage() {
             </div>
 
             {/* Sidebar */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
 
               {/* Buzzer: participant panel */}
               {isBuzzer ? (

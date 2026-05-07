@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useIsMobile } from "../hooks/useIsMobile";
 import type { Debate, TurnOrderEntry } from "@argumint/shared";
 
 export function PrepScreen() {
@@ -10,6 +11,7 @@ export function PrepScreen() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { socket, isConnected } = useSocket();
+  const isMobile = useIsMobile();
 
   const [debate, setDebate] = useState<Debate | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export function PrepScreen() {
   const sidesAgainst = debate.turnOrder.filter((t: TurnOrderEntry) => t.side === "against");
 
   return (
-    <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+    <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <nav className="game-nav">
         <span className="nav-logo">ARGUMINT</span>
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
@@ -99,21 +101,21 @@ export function PrepScreen() {
             <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
             <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
           </div>
-          <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
+          {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
         </div>
       </nav>
 
-      <main style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", padding: "0.875rem 1rem" }}>
+      <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem" }}>
         <div style={{
-          flex: 1, overflow: "hidden",
           maxWidth: 1060, width: "100%", margin: "0 auto",
           display: "grid",
-          gridTemplateColumns: "340px 1fr",
+          gridTemplateColumns: isMobile ? "1fr" : "340px 1fr",
           gap: "0.875rem",
+          paddingBottom: "0.875rem",
         }}>
 
           {/* ── LEFT COLUMN ─────────────────────────────────────────── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", overflow: "hidden" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
             {/* Countdown + motion */}
             <div className="glass fade-up" style={{ padding: "1.25rem 1.5rem", flexShrink: 0 }}>
@@ -192,12 +194,10 @@ export function PrepScreen() {
               </div>
             )}
 
-            {/* Spacer fills remaining left-column height */}
-            <div style={{ flex: 1 }} />
           </div>
 
           {/* ── RIGHT COLUMN ────────────────────────────────────────── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", overflow: "hidden", minHeight: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
 
             {/* Team rosters */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", flexShrink: 0 }}>
@@ -236,7 +236,7 @@ export function PrepScreen() {
 
             {/* Speaking order — alternate mode only */}
             {!isBuzzer && (
-              <div className="glass fade-up" style={{ padding: "0.875rem 1.25rem", flexShrink: 0 }}>
+              <div className="glass fade-up" style={{ padding: "0.875rem 1.25rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
                   <span style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>Speaking Order</span>
                   <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
@@ -267,12 +267,12 @@ export function PrepScreen() {
 
             {/* Buzzer rules — buzzer mode only */}
             {isBuzzer && (
-              <div className="glass fade-up" style={{ padding: "0.875rem 1.25rem", border: "1px solid rgba(79,142,247,0.2)", background: "rgba(79,142,247,0.04)", flex: 1, minHeight: 0, overflow: "hidden" }}>
+              <div className="glass fade-up" style={{ padding: "0.875rem 1.25rem", border: "1px solid rgba(79,142,247,0.2)", background: "rgba(79,142,247,0.04)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
                   <span style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>Buzzer Rules</span>
                   <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "0.5rem" }}>
                   {[
                     { icon: "🎙", rule: `First to tap "Grab Mic" gets the floor` },
                     { icon: "⏱", rule: `Each slot is ${debate.turnDuration}s — release early or auto-submits` },

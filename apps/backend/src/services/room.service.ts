@@ -81,36 +81,59 @@ export class RoomService {
   static async joinRoom(roomCode: string, userId: string, username: string) {
     const code = roomCode.toUpperCase();
 
-    // ── Case 1: user already has a slot — update it atomically ─────────
-    // Only revive status when "disconnected". Preserve "joined"/"ready" so
-    // the host's auto-ready flag isn't cleared on socket reconnect.
-    const revivedRoom = await Room.findOneAndUpdate(
-      { code, "participants.userId": userId, "participants.status": "disconnected" },
-      {
-        $set: {
-          "participants.$.status": "joined",
-          "participants.$.username": username,
-          "participants.$.joinedAt": new Date(),
-        },
-      },
-      { new: true }
-    );
-    if (revivedRoom) return revivedRoom;
-
-    // ── Case 1b: user slot exists but isn't disconnected — just refresh username/joinedAt ──
-    const refreshedRoom = await Room.findOneAndUpdate(
+    // ── Case 1: existing slot in any state — update it atomically ───────
+    // Single findOneAndUpdate handles all sub-cases:
+    //   • disconnected  → revive to "joined"
+    //   • joined/ready  → refresh username+joinedAt, preserve status
+    // Using arrayFilters so we can target the specific subdoc by userId
+    // and compute the new status in one round-trip.
+    const existingRoom = await Room.findOneAndUpdate(
       { code, "participants.userId": userId },
-      {
-        $set: {
-          "participants.$.username": username,
-          "participants.$.joinedAt": new Date(),
+      [
+        {
+          $set: {
+            participants: {
+              $map: {
+                input: "$participants",
+                as: "p",
+                in: {
+                  $cond: {
+                    if: { $eq: ["$$p.userId", userId] },
+                    then: {
+                      $mergeObjects: [
+                        "$$p",
+                        {
+                          username,
+                          joinedAt: new Date(),
+                          // Revive disconnected → joined; preserve joined/ready.
+                          status: {
+                            $cond: {
+                              if: { $eq: ["$$p.status", "disconnected"] },
+                              then: "joined",
+                              else: "$$p.status",
+                            },
+                          },
+                        },
+                      ],
+                    },
+                    else: "$$p",
+                  },
+                },
+              },
+            },
+          },
         },
-      },
+      ],
       { new: true }
     );
-    if (refreshedRoom) return refreshedRoom;
+    if (existingRoom) return existingRoom;
 
-    // ── Case 2: new participant — check capacity then push atomically ───
+    // ── Case 2: new participant — atomic capacity-check + push ──────────
+    // The filter `"participants.userId": { $ne: userId }` ensures we only
+    // push if the user truly doesn't have a slot yet. Two concurrent calls
+    // can't both succeed because the second will no longer satisfy the
+    // filter after the first inserts the subdoc — eliminating the TOCTOU
+    // race that caused duplicate entries.
     const room = await Room.findOne({ code });
     if (!room) throw new Error("Room not found");
 
@@ -122,7 +145,18 @@ export class RoomService {
     }
 
     const newRoom = await Room.findOneAndUpdate(
-      { code },
+      {
+        code,
+        // Only push if this user truly has no slot (prevents concurrent-join dups)
+        "participants.userId": { $ne: userId },
+        // Re-check capacity atomically in the same query filter
+        $expr: {
+          $lt: [
+            { $size: { $filter: { input: "$participants", as: "p", cond: { $ne: ["$$p.status", "disconnected"] } } } },
+            "$maxParticipants",
+          ],
+        },
+      },
       {
         $push: {
           participants: {
@@ -136,7 +170,18 @@ export class RoomService {
       },
       { new: true }
     );
-    if (!newRoom) throw new Error("Room not found");
+
+    // If newRoom is null here it means either the room was just filled by
+    // a concurrent join, OR this user's slot appeared (another concurrent
+    // join for the same user succeeded first). Re-fetch and return.
+    if (!newRoom) {
+      const finalRoom = await Room.findOne({ code });
+      if (!finalRoom) throw new Error("Room not found");
+      // Check if we ended up in the participants list (race winner inserted us)
+      const inRoom = finalRoom.participants.some((p) => p.userId === userId);
+      if (!inRoom) throw new Error("Room is full");
+      return finalRoom;
+    }
     return newRoom;
   }
 
