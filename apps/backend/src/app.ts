@@ -7,6 +7,12 @@ import Redis from "ioredis";
 
 const app = express();
 
+// Trust the first proxy hop (Render's load balancer) so that express-rate-limit
+// reads the real client IP from X-Forwarded-For instead of the proxy IP.
+// Without this every user appears to share the same IP and the rate limit
+// bucket is drained collectively, causing innocent users to get 429.
+app.set("trust proxy", 1);
+
 // Middleware
 app.use(cors({
   origin: (origin, callback) => {
