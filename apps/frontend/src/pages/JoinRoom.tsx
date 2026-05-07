@@ -32,7 +32,10 @@ export function JoinRoom() {
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 500, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
       <nav className="game-nav">
-        <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
+          <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        </div>
         <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
       </nav>
 

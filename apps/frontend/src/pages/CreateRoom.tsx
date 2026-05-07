@@ -78,7 +78,10 @@ export function CreateRoom() {
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <nav className="game-nav">
-        <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
+          <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        </div>
         {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
       </nav>
 

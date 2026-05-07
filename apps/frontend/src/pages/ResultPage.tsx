@@ -198,7 +198,10 @@ export function ResultPage() {
 
         {/* ── NAV ── */}
         <nav className="game-nav">
-          <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+          <div style={{ display:"flex", alignItems:"center", gap:"0.75rem" }}>
+            <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize:"0.82rem", padding:"0.35rem 0.75rem" }}>← Home</button>
+            <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+          </div>
           <div style={{ display:"flex", alignItems:"center", gap:"0.875rem" }}>
             <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
               <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
