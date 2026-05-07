@@ -1,21 +1,25 @@
 import { useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { authApi } from "../services/api";
 import type { LoginInput } from "@argumint/shared";
 
 export function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { login, isLoading } = useAuth();
+  const { login, checkAuth, isLoading } = useAuth();
   const [formData, setFormData] = useState<LoginInput>({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const evicted = searchParams.get("reason") === "evicted";
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [activeSessionConflict, setActiveSessionConflict] = useState(false);
+  const [forceLoading, setForceLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (fieldErrors[name]) setFieldErrors((prev) => ({ ...prev, [name]: "" }));
+    if (activeSessionConflict) setActiveSessionConflict(false);
   };
 
   const validateForm = () => {
@@ -30,12 +34,32 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    setActiveSessionConflict(false);
     if (!validateForm()) return;
     try {
       await login(formData);
       navigate("/");
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.response?.status === 409 && err?.response?.data?.error === "active_session") {
+        setActiveSessionConflict(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
+    }
+  };
+
+  const handleForceLogin = async () => {
+    setForceLoading(true);
+    setError(null);
+    try {
+      await authApi.login({ ...formData, force: true });
+      await checkAuth();
+      navigate("/");
+    } catch (err: any) {
+      setActiveSessionConflict(false);
       setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setForceLoading(false);
     }
   };
 
@@ -54,6 +78,25 @@ export function Login() {
           {evicted && (
             <div style={{ padding: "0.75rem 1rem", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: "0.625rem", color: "var(--gold)", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>
               ⚠ You were signed out because your account logged in on another device.
+            </div>
+          )}
+          {activeSessionConflict && (
+            <div style={{ padding: "0.875rem 1rem", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.4)", borderRadius: "0.625rem", marginBottom: "1.25rem" }}>
+              <p style={{ color: "var(--gold)", fontSize: "0.875rem", fontWeight: 600, margin: "0 0 0.625rem" }}>
+                ⚠ You're already signed in on another device.
+              </p>
+              <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: "0 0 0.75rem" }}>
+                Signing in here will end that other session immediately.
+              </p>
+              <button
+                type="button"
+                onClick={handleForceLogin}
+                disabled={forceLoading}
+                className="btn-primary"
+                style={{ width: "100%", padding: "0.625rem", fontSize: "0.875rem" }}
+              >
+                {forceLoading ? "Signing in…" : "Sign in here →"}
+              </button>
             </div>
           )}
           {error && (

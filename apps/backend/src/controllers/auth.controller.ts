@@ -54,7 +54,7 @@ export class AuthController {
 
   async login(req: Request, res: Response): Promise<void> {
     try {
-      // Validate input
+      // Validate input (ignore the extra `force` field Zod doesn't know about)
       const validationResult = LoginSchema.safeParse(req.body);
       if (!validationResult.success) {
         res.status(400).json({
@@ -64,16 +64,26 @@ export class AuthController {
         return;
       }
 
-      const { user, token } = await this.authService.login(
-        validationResult.data,
-      );
+      const force = req.body.force === true;
 
-      // Evict any existing socket for this user instantly —
-      // fires session:evicted on Device A and disconnects it before
-      // we even respond to Device B.
+      const { user, token } = await this.authService.login(validationResult.data);
+
+      // If there is already an active session for this user AND the caller
+      // did not explicitly ask to force-evict it, return a 409 so the
+      // frontend can prompt "you're already signed in on another device".
+      const hasActiveSession = await this.authService.hasActiveSession(user.id);
+      if (hasActiveSession && !force) {
+        res.status(409).json({
+          error: "active_session",
+          message: "You are already signed in on another device. Sign in here to end that session.",
+        });
+        return;
+      }
+
+      // Evict existing socket (fires session:evicted on the other device).
       evictUserSocket(user.id);
 
-      // Set HTTP-only cookie
+      // Set HTTP-only cookie (kept for same-origin / legacy clients)
       res.cookie("authToken", token, COOKIE_OPTIONS);
 
       res.json({ user, token });

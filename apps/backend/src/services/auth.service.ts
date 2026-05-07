@@ -82,6 +82,15 @@ export class AuthService {
     return toPublicUser(user);
   }
 
+  // ------------------- HAS ACTIVE SESSION -------------------
+  // Returns true if there is a live session token in Redis for this user.
+  // Used by the login endpoint to detect concurrent logins before evicting.
+  async hasActiveSession(userId: string): Promise<boolean> {
+    if (!this.redisClient) return false;
+    const existing = await this.redisClient.get(`session:${userId}`);
+    return !!existing;
+  }
+
   // ------------------- LOGOUT -------------------
   async logout(userId: string): Promise<void> {
     if (this.redisClient) {

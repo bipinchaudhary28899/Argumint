@@ -19,10 +19,20 @@ const apiClient = axios.create({
   },
 });
 
-// Response interceptor to store token from response
+// Request interceptor — attach Bearer token from localStorage on every request.
+// This is the primary auth mechanism for cross-domain deployments (Vercel →
+// Render) where third-party httpOnly cookies are blocked by modern browsers.
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response interceptor — persist token whenever the server sends one (login / register).
 apiClient.interceptors.response.use(
   (response) => {
-    // Check if response contains a token (for login/register)
     const data = response.data as { token?: string };
     if (data.token) {
       localStorage.setItem("token", data.token);
@@ -62,7 +72,7 @@ export const authApi = {
     }
   },
 
-  async login(data: LoginInput): Promise<AuthResponse> {
+  async login(data: LoginInput & { force?: boolean }): Promise<AuthResponse> {
     try {
       const response = await apiClient.post<AuthResponse>("/auth/login", data);
       return response.data;

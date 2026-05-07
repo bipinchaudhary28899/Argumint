@@ -18,7 +18,15 @@ declare global {
 export function createAuthMiddleware(redisClient: Redis | null) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const token = req.cookies.authToken;
+      // Prefer Authorization: Bearer header — this is required for cross-domain
+      // deployments (e.g. Vercel frontend + Render backend) because browsers
+      // block third-party httpOnly cookies across different origins.
+      // Fall back to the cookie for same-origin or legacy clients.
+      const authHeader = req.headers.authorization;
+      const token =
+        (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined) ??
+        req.cookies?.authToken ??
+        null;
 
       if (!token) {
         return res.status(401).json({ error: "No token provided" });
