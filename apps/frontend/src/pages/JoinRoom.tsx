@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
+import { NavLogo } from "../components/NavLogo";
 import { roomApi } from "../services/api";
 
 export function JoinRoom() {
@@ -34,7 +35,7 @@ export function JoinRoom() {
       <nav className="game-nav">
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
-          <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+          <NavLogo onClick={() => navigate("/")} />
         </div>
         <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
       </nav>

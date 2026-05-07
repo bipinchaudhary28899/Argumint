@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
+import { NavLogo } from "../components/NavLogo";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { useIsMobile } from "../hooks/useIsMobile";
 import type { Debate, TurnOrderEntry } from "@argumint/shared";
@@ -95,7 +96,7 @@ export function PrepScreen() {
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <nav className="game-nav">
-        <span className="nav-logo">ARGUMINT</span>
+        <NavLogo />
         <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { NavLogo } from "../components/NavLogo";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
@@ -188,7 +189,7 @@ export function RoomLobby() {
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflowX: "hidden" }}>
       <nav className="game-nav">
-        <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+        <NavLogo onClick={() => navigate("/")} />
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
             <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />

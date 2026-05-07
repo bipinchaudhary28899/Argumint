@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
+import { NavLogo } from "../components/NavLogo";
 import { useWebRTCMesh } from "../hooks/useWebRTCMesh";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
@@ -455,7 +456,7 @@ export function DebatePage() {
       )}
 
       <nav className="game-nav">
-        <span className="nav-logo">ARGUMINT</span>
+        <NavLogo />
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
           {!isBuzzer && turn && !finished && (
             <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem" }}>

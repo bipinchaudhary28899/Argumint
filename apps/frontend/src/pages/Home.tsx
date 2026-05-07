@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { getLevelInfo } from "@argumint/shared";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { NavLogo } from "../components/NavLogo";
 
 export function Home() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ export function Home() {
       <div style={{ position: "fixed", bottom: "10%", right: "15%", width: 350, height: 350, borderRadius: "50%", background: "radial-gradient(circle, rgba(16,185,129,0.06) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
 
       <nav className="game-nav">
-        <span className="nav-logo">ARGUMINT</span>
+        <NavLogo />
         <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
           {/* Level chip — always visible */}
           <div style={{

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
+import { NavLogo } from "../components/NavLogo";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getLevelInfo } from "@argumint/shared";
@@ -200,7 +201,7 @@ export function ResultPage() {
         <nav className="game-nav">
           <div style={{ display:"flex", alignItems:"center", gap:"0.75rem" }}>
             <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize:"0.82rem", padding:"0.35rem 0.75rem" }}>← Home</button>
-            <button className="nav-logo" onClick={() => navigate("/")}>ARGUMINT</button>
+            <NavLogo onClick={() => navigate("/")} />
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:"0.875rem" }}>
             <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
