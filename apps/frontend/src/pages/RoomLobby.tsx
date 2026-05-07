@@ -151,10 +151,7 @@ export function RoomLobby() {
   if (isLoading) {
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div style={{ textAlign: "center" }}>
-          <div className="spin" style={{ width: 40, height: 40, border: "3px solid var(--border2)", borderTopColor: "var(--cyan)", borderRadius: "50%", margin: "0 auto 1rem" }} />
-          <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>Loading room…</p>
-        </div>
+        <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
       </div>
     );
   }

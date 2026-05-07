@@ -33,15 +33,13 @@ export function JoinRoom() {
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 500, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
       <nav className="game-nav">
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
-          <NavLogo onClick={() => navigate("/")} />
-        </div>
+        <NavLogo onClick={() => navigate("/")} />
         <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>
       </nav>
 
       <main style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
         <div className="fade-up w-full" style={{ maxWidth: 420 }}>
+          <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem", marginBottom: "1rem" }}>← Back</button>
           <div style={{ textAlign: "center", marginBottom: "2rem" }}>
             <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🎯</div>
             <h1 style={{ fontSize: "2rem", fontWeight: 900, margin: "0 0 0.4rem", color: "var(--text)" }}>Join a Debate</h1>

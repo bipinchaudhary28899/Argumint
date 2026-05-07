@@ -81,10 +81,7 @@ export function PrepScreen() {
   if (!debate) {
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div style={{ textAlign: "center" }}>
-          <div className="spin" style={{ width: 48, height: 48, border: "3px solid var(--border2)", borderTopColor: "var(--cyan)", borderRadius: "50%", margin: "0 auto 1rem" }} />
-          <p style={{ color: "var(--muted)" }}>Loading prep…</p>
-        </div>
+        <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
       </div>
     );
   }

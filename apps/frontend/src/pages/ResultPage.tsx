@@ -156,10 +156,7 @@ export function ResultPage() {
 
   if (!debate) return (
     <div className="bg-grid" style={{ height:"100vh", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
-      <div style={{ textAlign:"center" }}>
-        <div className="spin" style={{ width:48, height:48, border:"3px solid var(--border2)", borderTopColor:"var(--cyan)", borderRadius:"50%", margin:"0 auto 1rem" }} />
-        <p style={{ color:"var(--muted)" }}>Loading results…</p>
-      </div>
+      <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
     </div>
   );
 
@@ -199,10 +196,7 @@ export function ResultPage() {
 
         {/* ── NAV ── */}
         <nav className="game-nav">
-          <div style={{ display:"flex", alignItems:"center", gap:"0.75rem" }}>
-            <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize:"0.82rem", padding:"0.35rem 0.75rem" }}>← Home</button>
-            <NavLogo onClick={() => navigate("/")} />
-          </div>
+          <NavLogo onClick={() => navigate("/")} />
           <div style={{ display:"flex", alignItems:"center", gap:"0.875rem" }}>
             <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
               <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
@@ -214,6 +208,7 @@ export function ResultPage() {
 
         {/* ── MAIN ── */}
         <main style={{ flex:1, overflow:"auto", display:"flex", flexDirection:"column", padding: isMobile ? "0.75rem 0.75rem 2rem" : "0.5rem 0.875rem 1.5rem" }}>
+          <button onClick={() => navigate("/")} className="btn-ghost" style={{ alignSelf:"flex-start", fontSize:"0.82rem", padding:"0.35rem 0.75rem", marginBottom:"0.5rem" }}>← Home</button>
 
           {/* Motion strip */}
           <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"0.5rem" }}>
@@ -224,8 +219,8 @@ export function ResultPage() {
           {/* ── JUDGING ── */}
           {isJudging && (
             <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <div className="glass fade-up glow-cyan" style={{ padding:"2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
-                <div className="spin" style={{ width:52, height:52, border:"4px solid var(--border2)", borderTopColor:"var(--cyan)", borderRadius:"50%", margin:"0 auto 1.25rem" }} />
+              <div className="glass fade-up glow-cyan" style={{ padding: isMobile ? "1.5rem 1.25rem" : "2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
+                <img src="/logo/logo.png" alt="Judging…" className="logo-heartbeat" style={{ width: 64, height: 64, margin: "0 auto 1.25rem" }} />
                 <h2 style={{ fontSize:"1.2rem", fontWeight:800, color:"var(--text)", margin:"0 0 0.35rem" }} className="text-glow-cyan">AI Judge reviewing…</h2>
                 <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>Scoring all speakers — 5–15 sec</p>
               </div>

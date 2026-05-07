@@ -421,10 +421,7 @@ export function DebatePage() {
   if (!debate) {
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div style={{ textAlign: "center" }}>
-          <div className="spin" style={{ width: 48, height: 48, border: "3px solid var(--border2)", borderTopColor: "var(--cyan)", borderRadius: "50%", margin: "0 auto 1rem" }} />
-          <p style={{ color: "var(--muted)" }}>Loading debate…</p>
-        </div>
+        <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
       </div>
     );
   }
@@ -510,7 +507,7 @@ export function DebatePage() {
                   {/* Current holder spotlight */}
                   <div className={`fade-up ${isHolder ? (mySide === "for" ? "active-speaker-for" : "active-speaker-against") : (holderSide === "for" ? "glow-for" : holderSide === "against" ? "glow-against" : "")}`}
                     style={{
-                      borderRadius: "1rem", padding: "1.75rem 2rem",
+                      borderRadius: "1rem", padding: isMobile ? "1rem" : "1.75rem 2rem",
                       background: buzzerState?.currentHolder
                         ? (holderSide === "for" ? "rgba(16,185,129,0.08)" : "rgba(244,63,94,0.08)")
                         : "rgba(79,142,247,0.05)",
@@ -522,9 +519,9 @@ export function DebatePage() {
 
                     {buzzerState?.currentHolder ? (
                       /* Someone is speaking */
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: "1.5rem", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? "0.875rem" : "1.5rem", flexWrap: "wrap" }}>
                         {/* Speak countdown ring */}
-                        <div style={{ position: "relative", width: 110, height: 110, flexShrink: 0 }}>
+                        <div style={{ position: "relative", width: isMobile ? 80 : 110, height: isMobile ? 80 : 110, flexShrink: 0 }}>
                           <svg viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
                             <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" strokeWidth="6" />
                             <circle cx="60" cy="60" r="54" fill="none"
@@ -548,7 +545,7 @@ export function DebatePage() {
                         </div>
 
                         {/* Speaker info */}
-                        <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: holderSide === "for" ? "var(--for)" : "var(--against)", marginBottom: "0.3rem" }}>
                             {isHolder ? "🎙 You have the mic" : "🎙 Now speaking"}
                           </div>
@@ -678,13 +675,13 @@ export function DebatePage() {
               {!isBuzzer && turn && !finished && (
                 <div className={`fade-up ${isMyTurn ? (mySide === "for" ? "active-speaker-for" : "active-speaker-against") : (turn.side === "for" ? "glow-for" : "glow-against")}`}
                   style={{
-                    borderRadius: "1rem", padding: "1.75rem 2rem",
+                    borderRadius: "1rem", padding: isMobile ? "1rem" : "1.75rem 2rem",
                     background: turn.side === "for" ? "rgba(16,185,129,0.08)" : "rgba(244,63,94,0.08)",
                     border: `1px solid ${turn.side === "for" ? "rgba(16,185,129,0.3)" : "rgba(244,63,94,0.3)"}`,
                   }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "1.5rem", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? "0.875rem" : "1.5rem", flexWrap: "wrap" }}>
                     {/* Countdown ring */}
-                    <div style={{ position: "relative", width: 110, height: 110, flexShrink: 0 }}>
+                    <div style={{ position: "relative", width: isMobile ? 80 : 110, height: isMobile ? 80 : 110, flexShrink: 0 }}>
                       <svg viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
                         <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" strokeWidth="6" />
                         <circle cx="60" cy="60" r="54" fill="none"
@@ -708,7 +705,7 @@ export function DebatePage() {
                     </div>
 
                     {/* Speaker info */}
-                    <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: turn.side === "for" ? "var(--for)" : "var(--against)", marginBottom: "0.3rem" }}>
                         {isMyTurn ? "Your turn — speak now" : "Now speaking"}
                       </div>

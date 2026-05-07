@@ -66,8 +66,7 @@ export function Login() {
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "2rem 1rem", background: "var(--bg)" }}>
       <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 600, height: 300, background: "radial-gradient(ellipse, rgba(79,142,247,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
-      <button onClick={() => navigate("/")} className="btn-ghost" style={{ position: "fixed", top: "1rem", left: "1rem", fontSize: "0.82rem", padding: "0.35rem 0.75rem", zIndex: 10 }}>← Back</button>
-      <div className="fade-up w-full" style={{ maxWidth: 420, width: "100%" }}>
+<div className="fade-up w-full" style={{ maxWidth: 420, width: "100%" }}>
         <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
           <img src="/logo/logo.png" alt="Argumint" style={{ width: 96, height: 96, borderRadius: "1.25rem", objectFit: "contain", display: "block", margin: "0 auto" }} />
           <div style={{ marginTop: "0.75rem", color: "var(--muted)", fontSize: "0.8rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 600 }}>Debate Arena</div>

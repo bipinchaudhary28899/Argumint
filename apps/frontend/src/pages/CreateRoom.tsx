@@ -79,15 +79,13 @@ export function CreateRoom() {
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <nav className="game-nav">
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
-          <NavLogo onClick={() => navigate("/")} />
-        </div>
+        <NavLogo onClick={() => navigate("/")} />
         {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
       </nav>
 
       <main style={{ flex: 1, overflow: "auto", display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center", padding: isMobile ? "0.75rem" : "1rem 1.25rem" }}>
         <form onSubmit={handleSubmit} className="fade-up glass" style={{ width: "100%", maxWidth: 860, padding: isMobile ? "1.25rem" : "1.75rem 2rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <button type="button" onClick={() => navigate("/")} className="btn-ghost" style={{ alignSelf: "flex-start", fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>← Back</button>
 
           {/* Title + submit row */}
           <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "0.75rem" : 0 }}>
