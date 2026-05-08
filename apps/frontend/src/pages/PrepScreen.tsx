@@ -48,6 +48,25 @@ export function PrepScreen() {
     };
   }, [socket, code, navigate]);
 
+  // ── Proactive mic permission warm-up ──────────────────────────────────
+  // Fire during the prep countdown so the browser's permission dialog appears
+  // well before Round 1 starts. We stop the tracks immediately — this purely
+  // triggers the prompt. Doing this in DebatePage races with startRecording
+  // for the first speaker and causes iOS to return a silent track.
+  useEffect(() => {
+    if (!debate) return;
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isInApp =
+      /FBAN|FBAV|Instagram|WhatsApp\/|TikTok|Snapchat|Twitter\//.test(ua) ||
+      /\bwv\b/.test(ua) ||
+      (/iPhone|iPod|iPad/.test(ua) && !/Safari\//.test(ua) && /AppleWebKit/.test(ua));
+    if (isInApp) return;
+    navigator.mediaDevices?.getUserMedia({ audio: true })
+      .then((s) => s.getTracks().forEach((t) => t.stop()))
+      .catch(() => { /* permission denied — will surface properly when turn starts */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!debate]);
+
   const mySide = useMemo<"for" | "against" | null>(() => {
     if (!debate || !user) return null;
     return debate.turnOrder.find((t) => t.userId === user.id)?.side ?? null;

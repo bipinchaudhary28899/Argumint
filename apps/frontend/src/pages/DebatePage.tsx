@@ -238,18 +238,11 @@ export function DebatePage() {
     /Chrome\/[\d.]+/.test(ua) &&
     !/OPR\/|EdgA\/|SamsungBrowser/.test(ua);
 
-  // ── Proactive mic permission warm-up ─────────────────────────────────
-  // Request mic access as soon as the debate loads so the browser's permission
-  // dialog appears before the user's turn — not silently mid-turn on mobile.
-  // We immediately stop the tracks; this is purely to trigger the prompt.
-  useEffect(() => {
-    if (!debate || isInAppBrowser) return;
-    navigator.mediaDevices?.getUserMedia({ audio: true })
-      .then((s) => s.getTracks().forEach((t) => t.stop()))
-      .catch(() => { /* surfaced as an error when the turn actually starts */ });
-    // Run once when debate first loads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!debate]);
+  // NOTE: Proactive mic warm-up intentionally NOT done here.
+  // It lives in PrepScreen so it fires during the countdown — well before
+  // Round 1 starts. Doing it here races with startRecording for the first
+  // speaker (debate loads + Round 1 is already active), causing iOS to return
+  // a silent track from the second getUserMedia call.
 
   // ── Recording refs ────────────────────────────────────────────────────
   const recorderRef = useRef<MediaRecorder | null>(null);

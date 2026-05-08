@@ -212,18 +212,26 @@ export function useWebRTCMesh(opts: {
   const acquireMic = async () => {
     if (localStreamRef.current) return localStreamRef.current;
 
-    // Use the caller-supplied stream if one is available. This avoids a second
-    // concurrent getUserMedia call which on Android Chrome blocks the Web Speech
-    // API and on iOS Safari can cause silent recording failures.
-    const ext = opts.getExternalStream?.();
-    if (ext) {
-      localStreamRef.current = ext;
-      streamIsExternalRef.current = true;
-      setMicError(null);
-      return ext;
+    // When an external stream getter is provided, wait up to 600 ms for
+    // DebatePage's startRecording to hand off the stream. This hook's effects
+    // are registered earlier in the component tree, so Effect 3 (isSpeaker flip)
+    // fires before DebatePage's isActiveSpeaker effect. Polling lets
+    // startRecording run first, giving us a single getUserMedia call per turn.
+    if (opts.getExternalStream) {
+      for (let i = 0; i < 12; i++) {
+        await new Promise<void>((r) => setTimeout(r, 50));
+        const ext = opts.getExternalStream();
+        if (ext) {
+          localStreamRef.current = ext;
+          streamIsExternalRef.current = true;
+          setMicError(null);
+          return ext;
+        }
+      }
+      // 600 ms elapsed — fall through and acquire our own stream as a safety net.
     }
 
-    // Fall back to our own getUserMedia (e.g. if DebatePage hasn't acquired yet).
+    // Fall back to our own getUserMedia (stream getter absent or timed out).
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
