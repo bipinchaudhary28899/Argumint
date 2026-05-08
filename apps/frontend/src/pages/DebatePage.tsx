@@ -254,10 +254,28 @@ export function DebatePage() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordStartedAtRef = useRef<number | null>(null);
   const submittedRef = useRef(false);
+  // lastBlobRef: blob produced by the persistent onstop handler (set in
+  // startRecording so it fires regardless of who calls stop()). Lets
+  // stopRecording() recover the blob even when the isActiveSpeaker effect
+  // stops the recorder before handleSubmit/handleBuzzerRelease runs.
+  const lastBlobRef = useRef<Blob | null>(null);
+  const recorderMimeTypeRef = useRef<string>("audio/webm");
+  const stopResolveRef = useRef<((v: { blob: Blob | null; durationSec: number }) => void) | null>(null);
+  // Recording elapsed timer for Android Chrome (no live captions there).
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
 
   const startRecording = async () => {
     submittedRef.current = false;
     recordedChunksRef.current = [];
+    lastBlobRef.current = null;
+    stopResolveRef.current = null;
+
+    // Reset Android Chrome recording timer for this turn.
+    setRecordingElapsed(0);
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    recordingTimerRef.current = setInterval(() => setRecordingElapsed((e) => e + 1), 1000);
+
     try {
       // Acquire the mic ONCE. This stream is reused by WebRTC (via
       // getExternalStream below) so only a single getUserMedia call is made.
@@ -280,9 +298,33 @@ export function DebatePage() {
         recorder = new MediaRecorder(stream);
       }
 
+      // Cache mimeType immediately — needed when building the blob from the
+      // already-stopped branch in stopRecording().
+      recorderMimeTypeRef.current = recorder.mimeType || "audio/webm";
+
       recorder.ondataavailable = (ev) => {
         if (ev.data && ev.data.size > 0) recordedChunksRef.current.push(ev.data);
       };
+
+      // Persistent onstop — fires regardless of who calls stop() (either
+      // stopRecording() or the isActiveSpeaker effect). This eliminates the
+      // race where the effect stops the recorder first and stopRecording()
+      // would otherwise return a null blob.
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: recorderMimeTypeRef.current });
+        lastBlobRef.current = blob;
+        recorderStreamRef.current = null;
+        recorderRef.current = null;
+        // Complete any pending stopRecording() promise.
+        if (stopResolveRef.current) {
+          const resolve = stopResolveRef.current;
+          stopResolveRef.current = null;
+          const startedAt = recordStartedAtRef.current;
+          const durationSec = startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+          resolve({ blob, durationSec });
+        }
+      };
+
       recorderRef.current = recorder;
       recordStartedAtRef.current = Date.now();
       recorder.start(250);
@@ -295,30 +337,33 @@ export function DebatePage() {
         sr.start("en-US");
       }
     } catch {
+      if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
       setError("Could not access microphone. Allow mic access in your browser to speak.");
     }
   };
 
   const stopRecording = (): Promise<{ blob: Blob | null; durationSec: number }> => {
+    // Stop the elapsed-time ticker — we're done recording.
+    if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
     return new Promise((resolve) => {
       const startedAt = recordStartedAtRef.current;
       const computeDuration = () => startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
       const rec = recorderRef.current;
       if (!rec || rec.state === "inactive") {
-        // Don't stop stream tracks here — the stream is shared with WebRTC
-        // and will be stopped by the isActiveSpeaker effect when the turn ends.
+        // Recorder was already stopped (e.g. by the isActiveSpeaker effect when
+        // the server advanced the turn at the same instant as the auto-submit
+        // timer). lastBlobRef was populated by the persistent onstop handler
+        // set inside startRecording, so we still get the captured audio.
         recorderStreamRef.current = null;
-        return resolve({ blob: null, durationSec: computeDuration() });
+        return resolve({ blob: lastBlobRef.current, durationSec: computeDuration() });
       }
-      rec.onstop = () => {
-        const blob = new Blob(recordedChunksRef.current, { type: rec.mimeType || "audio/webm" });
-        // Don't stop stream tracks here — WebRTC still needs them until the
-        // isActiveSpeaker effect fires and cleans up speakerStreamRef.
-        recorderStreamRef.current = null;
-        recorderRef.current = null;
-        resolve({ blob, durationSec: computeDuration() });
-      };
-      try { rec.stop(); } catch { resolve({ blob: null, durationSec: computeDuration() }); }
+      // Recorder still active — register the promise resolver so the persistent
+      // onstop handler (set in startRecording) can complete it.
+      stopResolveRef.current = resolve;
+      try { rec.stop(); } catch {
+        stopResolveRef.current = null;
+        resolve({ blob: lastBlobRef.current, durationSec: computeDuration() });
+      }
     });
   };
 
@@ -327,6 +372,8 @@ export function DebatePage() {
     if (isActiveSpeaker) {
       startRecording();
     } else {
+      // Clear the elapsed-time ticker regardless of recorder state.
+      if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
@@ -341,9 +388,14 @@ export function DebatePage() {
   }, [isActiveSpeaker]);
 
   // ── Alternate mode: submit argument ──────────────────────────────────
-  const handleSubmit = async () => {
+  // bypassTurnCheck: true when called from the timer auto-submit path.
+  // The server may have already advanced the turn (sending a new turn-started)
+  // before the client's 250 ms clock fires this, making isMyTurn false. We
+  // still need to submit in that case — the backend validates ownership
+  // server-side and the argument would otherwise be silently lost.
+  const handleSubmit = async (bypassTurnCheck = false) => {
     resumeAudio(); // unblock mobile audio on user gesture
-    if (!isMyTurn || !debateId || isUploading || submittedRef.current) return;
+    if ((!bypassTurnCheck && !isMyTurn) || !debateId || isUploading || submittedRef.current) return;
     submittedRef.current = true;
     // Capture SR transcript synchronously BEFORE any await — the isActiveSpeaker
     // effect may fire sr.reset() during the async stopRecording() call, wiping
@@ -362,9 +414,12 @@ export function DebatePage() {
           const whisperText = await debateApi.transcribe(debateId, blob);
           // Prefer Whisper if it returned something; otherwise keep SR text.
           if (whisperText && whisperText.trim().length > 0) text = whisperText;
-        } catch {
-          // Whisper failed (e.g. turn already advanced on server) — SR fallback is already set.
+        } catch (err) {
+          // Whisper failed — log for debugging. SR fallback already set.
+          console.error("[Transcribe] Whisper error (alternate):", err);
         }
+      } else {
+        console.warn("[Transcribe] No audio blob — chunks collected:", recordedChunksRef.current.length, "lastBlob:", lastBlobRef.current?.size ?? 0);
       }
       socket?.emit("debate:submit-argument", { debateId, argument: text }, (res: any) => {
         if (!res?.success) setError(res?.error || "Failed to submit argument");
@@ -393,9 +448,12 @@ export function DebatePage() {
         try {
           const whisperText = await debateApi.transcribe(debateId, blob);
           if (whisperText && whisperText.trim().length > 0) text = whisperText;
-        } catch {
-          // Whisper failed — SR fallback already set above.
+        } catch (err) {
+          // Whisper failed — log for debugging. SR fallback already set above.
+          console.error("[Transcribe] Whisper error (buzzer):", err);
         }
+      } else if (durationSec >= MIN_SUBMIT_DURATION_SEC) {
+        console.warn("[Transcribe] No audio blob (buzzer) — chunks:", recordedChunksRef.current.length, "lastBlob:", lastBlobRef.current?.size ?? 0);
       }
       socket?.emit("buzzer:release", { debateId, argument: text }, (res: any) => {
         if (!res?.success) setError(res?.error || "Failed to release mic");
@@ -444,9 +502,19 @@ export function DebatePage() {
   const ringOffset = circumference * (1 - ringPct);
   const isUrgent = secondsLeft !== null && secondsLeft <= 15;
 
+  // ── Clean up recording timer on unmount ──────────────────────────────
   useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Guard: only arm when it's our turn. Once armed (secondsLeft hits 0),
+    // bypassTurnCheck=true so a race where the server advances the turn a few
+    // milliseconds before the local clock still results in a submission.
     if (!isMyTurn) return;
-    if (secondsLeft === 0 && !submittedRef.current && !isUploading) handleSubmit();
+    if (secondsLeft === 0 && !submittedRef.current && !isUploading) handleSubmit(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [secondsLeft, isMyTurn]);
 
@@ -777,7 +845,11 @@ export function DebatePage() {
                         <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
                           <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
                             {isAndroidChrome
-                              ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Recording… (full transcript sent after turn)</span>
+                              ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                                  {isUploading
+                                    ? "⏳ Transcribing your speech…"
+                                    : `🔴 Recording… ${recordingElapsed}s captured`}
+                                </span>
                               : sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>
                             }
                             {!isAndroidChrome && sr.interim && (
@@ -876,7 +948,11 @@ export function DebatePage() {
                       <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
                         <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
                           {isAndroidChrome
-                            ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Recording… (full transcript sent after turn)</span>
+                            ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                                {isUploading
+                                  ? "⏳ Transcribing your speech…"
+                                  : `🔴 Recording… ${recordingElapsed}s captured`}
+                              </span>
                             : sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>
                           }
                           {!isAndroidChrome && sr.interim && (
