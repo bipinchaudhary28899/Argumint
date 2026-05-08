@@ -21,6 +21,11 @@ interface PeerInfo {
  * Signaling is over Socket.IO using the events `webrtc:offer`,
  * `webrtc:answer`, `webrtc:ice-candidate` (handled by the backend
  * forwarder).
+ *
+ * Mobile autoplay fix: mobile browsers (iOS Safari, Android Chrome) block
+ * audio autoplay until the user has interacted with the page. We call
+ * .play() immediately on ontrack, and expose resumeAudio() so the
+ * DebatePage can retry from button-press handlers (which count as gestures).
  */
 export function useWebRTCMesh(opts: {
   socket: Socket | null;
@@ -49,6 +54,7 @@ export function useWebRTCMesh(opts: {
   const localStreamRef = useRef<MediaStream | null>(null);
   const sendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const [micError, setMicError] = useState<string | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const [activeRemoteUserId, setActiveRemoteUserId] = useState<string | null>(
     null,
   );
@@ -57,6 +63,24 @@ export function useWebRTCMesh(opts: {
   useEffect(() => {
     setActiveRemoteUserId(activeSpeakerUserId);
   }, [activeSpeakerUserId]);
+
+  /**
+   * Try to play every peer's audio element. Safe to call multiple times.
+   * Should be called from any user-gesture handler so the browser's
+   * autoplay gate is lifted for mobile devices.
+   */
+  const resumeAudio = () => {
+    let anyBlocked = false;
+    peersRef.current.forEach(({ audioEl }) => {
+      if (audioEl.paused && audioEl.srcObject) {
+        audioEl.play().catch(() => {
+          anyBlocked = true;
+          setAudioBlocked(true);
+        });
+      }
+    });
+    if (!anyBlocked) setAudioBlocked(false);
+  };
 
   /**
    * Build a fresh RTCPeerConnection for a given peer, wire up event
@@ -73,6 +97,7 @@ export function useWebRTCMesh(opts: {
     // Hidden <audio> element to play this peer's stream.
     const audioEl = document.createElement("audio");
     audioEl.autoplay = true;
+    audioEl.playsInline = true;   // Required on iOS to prevent fullscreen takeover
     audioEl.dataset.peerUserId = peer.userId;
     document.body.appendChild(audioEl);
 
@@ -80,7 +105,14 @@ export function useWebRTCMesh(opts: {
       // Each peer may send 0 or 1 audio tracks depending on whether
       // they're the speaker. We just always attach the stream.
       const [stream] = ev.streams;
-      if (stream) audioEl.srcObject = stream;
+      if (!stream) return;
+      audioEl.srcObject = stream;
+      // Explicitly call .play() — required on mobile where autoplay is
+      // blocked until a user gesture. If it fails here we set audioBlocked
+      // so the UI can show a "Tap to hear" prompt.
+      audioEl.play().catch(() => {
+        setAudioBlocked(true);
+      });
     };
 
     pc.onicecandidate = (ev) => {
@@ -380,6 +412,8 @@ export function useWebRTCMesh(opts: {
 
   return {
     micError,
+    audioBlocked,
+    resumeAudio,
     activeRemoteUserId,
   };
 }

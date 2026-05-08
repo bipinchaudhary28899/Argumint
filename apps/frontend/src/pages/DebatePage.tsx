@@ -97,7 +97,7 @@ export function DebatePage() {
     holderStartedAt != null ? Math.max(0, (debate?.turnDuration ?? 60) - holderSecsElapsed) : null;
   const holderIsUrgent = holderSecsLeft !== null && holderSecsLeft <= 10;
 
-  useWebRTCMesh({
+  const { audioBlocked, resumeAudio } = useWebRTCMesh({
     socket,
     roomId: debate?.roomId ?? null,
     selfUserId: user?.id ?? null,
@@ -277,6 +277,7 @@ export function DebatePage() {
 
   // ── Alternate mode: submit argument ──────────────────────────────────
   const handleSubmit = async () => {
+    resumeAudio(); // unblock mobile audio on user gesture
     if (!isMyTurn || !debateId || isUploading || submittedRef.current) return;
     submittedRef.current = true;
     // Capture SR transcript synchronously BEFORE any await — the isActiveSpeaker
@@ -312,6 +313,7 @@ export function DebatePage() {
 
   // ── Buzzer mode: release the mic ──────────────────────────────────────
   const handleBuzzerRelease = async () => {
+    resumeAudio(); // unblock mobile audio on user gesture
     if (!debateId || isUploading || submittedRef.current) return;
     submittedRef.current = true;
     // Capture SR transcript synchronously BEFORE any await — same race as in
@@ -343,6 +345,7 @@ export function DebatePage() {
 
   // ── Buzzer mode: grab the mic ─────────────────────────────────────────
   const handleGrab = () => {
+    resumeAudio(); // unblock mobile audio on first user gesture
     if (!debateId || !canGrab) return;
     setGrabError(null);
     socket?.emit("buzzer:grab", { debateId }, (res: any) => {
@@ -449,6 +452,22 @@ export function DebatePage() {
               🎙 GET READY TO GRAB!
             </span>
           </div>
+        </div>
+      )}
+
+      {/* ── Audio blocked banner (mobile autoplay gate) ── */}
+      {audioBlocked && (
+        <div
+          onClick={resumeAudio}
+          style={{
+            position: "fixed", top: 50, left: 0, right: 0, zIndex: 49,
+            background: "rgba(217,119,6,0.95)", backdropFilter: "blur(8px)",
+            color: "#fff", textAlign: "center", padding: "0.6rem 1rem",
+            fontSize: "0.82rem", fontWeight: 700, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+          }}
+        >
+          🔇 Tap here to hear other speakers
         </div>
       )}
 

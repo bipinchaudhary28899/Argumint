@@ -80,6 +80,26 @@ export function Home() {
           </p>
         </div>
 
+        {/* XP card — mobile only (desktop shows it in the nav) */}
+        {isMobile && (
+          <div className="glass fade-up" style={{ width: "100%", maxWidth: 320, padding: "0.875rem 1.25rem", marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", fontWeight: 900, color: "var(--cyan)" }}>
+                Lv.{lvlInfo.current.level} — {lvlInfo.current.title}
+              </span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", color: "var(--muted)" }}>
+                {lvlInfo.progressXP}{lvlInfo.next ? ` / ${lvlInfo.neededXP} XP` : " XP MAX"}
+              </span>
+            </div>
+            <div style={{ height: 6, borderRadius: "9999px", background: "var(--border2)", overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: "9999px", background: "linear-gradient(90deg, #4f8ef7, #22d3ee)", width: `${lvlInfo.progressPct}%`, transition: "width 0.8s cubic-bezier(.4,0,.2,1)" }} />
+            </div>
+            <span style={{ fontSize: "0.7rem", color: "var(--muted)", textAlign: "right" }}>
+              {user?.username} · {xp} total XP
+            </span>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div style={{ display: "flex", gap: "1rem", flexDirection: isMobile ? "column" : "row", width: isMobile ? "100%" : "auto", maxWidth: isMobile ? 320 : "none" }}>
           <button onClick={() => navigate("/create-room")} className="btn-primary" style={{ fontSize: "1.1rem", padding: "0.875rem 2.5rem" }}>

@@ -76,7 +76,10 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
 
     rec.onerror = (ev: any) => {
       const code = ev?.error || "unknown";
-      if (code === "no-speech" || code === "aborted") return; // recoverable
+      // "no-speech" and "aborted" are normal on all platforms.
+      // "network" is recoverable on Android Chrome — it uses Google's servers
+      // and occasionally drops with a transient network error; restarting fixes it.
+      if (code === "no-speech" || code === "aborted" || code === "network") return;
       setError(code);
     };
 
@@ -101,6 +104,10 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
       // ── Restart with a fresh instance after a short delay ─────────────────
       // Reusing the same object after onend is unreliable on mobile Chrome/Safari.
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      // Android Chrome needs ~300 ms to fully release the mic lock after onend.
+      // iOS Safari is fine with 80 ms. We detect Android by checking userAgent.
+      const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+      const restartDelay = isAndroid ? 300 : 80;
       restartTimerRef.current = setTimeout(() => {
         if (!wantListeningRef.current) { setIsListening(false); return; }
         try {
@@ -112,7 +119,7 @@ export function useSpeechRecognition(): UseSpeechRecognitionResult {
         } catch {
           setIsListening(false);
         }
-      }, 80); // 80 ms gap is enough for the browser to release the mic lock
+      }, restartDelay);
     };
 
     return rec;
