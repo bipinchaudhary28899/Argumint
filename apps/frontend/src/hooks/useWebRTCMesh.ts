@@ -26,6 +26,13 @@ interface PeerInfo {
  * audio autoplay until the user has interacted with the page. We call
  * .play() immediately on ontrack, and expose resumeAudio() so the
  * DebatePage can retry from button-press handlers (which count as gestures).
+ *
+ * Stream sharing: DebatePage acquires the mic once (for MediaRecorder) and
+ * passes a getter via `getExternalStream`. WebRTC reuses that stream instead
+ * of calling getUserMedia again. This prevents:
+ *   - Android Chrome: concurrent getUserMedia + Web Speech API mic conflict
+ *     (the infamous "Chrome is recording" toast that blocks speech recognition)
+ *   - iOS Safari: two simultaneous getUserMedia calls interfering with each other
  */
 export function useWebRTCMesh(opts: {
   socket: Socket | null;
@@ -35,6 +42,12 @@ export function useWebRTCMesh(opts: {
   isSpeaker: boolean;
   /** The active speaker — used to label which incoming stream to play. */
   activeSpeakerUserId: string | null;
+  /**
+   * Optional callback that returns an already-acquired MediaStream.
+   * When provided and non-null, WebRTC uses this stream instead of calling
+   * getUserMedia itself, avoiding a second concurrent mic acquisition.
+   */
+  getExternalStream?: () => MediaStream | null;
 }) {
   const { socket, roomId, selfUserId, isSpeaker, activeSpeakerUserId } = opts;
 
@@ -52,6 +65,9 @@ export function useWebRTCMesh(opts: {
   >(new Map());
 
   const localStreamRef = useRef<MediaStream | null>(null);
+  // True when localStreamRef was supplied by the caller (DebatePage) rather
+  // than acquired here. External streams must NOT be stopped by this hook.
+  const streamIsExternalRef = useRef(false);
   const sendersRef = useRef<Map<string, RTCRtpSender>>(new Map());
   const [micError, setMicError] = useState<string | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -91,6 +107,32 @@ export function useWebRTCMesh(opts: {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
+        // ── TURN relay servers ────────────────────────────────────────────
+        // STUN alone cannot traverse carrier-grade NAT (CGNAT) used by mobile
+        // networks. Without TURN, WebRTC silently fails on 4G/5G and no audio
+        // is ever delivered. These are free public servers from Open Relay /
+        // Metered — fine for development. Replace with dedicated credentials
+        // (Metered, Twilio, Xirsys) before going to production.
+        {
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turns:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
       ],
     });
 
@@ -164,16 +206,31 @@ export function useWebRTCMesh(opts: {
 
   /**
    * Acquire the user's microphone (once) and cache the stream.
-   * Called only when this client becomes the speaker.
+   * Prefers an external stream supplied via getExternalStream() so that
+   * only one getUserMedia call is made per speaking turn.
    */
   const acquireMic = async () => {
     if (localStreamRef.current) return localStreamRef.current;
+
+    // Use the caller-supplied stream if one is available. This avoids a second
+    // concurrent getUserMedia call which on Android Chrome blocks the Web Speech
+    // API and on iOS Safari can cause silent recording failures.
+    const ext = opts.getExternalStream?.();
+    if (ext) {
+      localStreamRef.current = ext;
+      streamIsExternalRef.current = true;
+      setMicError(null);
+      return ext;
+    }
+
+    // Fall back to our own getUserMedia (e.g. if DebatePage hasn't acquired yet).
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
         video: false,
       });
       localStreamRef.current = stream;
+      streamIsExternalRef.current = false;
       setMicError(null);
       return stream;
     } catch (err: any) {
@@ -184,9 +241,14 @@ export function useWebRTCMesh(opts: {
   };
 
   const releaseMic = () => {
-    const s = localStreamRef.current;
-    if (s) s.getTracks().forEach((t) => t.stop());
+    // Only stop tracks we own. External streams are owned by DebatePage and
+    // will be stopped there when the speaking turn ends.
+    if (!streamIsExternalRef.current) {
+      const s = localStreamRef.current;
+      if (s) s.getTracks().forEach((t) => t.stop());
+    }
     localStreamRef.current = null;
+    streamIsExternalRef.current = false;
   };
 
   /**

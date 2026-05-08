@@ -103,6 +103,9 @@ export function DebatePage() {
     selfUserId: user?.id ?? null,
     isSpeaker: isActiveSpeaker,
     activeSpeakerUserId,
+    // Share the already-acquired mic stream so WebRTC doesn't call getUserMedia
+    // a second time concurrently (breaks Android Chrome speech API + iOS Safari).
+    getExternalStream: () => speakerStreamRef.current,
   });
 
   // ── Initial state load ────────────────────────────────────────────────
@@ -214,8 +217,46 @@ export function DebatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, code, navigate, debateId]);
 
+  // ── Browser / environment detection ──────────────────────────────────
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+
+  // In-app browsers (WhatsApp, Instagram, Facebook, TikTok, etc.) open links
+  // in a restricted WebView that either blocks getUserMedia entirely or never
+  // shows the permission prompt. Detecting early lets us show a clear CTA to
+  // open in a real browser before the user wastes time in a broken session.
+  const isInAppBrowser =
+    /FBAN|FBAV|Instagram|WhatsApp\/|TikTok|Snapchat|Twitter\//.test(ua) ||
+    /\bwv\b/.test(ua) ||              // Android WebView flag
+    (/iPhone|iPod|iPad/.test(ua) && !/Safari\//.test(ua) && /AppleWebKit/.test(ua));
+
+  // True on Android Chrome — Web Speech API can't share the mic with an active
+  // MediaRecorder/getUserMedia stream on that platform (shows the "Chrome is
+  // recording" toast and fails). Whisper handles final transcription so live
+  // captions are gracefully disabled there.
+  const isAndroidChrome =
+    /android/i.test(ua) &&
+    /Chrome\/[\d.]+/.test(ua) &&
+    !/OPR\/|EdgA\/|SamsungBrowser/.test(ua);
+
+  // ── Proactive mic permission warm-up ─────────────────────────────────
+  // Request mic access as soon as the debate loads so the browser's permission
+  // dialog appears before the user's turn — not silently mid-turn on mobile.
+  // We immediately stop the tracks; this is purely to trigger the prompt.
+  useEffect(() => {
+    if (!debate || isInAppBrowser) return;
+    navigator.mediaDevices?.getUserMedia({ audio: true })
+      .then((s) => s.getTracks().forEach((t) => t.stop()))
+      .catch(() => { /* surfaced as an error when the turn actually starts */ });
+    // Run once when debate first loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!debate]);
+
   // ── Recording refs ────────────────────────────────────────────────────
   const recorderRef = useRef<MediaRecorder | null>(null);
+  // speakerStreamRef is the single getUserMedia stream shared between
+  // MediaRecorder and WebRTC for the duration of a speaking turn.
+  const speakerStreamRef = useRef<MediaStream | null>(null);
+  // recorderStreamRef is an alias kept for stopRecording's onstop closure.
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordStartedAtRef = useRef<number | null>(null);
@@ -225,15 +266,41 @@ export function DebatePage() {
     submittedRef.current = false;
     recordedChunksRef.current = [];
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      // Acquire the mic ONCE. This stream is reused by WebRTC (via
+      // getExternalStream below) so only a single getUserMedia call is made.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      speakerStreamRef.current = stream;
       recorderStreamRef.current = stream;
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-      const recorder = new MediaRecorder(stream, { mimeType });
-      recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size > 0) recordedChunksRef.current.push(ev.data); };
+
+      // Pick the best supported codec. iOS Safari only supports audio/mp4;
+      // passing audio/webm throws NotSupportedError and silently kills recording.
+      let recorder: MediaRecorder;
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
+      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+        // iOS Safari 14.3+ — only supports mp4/AAC
+        recorder = new MediaRecorder(stream, { mimeType: "audio/mp4" });
+      } else {
+        // Let the browser pick (fallback for exotic environments)
+        recorder = new MediaRecorder(stream);
+      }
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) recordedChunksRef.current.push(ev.data);
+      };
       recorderRef.current = recorder;
       recordStartedAtRef.current = Date.now();
       recorder.start(250);
-      sr.start("en-US");
+
+      // On Android Chrome the Web Speech API cannot acquire the mic while a
+      // getUserMedia stream is already open — it surfaces as the "Chrome is
+      // recording" toast and restarts in a beep loop. Skip live captions there;
+      // Whisper handles the final transcription regardless.
+      if (!isAndroidChrome) {
+        sr.start("en-US");
+      }
     } catch {
       setError("Could not access microphone. Allow mic access in your browser to speak.");
     }
@@ -245,13 +312,15 @@ export function DebatePage() {
       const computeDuration = () => startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
       const rec = recorderRef.current;
       if (!rec || rec.state === "inactive") {
-        recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+        // Don't stop stream tracks here — the stream is shared with WebRTC
+        // and will be stopped by the isActiveSpeaker effect when the turn ends.
         recorderStreamRef.current = null;
         return resolve({ blob: null, durationSec: computeDuration() });
       }
       rec.onstop = () => {
         const blob = new Blob(recordedChunksRef.current, { type: rec.mimeType || "audio/webm" });
-        recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+        // Don't stop stream tracks here — WebRTC still needs them until the
+        // isActiveSpeaker effect fires and cleans up speakerStreamRef.
         recorderStreamRef.current = null;
         recorderRef.current = null;
         resolve({ blob, durationSec: computeDuration() });
@@ -268,7 +337,10 @@ export function DebatePage() {
       if (recorderRef.current && recorderRef.current.state !== "inactive") {
         try { recorderRef.current.stop(); } catch {}
       }
-      recorderStreamRef.current?.getTracks().forEach((t) => t.stop());
+      // Stop the shared mic stream when the speaking turn ends.
+      // (WebRTC's detachMicFromAllPeers will also clear its reference to it.)
+      speakerStreamRef.current?.getTracks().forEach((t) => t.stop());
+      speakerStreamRef.current = null;
       recorderStreamRef.current = null;
       sr.reset();
     }
@@ -410,6 +482,42 @@ export function DebatePage() {
   const windowCircumference = 2 * Math.PI * 28;
   const windowRingPct = grabWindowSecsLeft != null ? grabWindowSecsLeft / 5 : 0;
   const windowRingOffset = windowCircumference * (1 - windowRingPct);
+
+  // ── In-app browser gate ───────────────────────────────────────────────
+  // Must render before anything else — the debate won't work inside a
+  // WhatsApp / Instagram WebView because getUserMedia is blocked.
+  if (isInAppBrowser) {
+    return (
+      <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem", background: "var(--bg)", textAlign: "center" }}>
+        <div className="glass fade-up" style={{ maxWidth: 360, padding: "2.5rem 2rem" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1.25rem" }}>🌐</div>
+          <h2 style={{ fontSize: "1.4rem", fontWeight: 900, color: "var(--text)", margin: "0 0 0.875rem", letterSpacing: "-0.02em" }}>
+            Open in your browser
+          </h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.9rem", lineHeight: 1.65, margin: "0 0 1.75rem" }}>
+            Argumint needs microphone access to work. WhatsApp and other in-app browsers block mic permissions — please open this link in <strong style={{ color: "var(--text)" }}>Chrome</strong> or <strong style={{ color: "var(--text)" }}>Safari</strong>.
+          </p>
+          <button
+            className="btn-primary"
+            style={{ width: "100%", fontSize: "1rem", padding: "0.875rem" }}
+            onClick={() => {
+              // Try to open current URL in the system browser.
+              // On Android this usually works; on iOS it may open Safari.
+              window.location.href = window.location.href;
+            }}
+          >
+            Open in Browser
+          </button>
+          <p style={{ marginTop: "1rem", color: "var(--muted)", fontSize: "0.75rem" }}>
+            Copy this URL and paste it into Chrome or Safari if the button doesn't work.
+          </p>
+          <div style={{ marginTop: "0.5rem", padding: "0.5rem 0.75rem", background: "var(--bg2)", borderRadius: "0.5rem", fontSize: "0.72rem", color: "var(--subtle)", wordBreak: "break-all", fontFamily: "'JetBrains Mono', monospace" }}>
+            {window.location.href}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error && !debate) {
     return (
@@ -675,8 +783,11 @@ export function DebatePage() {
                         </div>
                         <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
                           <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                            {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
-                            {sr.interim && (
+                            {isAndroidChrome
+                              ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Recording… (full transcript sent after turn)</span>
+                              : sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>
+                            }
+                            {!isAndroidChrome && sr.interim && (
                               <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
                                 {sr.transcript ? " " : ""}{sr.interim}
                               </span>
@@ -771,8 +882,11 @@ export function DebatePage() {
                       </div>
                       <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
                         <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                          {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
-                          {sr.interim && (
+                          {isAndroidChrome
+                            ? <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Recording… (full transcript sent after turn)</span>
+                            : sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>
+                          }
+                          {!isAndroidChrome && sr.interim && (
                             <span style={{ color: "var(--muted)", fontStyle: "italic" }}>
                               {sr.transcript ? " " : ""}{sr.interim}
                             </span>
