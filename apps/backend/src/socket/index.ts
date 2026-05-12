@@ -140,14 +140,22 @@ export function initializeSocketIO(
       try {
         const result = await JudgeService.judge(debateId);
 
-        // Award XP to every participant — score.total XP per debate
+        // Award XP and update win/loss/total stats for every participant
         const xpAwards: { userId: string; xpGained: number; newXP: number; leveledUp: boolean; newLevel: number; newLevelTitle: string }[] = [];
         await Promise.all(
           result.scores.map(async (score) => {
             const xpGained = score.total;
+            const won = score.side === result.winnerSide;
             const updated = await User.findByIdAndUpdate(
               score.userId,
-              { $inc: { xp: xpGained } },
+              {
+                $inc: {
+                  xp: xpGained,
+                  totalDebates: 1,
+                  debatesWon: won ? 1 : 0,
+                  debatesLost: won ? 0 : 1,
+                },
+              },
               { new: true, select: "xp" },
             );
             const newXP = updated?.xp ?? xpGained;
