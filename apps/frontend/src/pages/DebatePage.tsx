@@ -254,6 +254,7 @@ export function DebatePage() {
   // ── Start/stop recording when active speaker status changes ───────────────
   useEffect(() => {
     if (isActiveSpeaker) {
+      submittedRef.current = false; // reset so user can submit each turn
       void recorder.start();
       if (!noLiveCaptions) sr.start("en-US");
     } else {

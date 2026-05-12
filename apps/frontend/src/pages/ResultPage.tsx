@@ -127,6 +127,24 @@ export function ResultPage() {
 
   // ── Animation sequence ───────────────────────────────────────────────────
   // Runs once when the result + myScore both land.
+  // Derived scores — declared BEFORE the animation effect so they're
+  // in scope when the effect's dependency array is evaluated.
+  const myScore = useMemo<ScoreBreakdown | null>(() => {
+    if (!debate?.result || !user) return null;
+    return debate.result.scores.find((s) => s.userId === user.id) ?? null;
+  }, [debate, user]);
+
+  const rankedAll = useMemo<ScoreBreakdown[]>(() => {
+    if (!debate?.result) return [];
+    return debate.result.scores.slice().sort((a, b) => b.total - a.total);
+  }, [debate]);
+
+  const myRank = useMemo(() => {
+    if (!user || !rankedAll.length) return 1;
+    const i = rankedAll.findIndex((s) => s.userId === user.id);
+    return i === -1 ? rankedAll.length : i + 1;
+  }, [rankedAll, user]);
+
   // T+0    result arrives
   // T+400  popup fades in, counter starts (1 400 ms, ease-out)
   // T+2100 popup fades out (400 ms)
@@ -141,10 +159,14 @@ export function ResultPage() {
       ts.push(id);
     };
 
+    const _xpGained    = myXPAward?.xpGained ?? myScore.total ?? 0;
+    const _newXP       = myXPAward?.newXP ?? ((user as any)?.xp ?? 0) + _xpGained;
+    const _leveledUp   = myXPAward?.leveledUp ?? false;
+
     // Initialise bar at the OLD position so it can animate forward
-    const oldXP      = Math.max(0, xpGained > 0 ? newXP - xpGained : newXP);
+    const oldXP      = Math.max(0, _xpGained > 0 ? _newXP - _xpGained : _newXP);
     const oldInfo    = getLevelInfo(oldXP);
-    const targetInfo = getLevelInfo(newXP);
+    const targetInfo = getLevelInfo(_newXP);
     setBarPct(oldInfo.next ? oldInfo.progressPct : 100);
     setBarTransition(true);
 
@@ -158,7 +180,7 @@ export function ResultPage() {
       for (let i = 1; i <= steps; i++) {
         push(() => {
           const eased = Math.sqrt(i / steps);
-          setPopupCount(Math.round(eased * xpGained));
+          setPopupCount(Math.round(eased * _xpGained));
         }, i * (1400 / steps));
       }
     }, 400);
@@ -169,7 +191,7 @@ export function ResultPage() {
 
     // ── Phase 3: animate bar ─────────────────────────────────────────────
     push(() => {
-      if (leveledUp) {
+      if (_leveledUp) {
         // Fill bar to 100 %
         setBarPct(100);
         // Show level-up banner after bar reaches full
@@ -189,24 +211,7 @@ export function ResultPage() {
     }, 2500);
 
     return () => { ts.forEach(clearTimeout); timersRef.current = []; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debate?.result, myScore]);
-
-  const myScore = useMemo<ScoreBreakdown | null>(() => {
-    if (!debate?.result || !user) return null;
-    return debate.result.scores.find((s) => s.userId === user.id) ?? null;
-  }, [debate, user]);
-
-  const rankedAll = useMemo<ScoreBreakdown[]>(() => {
-    if (!debate?.result) return [];
-    return debate.result.scores.slice().sort((a, b) => b.total - a.total);
-  }, [debate]);
-
-  const myRank = useMemo(() => {
-    if (!user || !rankedAll.length) return 1;
-    const i = rankedAll.findIndex((s) => s.userId === user.id);
-    return i === -1 ? rankedAll.length : i + 1;
-  }, [rankedAll, user]);
+  }, [debate?.result, myScore, myXPAward, user]);
 
   // ── Error/loading ─────────────────────────────────────────────────────────
 
