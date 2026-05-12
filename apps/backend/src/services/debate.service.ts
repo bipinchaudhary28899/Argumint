@@ -87,6 +87,7 @@ export class DebateService {
     const debate = await Debate.create({
       roomId: room._id.toString(),
       roomCode: room.code,
+      creatorId: hostUserId,
       topic: room.topic,
       mode: room.debateMode,
       totalRounds: room.totalRounds,

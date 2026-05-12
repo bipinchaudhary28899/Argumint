@@ -80,6 +80,7 @@ export interface IDebateResult {
 export interface IDebate extends Document {
   roomId: string;
   roomCode: string;
+  creatorId: string;
   topic: string;
   mode: "buzzer" | "alternate";
   totalRounds: number;
@@ -209,6 +210,7 @@ const debateSchema = new Schema<IDebate>(
   {
     roomId: { type: String, required: true, index: true },
     roomCode: { type: String, required: true },
+    creatorId: { type: String, required: true },
     topic: { type: String, required: true },
     mode: { type: String, enum: ["buzzer", "alternate"], required: true },
     totalRounds: { type: Number, required: true },

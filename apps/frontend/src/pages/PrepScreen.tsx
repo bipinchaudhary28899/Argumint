@@ -8,7 +8,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import type { Debate, TurnOrderEntry } from "@argumint/shared";
 
 export function PrepScreen() {
-  const { code } = useParams<{ code: string }>();
+  const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { socket, isConnected } = useSocket();
@@ -17,9 +17,6 @@ export function PrepScreen() {
   const [debate, setDebate] = useState<Debate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-
-  const debateId =
-    typeof window !== "undefined" ? sessionStorage.getItem("activeDebateId") : null;
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
@@ -38,8 +35,8 @@ export function PrepScreen() {
 
   useEffect(() => {
     if (!socket || !code) return;
-    const onTurnStarted = () => navigate(`/room/${code}/debate`);
-    const onBuzzerOpen  = () => navigate(`/room/${code}/debate`);
+    const onTurnStarted = () => navigate(`/room/${code}/debate/${debateId}`);
+    const onBuzzerOpen  = () => navigate(`/room/${code}/debate/${debateId}`);
     socket.on("debate:turn-started", onTurnStarted);
     socket.on("buzzer:open", onBuzzerOpen);
     return () => {

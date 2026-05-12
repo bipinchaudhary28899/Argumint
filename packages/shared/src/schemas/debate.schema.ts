@@ -108,6 +108,7 @@ export const DebateSchema = z.object({
   _id: z.string().optional(),
   roomId: z.string(),
   roomCode: z.string(),
+  creatorId: z.string().optional(),
   topic: z.string(),
   mode: z.enum(["buzzer", "alternate"]),
   totalRounds: z.number().int().min(1).max(5),

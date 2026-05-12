@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useRoom } from "../contexts/RoomContext";
 import type { VotingTopic } from "@argumint/shared";
 import type { Socket } from "socket.io-client";
 
@@ -12,65 +11,110 @@ interface VotingPanelProps {
   onVotingStatusChange?: (status: boolean) => void;
 }
 
-export function VotingPanel({ votingTopics, votingDuration, isHost, roomId, socket, onVotingStatusChange }: VotingPanelProps) {
-  const { userVote, setUserVote, setVotingInProgress, selectedTopic, setSelectedTopic } = useRoom();
-  const [votingTimer, setVotingTimer] = useState(votingDuration);
+export function VotingPanel({
+  votingTopics,
+  votingDuration,
+  isHost,
+  roomId,
+  socket,
+  onVotingStatusChange,
+}: VotingPanelProps) {
+  // All voting state is local — nothing outside VotingPanel needs it.
+  const [userVote, setUserVote]           = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [votingTimer, setVotingTimer]     = useState(votingDuration);
   const [isVotingStarted, setIsVotingStarted] = useState(false);
-  const [votingEnded, setVotingEnded] = useState(false);
+  const [votingEnded, setVotingEnded]     = useState(false);
   const [currentTopics, setCurrentTopics] = useState(votingTopics);
 
   useEffect(() => {
     if (!socket || !roomId) return;
+
+    // Sync state if voting is already in progress when we mount.
     socket.emit("room:get-state", { roomId }, (response: any) => {
       if (!response?.success || !response.room) return;
       const room = response.room;
       if (room.votingInProgress) {
-        setIsVotingStarted(true); setVotingEnded(false);
+        setIsVotingStarted(true);
+        setVotingEnded(false);
         setVotingTimer(room.votingDuration ?? votingDuration);
         setCurrentTopics(room.votingTopics ?? votingTopics);
-        setVotingInProgress(true);
       }
     });
-    socket.on("room:voting-started", (data: any) => {
-      setIsVotingStarted(true); setVotingEnded(false);
+
+    const onVotingStarted = (data: any) => {
+      setIsVotingStarted(true);
+      setVotingEnded(false);
       setVotingTimer(data.votingDuration ?? votingDuration);
-      setCurrentTopics(data.votingTopics); setVotingInProgress(true);
-      setUserVote(null); onVotingStatusChange?.(true);
-    });
-    socket.on("room:voting-update", (data: any) => { if (data.votingTopics) setCurrentTopics(data.votingTopics); });
-    socket.on("room:voting-ended", (data: any) => {
-      setVotingEnded(true); setIsVotingStarted(false); setVotingInProgress(false);
-      setCurrentTopics(data.votingTopics); setSelectedTopic(data.selectedTopic);
+      setCurrentTopics(data.votingTopics);
+      setUserVote(null);
+      onVotingStatusChange?.(true);
+    };
+    const onVotingUpdate = (data: any) => {
+      if (data.votingTopics) setCurrentTopics(data.votingTopics);
+    };
+    const onVotingEnded = (data: any) => {
+      setVotingEnded(true);
+      setIsVotingStarted(false);
+      setCurrentTopics(data.votingTopics);
+      setSelectedTopic(data.selectedTopic);
       onVotingStatusChange?.(false);
-    });
-    return () => { socket.off("room:voting-started"); socket.off("room:voting-update"); socket.off("room:voting-ended"); };
+    };
+
+    socket.on("room:voting-started", onVotingStarted);
+    socket.on("room:voting-update", onVotingUpdate);
+    socket.on("room:voting-ended", onVotingEnded);
+
+    return () => {
+      socket.off("room:voting-started", onVotingStarted);
+      socket.off("room:voting-update", onVotingUpdate);
+      socket.off("room:voting-ended", onVotingEnded);
+    };
   }, [socket, roomId]);
 
+  // Keep topic list in sync with props when voting isn't active.
   useEffect(() => {
     if (!isVotingStarted && !votingEnded) setCurrentTopics(votingTopics);
   }, [votingTopics, isVotingStarted, votingEnded]);
 
+  // Countdown timer — host auto-ends voting when it hits zero.
   useEffect(() => {
     if (!isVotingStarted || votingEnded) return;
     if (votingTimer <= 0) {
-      if (isHost) socket?.emit("room:end-voting", { roomId }, (res: any) => { if (res.success) { setVotingEnded(true); setIsVotingStarted(false); setVotingInProgress(false); } });
+      if (isHost) {
+        socket?.emit("room:end-voting", { roomId }, (res: any) => {
+          if (res.success) {
+            setVotingEnded(true);
+            setIsVotingStarted(false);
+          }
+        });
+      }
       return;
     }
-    const t = setTimeout(() => setVotingTimer(p => p - 1), 1000);
+    const t = setTimeout(() => setVotingTimer((p) => p - 1), 1000);
     return () => clearTimeout(t);
   }, [votingTimer, isVotingStarted, isHost, roomId, socket, votingEnded]);
 
   const handleVote = (topicId: string) => {
     if (!isVotingStarted || votingEnded) return;
-    socket?.emit("room:vote-topic", { roomId, topicId }, (res: any) => { if (res.success) setUserVote(topicId); });
+    socket?.emit("room:vote-topic", { roomId, topicId }, (res: any) => {
+      if (res.success) setUserVote(topicId);
+    });
   };
 
   const handleStartVoting = () => {
     if (!isHost) return;
-    setIsVotingStarted(true); setVotingEnded(false); setVotingTimer(votingDuration);
-    setCurrentTopics(votingTopics); setVotingInProgress(true); setUserVote(null); onVotingStatusChange?.(true);
+    setIsVotingStarted(true);
+    setVotingEnded(false);
+    setVotingTimer(votingDuration);
+    setCurrentTopics(votingTopics);
+    setUserVote(null);
+    onVotingStatusChange?.(true);
     socket?.emit("room:start-voting", { roomId }, (res: any) => {
-      if (!res?.success) { setIsVotingStarted(false); setVotingEnded(false); setVotingInProgress(false); }
+      if (!res?.success) {
+        setIsVotingStarted(false);
+        setVotingEnded(false);
+      }
     });
   };
 
@@ -96,7 +140,7 @@ export function VotingPanel({ votingTopics, votingDuration, isHost, roomId, sock
       {votingEnded && selectedTopic && (
         <div style={{ padding: "0.75rem 1rem", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "0.625rem", marginBottom: "1.25rem" }}>
           <span style={{ color: "var(--for)", fontWeight: 700, fontSize: "0.875rem" }}>✓ Motion selected: </span>
-          <span style={{ color: "var(--text)", fontSize: "0.875rem" }}>{currentTopics.find(t => t.id === selectedTopic)?.text}</span>
+          <span style={{ color: "var(--text)", fontSize: "0.875rem" }}>{currentTopics.find((t) => t.id === selectedTopic)?.text}</span>
         </div>
       )}
 
@@ -106,9 +150,12 @@ export function VotingPanel({ votingTopics, votingDuration, isHost, roomId, sock
           const isMyVote = userVote === topic.id;
           const isWinner = votingEnded && selectedTopic === topic.id;
           return (
-            <button key={topic.id} onClick={() => handleVote(topic.id)} disabled={!isVotingStarted || votingEnded}
-              style={{ position: "relative", padding: "0.875rem 1rem", border: `1px solid ${isMyVote ? "rgba(34,211,238,0.5)" : isWinner ? "rgba(16,185,129,0.5)" : "var(--border)"}`, borderRadius: "0.75rem", background: isMyVote ? "rgba(34,211,238,0.08)" : isWinner ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.02)", cursor: isVotingStarted && !votingEnded ? "pointer" : "default", transition: "all 0.2s", textAlign: "left", overflow: "hidden" }}>
-              {/* progress bar behind */}
+            <button
+              key={topic.id}
+              onClick={() => handleVote(topic.id)}
+              disabled={!isVotingStarted || votingEnded}
+              style={{ position: "relative", padding: "0.875rem 1rem", border: `1px solid ${isMyVote ? "rgba(34,211,238,0.5)" : isWinner ? "rgba(16,185,129,0.5)" : "var(--border)"}`, borderRadius: "0.75rem", background: isMyVote ? "rgba(34,211,238,0.08)" : isWinner ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.02)", cursor: isVotingStarted && !votingEnded ? "pointer" : "default", transition: "all 0.2s", textAlign: "left", overflow: "hidden" }}
+            >
               {(isVotingStarted || votingEnded) && (
                 <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isMyVote ? "rgba(34,211,238,0.06)" : "rgba(255,255,255,0.03)", transition: "width 0.5s ease", borderRadius: "0.75rem" }} />
               )}
@@ -134,12 +181,18 @@ export function VotingPanel({ votingTopics, votingDuration, isHost, roomId, sock
         <button onClick={handleStartVoting} className="btn-primary" style={{ width: "100%" }}>⚡ Start Voting</button>
       )}
       {isHost && votingEnded && (
-        <button onClick={() => { setVotingEnded(false); setIsVotingStarted(false); setVotingTimer(votingDuration); setUserVote(null); setCurrentTopics(votingTopics); }} className="btn-ghost" style={{ width: "100%" }}>
+        <button
+          onClick={() => { setVotingEnded(false); setIsVotingStarted(false); setVotingTimer(votingDuration); setUserVote(null); setCurrentTopics(votingTopics); }}
+          className="btn-ghost"
+          style={{ width: "100%" }}
+        >
           Run another vote
         </button>
       )}
       {!isHost && !isVotingStarted && !votingEnded && (
-        <div style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.8rem", padding: "0.5rem" }}>Waiting for host to start voting…</div>
+        <div style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.8rem", padding: "0.5rem" }}>
+          Waiting for host to start voting…
+        </div>
       )}
     </div>
   );

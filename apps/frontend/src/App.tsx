@@ -52,7 +52,7 @@ function App() {
             }
           />
           <Route
-            path="/room/:code/prep"
+            path="/room/:code/prep/:debateId"
             element={
               <ProtectedRoute>
                 <PrepScreen />
@@ -60,7 +60,7 @@ function App() {
             }
           />
           <Route
-            path="/room/:code/debate"
+            path="/room/:code/debate/:debateId"
             element={
               <ProtectedRoute>
                 <DebatePage />
@@ -68,7 +68,7 @@ function App() {
             }
           />
           <Route
-            path="/room/:code/result"
+            path="/room/:code/result/:debateId"
             element={
               <ProtectedRoute>
                 <ResultPage />

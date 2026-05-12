@@ -275,9 +275,15 @@ export function initializeSocketIO(
           return callback({ success: false, error: "Room not found" });
         }
 
-        // Always call joinRoom — it revives disconnected/left slots instead of
-        // pushing a duplicate entry, and is a no-op upgrade if already active.
-        room = await RoomService.joinRoom(roomCode, userId, username);
+        // Only hit the DB to join/revive if the user isn't already an active
+        // participant. This eliminates a redundant write every time the lobby
+        // page mounts for someone who is already in the room.
+        const existingSlot = room.participants.find(
+          (p: any) => p.userId === userId && p.status !== "disconnected",
+        );
+        if (!existingSlot) {
+          room = await RoomService.joinRoom(roomCode, userId, username);
+        }
 
         // Auto-ready the host/creator: their status should always be "ready"
         // because they're the one starting the debate. This handles the case

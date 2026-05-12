@@ -75,7 +75,7 @@ function ScoreBar({ k, val }: { k: string; val: number }) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function ResultPage() {
-  const { code }   = useParams<{ code: string }>();
+  const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate   = useNavigate();
   const { user }   = useAuth();
   const { socket, isConnected } = useSocket();
@@ -85,11 +85,17 @@ export function ResultPage() {
   const [error,         setError]         = useState<string | null>(null);
   const [judgingError,  setJudgingError]  = useState<string | null>(null);
   const [showTx,        setShowTx]        = useState(false);
-  const [xpAnimDone,    setXpAnimDone]    = useState(false);
   const [myXPAward, setMyXPAward] = useState<{ xpGained: number; newXP: number; leveledUp: boolean; newLevel: number; newLevelTitle: string } | null>(null);
-  const xpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const debateId = typeof window !== "undefined" ? sessionStorage.getItem("activeDebateId") : null;
+  // ── XP animation state machine ───────────────────────────────────────────
+  const [popupVisible,  setPopupVisible]  = useState(false);   // overlay mounted
+  const [popupOpacity,  setPopupOpacity]  = useState(0);       // CSS opacity
+  const [popupCount,    setPopupCount]    = useState(0);       // counter 0→xpGained
+  const [barPct,        setBarPct]        = useState(0);       // animated bar %
+  const [barTransition, setBarTransition] = useState(true);    // CSS transition on/off
+  const [showLevelUp,   setShowLevelUp]   = useState(false);   // level-up banner
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
   useEffect(() => {
@@ -119,13 +125,72 @@ export function ResultPage() {
     };
   }, [socket]);
 
-  // Kick off XP float animation 600ms after result lands
+  // ── Animation sequence ───────────────────────────────────────────────────
+  // Runs once when the result + myScore both land.
+  // T+0    result arrives
+  // T+400  popup fades in, counter starts (1 400 ms, ease-out)
+  // T+2100 popup fades out (400 ms)
+  // T+2500 popup hidden; bar animates old→new (CSS transition)
+  //   ↳ if level-up: bar fills to 100 % first, then banner + reset
   useEffect(() => {
-    if (debate?.result) {
-      xpTimerRef.current = setTimeout(() => setXpAnimDone(true), 2200);
-    }
-    return () => { if (xpTimerRef.current) clearTimeout(xpTimerRef.current); };
-  }, [debate?.result]);
+    if (!debate?.result || !myScore) return;
+    const ts = timersRef.current;
+
+    const push = (fn: () => void, delay: number) => {
+      const id = setTimeout(fn, delay);
+      ts.push(id);
+    };
+
+    // Initialise bar at the OLD position so it can animate forward
+    const oldXP      = Math.max(0, xpGained > 0 ? newXP - xpGained : newXP);
+    const oldInfo    = getLevelInfo(oldXP);
+    const targetInfo = getLevelInfo(newXP);
+    setBarPct(oldInfo.next ? oldInfo.progressPct : 100);
+    setBarTransition(true);
+
+    // ── Phase 1: show popup ──────────────────────────────────────────────
+    push(() => {
+      setPopupVisible(true);
+      // Fade-in next frame
+      setTimeout(() => setPopupOpacity(1), 20);
+      // Counter ticks: 40 steps over 1 400 ms (ease-out via sqrt)
+      const steps = 40;
+      for (let i = 1; i <= steps; i++) {
+        push(() => {
+          const eased = Math.sqrt(i / steps);
+          setPopupCount(Math.round(eased * xpGained));
+        }, i * (1400 / steps));
+      }
+    }, 400);
+
+    // ── Phase 2: fade popup out ──────────────────────────────────────────
+    push(() => setPopupOpacity(0), 2100);
+    push(() => setPopupVisible(false), 2500);
+
+    // ── Phase 3: animate bar ─────────────────────────────────────────────
+    push(() => {
+      if (leveledUp) {
+        // Fill bar to 100 %
+        setBarPct(100);
+        // Show level-up banner after bar reaches full
+        push(() => setShowLevelUp(true), 900);
+        // Reset bar without transition, then fill remainder
+        push(() => {
+          setBarTransition(false);
+          setBarPct(0);
+        }, 1000);
+        push(() => {
+          setBarTransition(true);
+          setBarPct(targetInfo.next ? targetInfo.progressPct : 100);
+        }, 1060);
+      } else {
+        setBarPct(targetInfo.next ? targetInfo.progressPct : 100);
+      }
+    }, 2500);
+
+    return () => { ts.forEach(clearTimeout); timersRef.current = []; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debate?.result, myScore]);
 
   const myScore = useMemo<ScoreBreakdown | null>(() => {
     if (!debate?.result || !user) return null;
@@ -174,23 +239,77 @@ export function ResultPage() {
   const newXP       = myXPAward?.newXP ?? ((user as any)?.xp ?? 0) + xpGained;
   const levelInfo   = getLevelInfo(newXP);
   const leveledUp   = myXPAward?.leveledUp ?? false;
+  const newLevelTitle = myXPAward?.newLevelTitle ?? levelInfo.current.title;
 
   return (
     <>
-      {/* XP float animation keyframes */}
+      {/* Keyframes */}
       <style>{`
-        @keyframes xpFloat {
-          0%   { transform:translateY(0)     opacity:1; }
-          80%  { transform:translateY(-28px) opacity:1; }
-          100% { transform:translateY(-36px) opacity:0; }
-        }
         @keyframes mvpPulse {
           0%,100% { box-shadow:0 0 0 0 rgba(16,185,129,0.0); }
           50%      { box-shadow:0 0 18px 4px rgba(16,185,129,0.35); }
         }
+        @keyframes levelUpPop {
+          0%   { transform:scale(0.7) translateY(12px); opacity:0; }
+          60%  { transform:scale(1.06) translateY(-2px); opacity:1; }
+          100% { transform:scale(1) translateY(0); opacity:1; }
+        }
+        @keyframes shimmer {
+          0%   { background-position: -200% center; }
+          100% { background-position:  200% center; }
+        }
         .mvp-glow { animation: mvpPulse 2s ease-in-out infinite; }
-        .xp-float { animation: xpFloat 1.6s ease-out forwards; }
+        .level-up-pop { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .shimmer-text {
+          background: linear-gradient(90deg, #f59e0b, #10b981, #22d3ee, #f59e0b);
+          background-size: 300% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          animation: shimmer 2s linear infinite;
+        }
       `}</style>
+
+      {/* ── XP EARNED POPUP ── */}
+      {popupVisible && (
+        <div style={{
+          position:"fixed", inset:0, zIndex:9999,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background:"rgba(0,0,0,0.55)",
+          opacity: popupOpacity,
+          transition:"opacity 0.35s ease",
+          pointerEvents:"none",
+        }}>
+          <div className="glass" style={{
+            textAlign:"center",
+            padding: isMobile ? "2rem 2.5rem" : "2.5rem 4rem",
+            borderRadius:"1.25rem",
+            border:"1px solid rgba(245,158,11,0.35)",
+            background:"rgba(10,10,20,0.85)",
+            boxShadow:"0 0 40px rgba(245,158,11,0.2)",
+          }}>
+            <div style={{ fontSize:"0.7rem", fontWeight:700, letterSpacing:"0.18em", textTransform:"uppercase", color:"var(--gold)", marginBottom:"0.5rem" }}>
+              Points Earned
+            </div>
+            <div style={{
+              fontFamily:"'JetBrains Mono',monospace",
+              fontSize: isMobile ? "4.5rem" : "6rem",
+              fontWeight:900,
+              lineHeight:1,
+              background:"linear-gradient(135deg,#f59e0b,#fbbf24,#fde68a)",
+              WebkitBackgroundClip:"text",
+              WebkitTextFillColor:"transparent",
+              backgroundClip:"text",
+              letterSpacing:"-0.03em",
+            }}>
+              +{popupCount}
+            </div>
+            <div style={{ fontSize:"1rem", fontWeight:800, color:"var(--gold)", letterSpacing:"0.15em", textTransform:"uppercase", marginTop:"0.25rem" }}>
+              XP
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-grid" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
 
@@ -277,20 +396,15 @@ export function ResultPage() {
 
                 {/* XP Gained + Level progress */}
                 <div style={{ display:"flex", alignItems:"center", gap:"0.875rem", flexShrink:0 }}>
-                  {/* +XP badge */}
-                  <div style={{ textAlign:"center", position:"relative", flexShrink:0 }}>
+                  {/* +XP static badge (visible after popup) */}
+                  <div style={{ textAlign:"center", flexShrink:0 }}>
                     <div style={{ fontSize:"1.1rem", fontWeight:900, background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", lineHeight:1 }}>
                       +{xpGained}
                     </div>
                     <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.1em" }}>XP</div>
-                    {!xpAnimDone && (
-                      <div className="xp-float" style={{ position:"absolute", top:-2, left:0, right:0, textAlign:"center", fontSize:"0.85rem", fontWeight:900, color:"var(--for)", pointerEvents:"none" }}>
-                        +{xpGained}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Level badge + progress bar */}
+                  {/* Level badge + animated progress bar */}
                   <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth: isMobile ? 100 : 120 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", flexWrap:"wrap" }}>
                       <span style={{
@@ -303,12 +417,11 @@ export function ResultPage() {
                         Lv.{levelInfo.current.level}
                       </span>
                       <span style={{ fontSize:"0.72rem", fontWeight:700, color:"var(--text)" }}>{levelInfo.current.title}</span>
-                      {leveledUp && <span style={{ fontSize:"0.62rem", fontWeight:900, color:"var(--for)", animation:"xpFloat 1s ease-out forwards" }}>▲ UP!</span>}
                     </div>
                     {levelInfo.next && (
                       <div>
                         <div className="score-bar-track" style={{ height:5 }}>
-                          <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${levelInfo.progressPct}%`, transition:"width 1.5s cubic-bezier(.4,0,.2,1)" }} />
+                          <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${barPct}%`, transition: barTransition ? "width 0.85s cubic-bezier(.4,0,.2,1)" : "none" }} />
                         </div>
                         <div style={{ fontSize:"0.56rem", color:"var(--muted)", marginTop:"0.15rem" }}>
                           {levelInfo.progressXP}/{levelInfo.neededXP} XP
@@ -321,6 +434,28 @@ export function ResultPage() {
                   </div>
                 </div>
               </div>
+
+              {/* ── LEVEL-UP BANNER ── */}
+              {showLevelUp && (
+                <div className="level-up-pop" style={{
+                  marginBottom:"0.5rem", padding:"0.875rem 1.25rem",
+                  borderRadius:"0.875rem",
+                  background:"rgba(16,185,129,0.08)",
+                  border:"1px solid rgba(16,185,129,0.4)",
+                  display:"flex", alignItems:"center", gap:"1rem",
+                  boxShadow:"0 0 24px rgba(16,185,129,0.18)",
+                }}>
+                  <span style={{ fontSize: isMobile ? "1.75rem" : "2.25rem", flexShrink:0 }}>⬆</span>
+                  <div>
+                    <div className="shimmer-text" style={{ fontSize: isMobile ? "1rem" : "1.2rem", fontWeight:900, letterSpacing:"-0.01em" }}>
+                      LEVEL UP!
+                    </div>
+                    <div style={{ fontSize:"0.82rem", color:"var(--text)", fontWeight:700, marginTop:"0.1rem" }}>
+                      You are now <span style={{ color:"var(--for)" }}>Level {levelInfo.current.level}</span> — {newLevelTitle}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ── 3-COLUMN GRID ── */}
               <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.1fr 0.85fr", gap:"0.5rem", paddingBottom:"0.5rem" }}>

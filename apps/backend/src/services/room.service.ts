@@ -81,50 +81,25 @@ export class RoomService {
   static async joinRoom(roomCode: string, userId: string, username: string) {
     const code = roomCode.toUpperCase();
 
-    // ── Case 1: existing slot in any state — update it atomically ───────
-    // Single findOneAndUpdate handles all sub-cases:
-    //   • disconnected  → revive to "joined"
-    //   • joined/ready  → refresh username+joinedAt, preserve status
-    // Using arrayFilters so we can target the specific subdoc by userId
-    // and compute the new status in one round-trip.
+    // ── Case 1a: existing slot, disconnected → revive to "joined" ───────
+    const revivedRoom = await Room.findOneAndUpdate(
+      { code, "participants.userId": userId, "participants.status": "disconnected" },
+      {
+        $set: {
+          "participants.$[elem].status": "joined",
+          "participants.$[elem].username": username,
+          "participants.$[elem].joinedAt": new Date(),
+        },
+      },
+      { arrayFilters: [{ "elem.userId": userId }], new: true },
+    );
+    if (revivedRoom) return revivedRoom;
+
+    // ── Case 1b: existing slot, non-disconnected → refresh username ──────
     const existingRoom = await Room.findOneAndUpdate(
       { code, "participants.userId": userId },
-      [
-        {
-          $set: {
-            participants: {
-              $map: {
-                input: "$participants",
-                as: "p",
-                in: {
-                  $cond: {
-                    if: { $eq: ["$$p.userId", userId] },
-                    then: {
-                      $mergeObjects: [
-                        "$$p",
-                        {
-                          username,
-                          joinedAt: new Date(),
-                          // Revive disconnected → joined; preserve joined/ready.
-                          status: {
-                            $cond: {
-                              if: { $eq: ["$$p.status", "disconnected"] },
-                              then: "joined",
-                              else: "$$p.status",
-                            },
-                          },
-                        },
-                      ],
-                    },
-                    else: "$$p",
-                  },
-                },
-              },
-            },
-          },
-        },
-      ],
-      { new: true }
+      { $set: { "participants.$[elem].username": username } },
+      { arrayFilters: [{ "elem.userId": userId }], new: true },
     );
     if (existingRoom) return existingRoom;
 
@@ -238,19 +213,12 @@ export class RoomService {
     userId: string,
     status: string
   ) {
-    const room = await this.getRoomById(roomId);
-
-    if (!room) {
-      throw new Error("Room not found");
-    }
-
-    const participant = room.participants.find((p) => p.userId === userId);
-    if (!participant) {
-      throw new Error("Participant not found in room");
-    }
-
-    participant.status = status as any;
-    await room.save();
+    const room = await Room.findOneAndUpdate(
+      { _id: roomId, "participants.userId": userId },
+      { $set: { "participants.$[elem].status": status } },
+      { arrayFilters: [{ "elem.userId": userId }], new: true },
+    );
+    if (!room) throw new Error("Room or participant not found");
     return room;
   }
 
