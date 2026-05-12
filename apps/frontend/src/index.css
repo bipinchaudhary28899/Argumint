@@ -20,7 +20,7 @@
 
   /* Text — dark for contrast on light bg */
   --text:      #1e1b4b;   /* indigo-950 — very dark, saturated */
-  --muted:     #6b7280;   /* gray-500 */
+  --muted:     #4b5563;   /* gray-600 — darker for readability */
   --subtle:    #374151;   /* gray-700 */
 }
 
@@ -39,14 +39,30 @@ body {
 }
 #root { max-width: unset; margin: unset; padding: unset; text-align: unset; height: 100%; overflow: hidden; }
 
-/* ── Glass — now bright frosted white ──────────────────────── */
+/* ── Glass — premium frosted, layered depth ────────────────── */
 .glass {
-  background: rgba(255,255,255,0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1.5px solid rgba(196,181,253,0.5);
+  background: rgba(255,255,255,0.76);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(196,181,253,0.38);
   border-radius: 1.25rem;
-  box-shadow: 0 4px 28px rgba(79,70,229,0.08), 0 1px 0 rgba(255,255,255,0.9) inset;
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.95) inset,
+    0 -1px 0 rgba(196,181,253,0.12) inset,
+    0 8px 40px rgba(79,70,229,0.07),
+    0 2px 8px rgba(79,70,229,0.04),
+    0 1px 2px rgba(0,0,0,0.03);
+  transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+}
+.glass-interactive:hover {
+  transform: translateY(-3px);
+  border-color: rgba(196,181,253,0.55);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.95) inset,
+    0 -1px 0 rgba(196,181,253,0.15) inset,
+    0 16px 56px rgba(79,70,229,0.13),
+    0 4px 16px rgba(79,70,229,0.07),
+    0 1px 3px rgba(0,0,0,0.04);
 }
 
 /* ── Elevation shadows (replaces glow on light theme) ──────── */
@@ -148,11 +164,30 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 /* ── Nav ───────────────────────────────────────────────────── */
 .game-nav {
   position: sticky; top: 0; z-index: 50;
-  background: rgba(255,255,255,0.95); backdrop-filter: blur(20px);
-  border-bottom: 2px solid var(--border);
-  padding: 0 1.5rem; height: 62px;
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border-bottom: 1px solid rgba(196,181,253,0.45);
+  padding: 0 1.5rem; height: 68px;
   display: flex; align-items: center; justify-content: space-between;
-  box-shadow: 0 2px 12px rgba(79,70,229,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.9) inset,
+              0 4px 32px rgba(79,70,229,0.09),
+              0 1px 4px rgba(79,70,229,0.05);
+}
+/* Animated bottom glow — lives in the nav via ::after */
+.game-nav::after {
+  content: "";
+  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(79,70,229,0.25) 20%,
+    rgba(124,58,237,0.5) 45%,
+    rgba(14,165,233,0.4) 60%,
+    rgba(79,70,229,0.25) 80%,
+    transparent 100%);
+  background-size: 200% 100%;
+  animation: nav-glow-shift 6s ease-in-out infinite;
+  pointer-events: none;
 }
 .nav-logo {
   font-size: 1.55rem; font-weight: 900; letter-spacing: -0.03em;
@@ -160,7 +195,10 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text; cursor: pointer; text-decoration: none; border: none; padding: 0;
   font-family: inherit;
+  animation: logo-shimmer 7s ease-in-out infinite;
+  transition: opacity 0.2s ease;
 }
+.nav-logo:hover { opacity: 0.82; }
 
 /* ── Avatar ────────────────────────────────────────────────── */
 .avatar { width: 2.25rem; height: 2.25rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9rem; flex-shrink: 0; }
@@ -251,9 +289,56 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 1s linear infinite; }
 
+/* ── Pulse rings (used in debate room, not homepage) ────────── */
+@keyframes ring-breathe {
+  0%, 100% { opacity: var(--ring-opacity, 0.12); transform: scale(1); }
+  50%       { opacity: calc(var(--ring-opacity, 0.12) * 0.4); transform: scale(1.04); }
+}
+.ring-pulse { animation: ring-breathe var(--ring-dur, 40s) ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+/* ── Waveform bars ──────────────────────────────────────────── */
+@keyframes bar-bounce {
+  0%, 100% { transform: scaleY(0.15); }
+  50%       { transform: scaleY(1); }
+}
+.wave-bar { animation: bar-bounce var(--bar-dur, 1s) ease-in-out infinite; transform-origin: bottom; }
+
 @keyframes counter-ring {
   from { stroke-dashoffset: var(--ring-start); }
   to   { stroke-dashoffset: var(--ring-end); }
+}
+
+/* ── Nav animations ─────────────────────────────────────────── */
+@keyframes nav-glow-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+@keyframes logo-shimmer {
+  0%, 75%, 100% { filter: drop-shadow(0 0 0px rgba(79,70,229,0)); }
+  82%           { filter: drop-shadow(0 0 10px rgba(79,70,229,0.55)) drop-shadow(0 0 22px rgba(124,58,237,0.3)); }
+  90%           { filter: drop-shadow(0 0 4px rgba(79,70,229,0.25)); }
+}
+
+/* ── XP bar shimmer ─────────────────────────────────────────── */
+@keyframes xp-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+.xp-bar-fill {
+  background: linear-gradient(90deg, #4f46e5, #7c3aed, #a78bfa, #7c3aed, #4f46e5);
+  background-size: 200% 100%;
+  animation: xp-shimmer 3s ease-in-out infinite;
+}
+
+/* ── Nav chip hover ─────────────────────────────────────────── */
+.nav-chip {
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: default;
+}
+.nav-chip:hover {
+  background: rgba(79,70,229,0.12) !important;
+  border-color: rgba(79,70,229,0.35) !important;
+  box-shadow: 0 2px 12px rgba(79,70,229,0.15);
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────── */
@@ -279,7 +364,7 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
     position: fixed !important;
     top: 0; left: 0; right: 0;
     padding: 0 0.75rem;
-    height: 50px;
+    height: 54px;
     gap: 0.5rem;
     /* prevent right-side items overflowing the bar */
     overflow: hidden;
@@ -297,7 +382,7 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 
   /* Push page content below the fixed nav.
      !important is needed to beat inline padding on <main> elements */
-  .game-nav + * { padding-top: 50px !important; }
+  .game-nav + * { padding-top: 54px !important; }
 
   .nav-logo { font-size: 1.15rem; }
 

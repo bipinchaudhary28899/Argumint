@@ -42,6 +42,22 @@ export function createRoomRoutes(redisClient: Redis | null) {
   });
 
   /**
+   * GET /rooms/stats - Live platform activity counts (auth required)
+   */
+  router.get("/stats", authMiddleware, async (_req: Request, res: Response) => {
+    try {
+      const { Room } = await import("../models/Room.model.js");
+      const [activeRooms, liveDebates] = await Promise.all([
+        Room.countDocuments({ status: { $in: ["lobby", "voting", "ready-up", "prep"] } }),
+        Room.countDocuments({ status: "live" }),
+      ]);
+      res.json({ activeRooms, liveDebates });
+    } catch {
+      res.json({ activeRooms: 0, liveDebates: 0 });
+    }
+  });
+
+  /**
    * GET /rooms/:code - Get room details by code (auth required)
    */
   router.get("/:code", authMiddleware, async (req: Request, res: Response) => {

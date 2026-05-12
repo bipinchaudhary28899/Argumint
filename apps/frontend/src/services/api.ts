@@ -150,6 +150,26 @@ export const roomApi = {
   },
 };
 
+export const platformApi = {
+  async getStats(): Promise<{ activeRooms: number; liveDebates: number }> {
+    try {
+      const res = await apiClient.get<{ activeRooms: number; liveDebates: number }>("/rooms/stats");
+      return res.data;
+    } catch {
+      return { activeRooms: 0, liveDebates: 0 };
+    }
+  },
+
+  async getLeaderboard(): Promise<{ id: string; username: string; xp: number; debatesWon: number; totalDebates: number }[]> {
+    try {
+      const res = await apiClient.get("/auth/leaderboard");
+      return res.data;
+    } catch {
+      return [];
+    }
+  },
+};
+
 export const debateApi = {
   /**
    * Upload an audio blob to /debates/:id/transcribe and get back the
