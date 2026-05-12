@@ -68,6 +68,18 @@ export interface IApiCosts {
   totalCostUSD: number;
 }
 
+export interface IJudgeParticipantScore {
+  userId: string;
+  score: number; // 0–100
+}
+
+export interface IJudgeScore {
+  judgeId: string;
+  judgeUsername: string;
+  scores: IJudgeParticipantScore[];
+  submittedAt: Date;
+}
+
 export interface IDebateResult {
   winnerSide: "for" | "against";
   winningPoints: string[];
@@ -103,6 +115,9 @@ export interface IDebate extends Document {
   buzzerState?: IBuzzerState | null;
   // Running tally of OpenAI API usage for this debate
   apiCosts: IApiCosts;
+  // Human judge scores — populated after debate ends when judges submit
+  judgeScores: IJudgeScore[];
+  judgeScoresLockedAt?: Date;
 }
 
 const apiCostsSchema = new Schema<IApiCosts>(
@@ -206,6 +221,24 @@ const debateResultSchema = new Schema<IDebateResult>(
   { _id: false },
 );
 
+const judgeParticipantScoreSchema = new Schema<IJudgeParticipantScore>(
+  {
+    userId: { type: String, required: true },
+    score: { type: Number, required: true, min: 0, max: 100 },
+  },
+  { _id: false },
+);
+
+const judgeScoreSchema = new Schema<IJudgeScore>(
+  {
+    judgeId:       { type: String, required: true },
+    judgeUsername: { type: String, required: true },
+    scores:        { type: [judgeParticipantScoreSchema], default: [] },
+    submittedAt:   { type: Date, default: () => new Date() },
+  },
+  { _id: false },
+);
+
 const debateSchema = new Schema<IDebate>(
   {
     roomId: { type: String, required: true, index: true },
@@ -237,6 +270,8 @@ const debateSchema = new Schema<IDebate>(
     result: { type: debateResultSchema, default: null },
     buzzerState: { type: buzzerStateSchema, default: null },
     apiCosts: { type: apiCostsSchema, default: () => ({}) },
+    judgeScores: { type: [judgeScoreSchema], default: [] },
+    judgeScoresLockedAt: { type: Date },
   },
   { timestamps: true },
 );

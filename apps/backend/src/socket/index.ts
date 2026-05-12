@@ -173,10 +173,13 @@ export function initializeSocketIO(
           })
         );
 
+        // Fetch the latest judgeScores in case judges submitted during AI judging
+        const freshDebate = await Debate.findById(debateId).select("judgeScores");
         io.to(`room:${roomId}`).emit("debate:result-ready", {
           debateId,
           result,
           xpAwards,
+          judgeScores: freshDebate?.judgeScores ?? [],
         });
       } catch (err: any) {
         console.error("[Judge] Failed:", err?.message);
@@ -290,7 +293,8 @@ export function initializeSocketIO(
           (p: any) => p.userId === userId && p.status !== "disconnected",
         );
         if (!existingSlot) {
-          room = await RoomService.joinRoom(roomCode, userId, username);
+          const desiredRole = (data.role as string) || "participant";
+          room = await RoomService.joinRoom(roomCode, userId, username, desiredRole as any);
         }
 
         // Auto-ready the host/creator: their status should always be "ready"
@@ -1074,6 +1078,141 @@ export function initializeSocketIO(
       } catch (err: any) {
         console.error("[Socket] webrtc:get-peers error:", err);
         callback({ success: false, error: err?.message || "Failed" });
+      }
+    });
+
+    // ==================== ROLE MANAGEMENT EVENTS ====================
+
+    /**
+     * Host changes a participant's role (participant / judge / spectator).
+     * Rooms must be in "lobby" status — roles lock once the debate starts.
+     * Client emits: { roomId, targetUserId, newRole }
+     */
+    socket.on("room:change-role", async (data, callback) => {
+      try {
+        const { roomId, targetUserId, newRole } = data;
+        if (!roomId || !targetUserId || !newRole) {
+          return callback?.({ success: false, error: "roomId, targetUserId and newRole required" });
+        }
+        const room = await RoomService.changeParticipantRole(roomId, userId, targetUserId, newRole);
+        io.to(`room:${roomId}`).emit("room:role-changed", {
+          targetUserId,
+          newRole,
+          participants: room.participants,
+        });
+        callback?.({ success: true, participants: room.participants });
+      } catch (err: any) {
+        callback?.({ success: false, error: err?.message || "Failed to change role" });
+      }
+    });
+
+    /**
+     * Host transfers host privileges to another participant.
+     * Client emits: { roomId, targetUserId }
+     */
+    socket.on("room:transfer-host", async (data, callback) => {
+      try {
+        const { roomId, targetUserId } = data;
+        if (!roomId || !targetUserId) {
+          return callback?.({ success: false, error: "roomId and targetUserId required" });
+        }
+        const room = await RoomService.transferHost(roomId, userId, targetUserId);
+        io.to(`room:${roomId}`).emit("room:host-transferred", {
+          newHostId:       room.creatorId,
+          newHostUsername: room.creatorUsername,
+          participants:    room.participants,
+        });
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err?.message || "Failed to transfer host" });
+      }
+    });
+
+    // ==================== JUDGE SCORING EVENTS ====================
+
+    /**
+     * Judge submits scores for all debating participants.
+     * Client emits: { debateId, scores: [{ userId, score }] }
+     * Each score is 0–100. One submission per judge (subsequent calls overwrite).
+     */
+    socket.on("debate:submit-judge-scores", async (data, callback) => {
+      try {
+        const { debateId, scores } = data;
+        if (!debateId || !Array.isArray(scores)) {
+          return callback?.({ success: false, error: "debateId and scores array required" });
+        }
+
+        const debate = await Debate.findById(debateId);
+        if (!debate) return callback?.({ success: false, error: "Debate not found" });
+
+        if (debate.status !== "ended") {
+          return callback?.({ success: false, error: "Scoring is only available after the debate ends" });
+        }
+
+        if (debate.judgeScoresLockedAt) {
+          return callback?.({ success: false, error: "Judge scoring window has closed" });
+        }
+
+        // Verify this user is a judge in the room
+        const room = await RoomService.getRoomById(debate.roomId);
+        const participant = room?.participants.find((p) => p.userId === userId);
+        if (participant?.role !== "judge" && room?.creatorId !== userId) {
+          // Allow host to submit judge scores too (host may also be acting as a judge)
+          if (participant?.role !== "moderator") {
+            return callback?.({ success: false, error: "Only judges can submit scores" });
+          }
+        }
+
+        // Upsert: replace existing scores from this judge, or push new entry
+        const existingIndex = debate.judgeScores.findIndex((js) => js.judgeId === userId);
+        const entry = {
+          judgeId:       userId,
+          judgeUsername: username,
+          scores:        scores.map((s: any) => ({ userId: s.userId, score: Math.min(100, Math.max(0, Number(s.score))) })),
+          submittedAt:   new Date(),
+        };
+
+        if (existingIndex >= 0) {
+          debate.judgeScores[existingIndex] = entry;
+        } else {
+          debate.judgeScores.push(entry);
+        }
+        debate.markModified("judgeScores");
+        await debate.save();
+
+        io.to(`room:${debate.roomId}`).emit("debate:judge-scores-updated", {
+          debateId,
+          judgeScores: debate.judgeScores,
+        });
+
+        callback?.({ success: true });
+      } catch (err: any) {
+        console.error("[Judge Scores] Submit error:", err);
+        callback?.({ success: false, error: err?.message || "Failed to submit judge scores" });
+      }
+    });
+
+    /**
+     * Lock the judge scoring window (called client-side when the timer expires,
+     * or the judge themselves can call it to finalize early).
+     * Client emits: { debateId }
+     */
+    socket.on("debate:lock-judge-scores", async (data, callback) => {
+      try {
+        const { debateId } = data;
+        if (!debateId) return callback?.({ success: false, error: "debateId required" });
+
+        const debate = await Debate.findById(debateId);
+        if (!debate) return callback?.({ success: false, error: "Debate not found" });
+
+        if (!debate.judgeScoresLockedAt) {
+          debate.judgeScoresLockedAt = new Date();
+          await debate.save();
+          io.to(`room:${debate.roomId}`).emit("debate:judge-scores-locked", { debateId });
+        }
+        callback?.({ success: true });
+      } catch (err: any) {
+        callback?.({ success: false, error: err?.message || "Failed to lock judge scores" });
       }
     });
 

@@ -37,25 +37,32 @@ export class DebateService {
       throw new Error(`Cannot start debate from status "${room.status}"`);
     }
 
-    if (room.participants.length < 2) {
-      throw new Error("Need at least 2 participants to start a debate");
+    // Only debating roles (participant + moderator) are counted for the debate itself.
+    // Judges and spectators are observers and are excluded from the turn order.
+    const debatingParticipants = room.participants.filter(
+      (p) => p.role === "participant" || p.role === "moderator",
+    );
+
+    if (debatingParticipants.length < 2) {
+      throw new Error("Need at least 2 debating participants to start");
     }
 
-    const everyoneReady = room.participants.every((p) => p.status === "ready");
+    // Only require debating participants to be ready (judges/spectators don't block start).
+    const everyoneReady = debatingParticipants.every((p) => p.status === "ready");
     if (!everyoneReady) {
-      throw new Error("All participants must be ready");
+      throw new Error("All debating participants must be ready");
     }
 
     if (!room.topic || room.topic.trim().length < 5) {
       throw new Error("Room must have a topic (run voting first if enabled)");
     }
 
-    // Shuffle participants, split into two equal(ish) halves, then
+    // Shuffle debating participants, split into two equal(ish) halves, then
     // interleave so turns alternate for → against → for → against …
     // Odd person out goes to "for" (the first group). If one side runs
     // out of speakers before the other, the remaining speakers are
     // appended at the end.
-    const shuffled = shuffle([...room.participants]);
+    const shuffled = shuffle([...debatingParticipants]);
     const half = Math.ceil(shuffled.length / 2);
     const forGroup  = shuffled.slice(0, half);
     const againstGroup = shuffled.slice(half);

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
-import { NavLogo } from "../components/NavLogo";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getLevelInfo } from "@argumint/shared";
@@ -86,6 +85,13 @@ export function ResultPage() {
   const [judgingError,  setJudgingError]  = useState<string | null>(null);
   const [showTx,        setShowTx]        = useState(false);
   const [myXPAward, setMyXPAward] = useState<{ xpGained: number; newXP: number; leveledUp: boolean; newLevel: number; newLevelTitle: string } | null>(null);
+  // Human judge scores — updated live as judges submit during the judging window
+  const [judgeScores,   setJudgeScores]   = useState<Array<{
+    judgeId: string;
+    judgeUsername: string;
+    scores: Array<{ userId: string; score: number }>;
+    submittedAt: Date;
+  }>>([]);
 
   // ── XP animation state machine ───────────────────────────────────────────
   const [popupVisible,  setPopupVisible]  = useState(false);   // overlay mounted
@@ -123,15 +129,24 @@ export function ResultPage() {
         const award = d.xpAwards.find((a: any) => a.userId === user.id);
         if (award) setMyXPAward(award);
       }
+      // Capture judge scores included in result-ready broadcast
+      if (Array.isArray(d.judgeScores) && d.judgeScores.length > 0) {
+        setJudgeScores(d.judgeScores);
+      }
       // Refresh user so Home page stats (Won/Lost/Total/XP) are up to date
       void checkAuth();
     };
     const onFailed = (d: any) => setJudgingError(d?.error || "Judge unavailable");
-    socket.on("debate:result-ready",  onReady);
-    socket.on("debate:result-failed", onFailed);
+    const onJudgeScoresUpdated = (d: any) => {
+      if (Array.isArray(d.judgeScores)) setJudgeScores(d.judgeScores);
+    };
+    socket.on("debate:result-ready",         onReady);
+    socket.on("debate:result-failed",        onFailed);
+    socket.on("debate:judge-scores-updated", onJudgeScoresUpdated);
     return () => {
-      socket.off("debate:result-ready",  onReady);
-      socket.off("debate:result-failed", onFailed);
+      socket.off("debate:result-ready",         onReady);
+      socket.off("debate:result-failed",        onFailed);
+      socket.off("debate:judge-scores-updated", onJudgeScoresUpdated);
     };
   }, [socket]);
 
@@ -349,17 +364,6 @@ export function ResultPage() {
 
       <div className="bg-grid" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
 
-        {/* ── NAV ── */}
-        <nav className="game-nav">
-          <NavLogo onClick={() => navigate("/")} />
-          <div style={{ display:"flex", alignItems:"center", gap:"0.875rem" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:"0.4rem" }}>
-              <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-              {!isMobile && <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>}
-            </div>
-            {!isMobile && <span style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{user?.username}</span>}
-          </div>
-        </nav>
 
         {/* ── MAIN ── */}
         <main style={{ flex:1, overflow:"auto", display:"flex", flexDirection:"column", padding: isMobile ? "0.75rem 0.75rem 2rem" : "0.5rem 0.875rem 1.5rem" }}>
@@ -687,6 +691,86 @@ export function ResultPage() {
                 </div>
 
               </div>
+
+              {/* ── JUDGE SCORES PANEL ── */}
+              {judgeScores.length > 0 && result && (
+                <div className="glass fade-up" style={{ marginTop:"0.5rem", padding:"0.875rem 1rem", border:"1px solid rgba(167,139,250,0.3)", background:"rgba(167,139,250,0.04)" }}>
+                  <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"#a78bfa", marginBottom:"0.75rem" }}>
+                    ⚖️ Human Judge Scores
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill,minmax(200px,1fr))", gap:"0.5rem" }}>
+                    {result.scores.map((aiScore) => {
+                      // Collect all judges' scores for this participant
+                      const scoresForUser = judgeScores.map((js) => ({
+                        judgeUsername: js.judgeUsername,
+                        score: js.scores.find((s) => s.userId === aiScore.userId)?.score ?? null,
+                      })).filter((s) => s.score !== null) as { judgeUsername: string; score: number }[];
+
+                      const avgJudgeScore = scoresForUser.length > 0
+                        ? Math.round(scoresForUser.reduce((sum, s) => sum + s.score, 0) / scoresForUser.length)
+                        : null;
+
+                      const blended = avgJudgeScore !== null
+                        ? Math.round((aiScore.total + avgJudgeScore) / 2)
+                        : null;
+
+                      const reliability = avgJudgeScore !== null
+                        ? Math.round((1 - Math.abs(aiScore.total - avgJudgeScore) / 100) * 100)
+                        : null;
+
+                      const isMe = aiScore.userId === user?.id;
+                      return (
+                        <div key={aiScore.userId} style={{
+                          padding:"0.75rem 0.875rem", borderRadius:"0.625rem",
+                          background: isMe ? "rgba(167,139,250,0.1)" : "rgba(249,247,255,0.5)",
+                          border:`1px solid ${isMe ? "rgba(167,139,250,0.4)" : "var(--border)"}`,
+                        }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", marginBottom:"0.5rem" }}>
+                            <span style={{ fontWeight:800, fontSize:"0.85rem", color:"var(--text)" }}>{aiScore.username}{isMe ? " 👤" : ""}</span>
+                            <span className={`badge ${aiScore.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize:"0.58rem" }}>{aiScore.side === "for" ? "FOR" : "AGN"}</span>
+                          </div>
+                          <div style={{ display:"flex", gap:"0.75rem", flexWrap:"wrap", marginBottom:"0.4rem" }}>
+                            <div style={{ textAlign:"center" }}>
+                              <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>AI</div>
+                              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", color:"var(--cyan)" }}>{aiScore.total}</div>
+                            </div>
+                            {avgJudgeScore !== null && (
+                              <>
+                                <div style={{ textAlign:"center" }}>
+                                  <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>Judges</div>
+                                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", color:"#a78bfa" }}>{avgJudgeScore}</div>
+                                </div>
+                                <div style={{ textAlign:"center" }}>
+                                  <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>Blended</div>
+                                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", background:scoreGradient(blended!), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>{blended}</div>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {scoresForUser.length > 0 && (
+                            <div style={{ fontSize:"0.65rem", color:"var(--muted)" }}>
+                              {scoresForUser.map((s, i) => (
+                                <span key={i}>{i > 0 ? " · " : ""}{s.judgeUsername}: <strong style={{ color:"#a78bfa" }}>{s.score}</strong></span>
+                              ))}
+                            </div>
+                          )}
+                          {reliability !== null && (
+                            <div style={{ fontSize:"0.62rem", color: reliability >= 80 ? "var(--for)" : reliability >= 60 ? "var(--gold)" : "var(--against)", marginTop:"0.25rem", fontWeight:700 }}>
+                              Reliability: {reliability}%
+                            </div>
+                          )}
+                          {scoresForUser.length === 0 && (
+                            <div style={{ fontSize:"0.65rem", color:"var(--muted)", fontStyle:"italic" }}>No judge scores yet</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p style={{ margin:"0.625rem 0 0", fontSize:"0.7rem", color:"var(--muted)" }}>
+                    Blended = (AI + avg judge) ÷ 2 · Reliability = 1 − |AI − judge| / 100
+                  </p>
+                </div>
+              )}
             </>
           )}
 

@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
 import { useRecorder } from "../hooks/useRecorder";
-import { NavLogo } from "../components/NavLogo";
 import { InAppBrowserGate } from "../components/InAppBrowserGate";
 import { useWebRTCMesh } from "../hooks/useWebRTCMesh";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
@@ -71,6 +70,14 @@ export function DebatePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
 
+  // ── Judge / spectator state ────────────────────────────────────────────────
+  // Role is written to sessionStorage by RoomLobby when the user joins.
+  const myRoomRole = sessionStorage.getItem("argumint_room_role") ?? "participant";
+  const [showJudgePanel, setShowJudgePanel] = useState(false);
+  const [judgeSecsLeft, setJudgeSecsLeft]   = useState(90);
+  const [judgeScores, setJudgeScores]       = useState<Record<string, number>>({}); // userId → score 0-100
+  const [judgeSubmitted, setJudgeSubmitted] = useState(false);
+
   // ── Buzzer mode state ────────────────────────────────────────────────────
   const [buzzerState, setBuzzerState] = useState<BuzzerState | null>(null);
   const [buzzerWarning, setBuzzerWarning] = useState(false);
@@ -93,13 +100,20 @@ export function DebatePage() {
 
   const isBuzzer         = debate?.mode === "buzzer";
   const speakerUserId    = debate?.currentTurn?.speakerId ?? null;
-  const isMyTurn         = !isBuzzer && !!user && !!speakerUserId && speakerUserId === user.id;
-  const isHolder         = isBuzzer && !!user && buzzerState?.currentHolder === user.id;
+  // Observers (judges/spectators) are never the active speaker
+  const isMyTurn         = !isBuzzer && !!user && !!speakerUserId && speakerUserId === user.id && !isObserver;
+  const isHolder         = isBuzzer && !!user && buzzerState?.currentHolder === user.id && !isObserver;
   const activeSpeakerUserId = isBuzzer ? (buzzerState?.currentHolder ?? null) : speakerUserId;
   const isActiveSpeaker  = isBuzzer ? isHolder : isMyTurn;
 
   // isHost derived from debate.creatorId — no sessionStorage needed.
   const isHost = !!user && !!debate?.creatorId && debate.creatorId === user.id;
+
+  // An observer is anyone not in the turn order (judges and spectators).
+  // We derive this from the debate itself so it works even after a page refresh.
+  const isInTurnOrder = !!user && (debate?.turnOrder.some((t) => t.userId === user.id) ?? false);
+  const isObserver    = !!debate && !isInTurnOrder && !isHost;
+  const isJudge       = isObserver && myRoomRole === "judge";
 
   // ── Buzzer derived values ─────────────────────────────────────────────────
   const nowDate         = new Date(now);
@@ -113,6 +127,7 @@ export function DebatePage() {
   const canGrab =
     isBuzzer &&
     !!user &&
+    !isObserver &&
     !isHolder &&
     !isOnCooldown &&
     !isUploading &&
@@ -142,11 +157,10 @@ export function DebatePage() {
     socket,
     roomId: debate?.roomId ?? null,
     selfUserId: user?.id ?? null,
-    isSpeaker: isActiveSpeaker,
+    // Observers never broadcast a mic track — they only receive audio
+    isSpeaker: isObserver ? false : isActiveSpeaker,
     activeSpeakerUserId,
-    // Reuse the already-acquired mic stream so WebRTC doesn't call getUserMedia
-    // a second time (breaks Android Chrome speech API + iOS Safari).
-    getExternalStream: recorder.getStream,
+    getExternalStream: isObserver ? undefined : recorder.getStream,
   });
 
   // ── Initial state load ────────────────────────────────────────────────────
@@ -179,7 +193,13 @@ export function DebatePage() {
     const onTurnEnded   = () => {};
     const onDebateEnded = (data: any) => {
       setDebate((prev) => prev ? { ...prev, status: "ended" as const, currentTurn: null, rounds: data.rounds ?? prev.rounds } : prev);
-      if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
+      // Judges see the scoring panel before navigating to results.
+      // Everyone else navigates straight away.
+      if (isJudge) {
+        setShowJudgePanel(true);
+      } else if (code && debateId) {
+        navigate(`/room/${code}/result/${debateId}`);
+      }
     };
 
     const onBuzzerWarning = () => {
@@ -251,10 +271,31 @@ export function DebatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, code, navigate, debateId]);
 
-  // ── Start/stop recording when active speaker status changes ───────────────
+  // ── Judge panel countdown timer ───────────────────────────────────────────
   useEffect(() => {
+    if (!showJudgePanel) return;
+    const id = setInterval(() => {
+      setJudgeSecsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(id);
+          // Auto-lock and navigate when timer hits 0
+          socket?.emit("debate:lock-judge-scores", { debateId });
+          if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showJudgePanel]);
+
+  // ── Start/stop recording when active speaker status changes ───────────────
+  // Observers (judges / spectators) never record — they only receive audio.
+  useEffect(() => {
+    if (isObserver) return;
     if (isActiveSpeaker) {
-      submittedRef.current = false; // reset so user can submit each turn
+      submittedRef.current = false;
       void recorder.start();
       if (!noLiveCaptions) sr.start("en-US");
     } else {
@@ -262,7 +303,7 @@ export function DebatePage() {
       sr.reset();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActiveSpeaker]);
+  }, [isActiveSpeaker, isObserver]);
 
   // ── Shared transcription + submit helper ──────────────────────────────────
   // Both handleSubmit (alternate mode) and handleBuzzerRelease (buzzer mode)
@@ -331,6 +372,24 @@ export function DebatePage() {
         setGrabError(msg);
         if (grabErrTimerRef.current) clearTimeout(grabErrTimerRef.current);
         grabErrTimerRef.current = setTimeout(() => setGrabError(null), 3_000);
+      }
+    });
+  };
+
+  // ── Judge: submit scores ──────────────────────────────────────────────────
+  const handleJudgeSubmit = () => {
+    if (!debateId || !debate) return;
+    const scores = debate.turnOrder.map((p) => ({
+      userId: p.userId,
+      score:  judgeScores[p.userId] ?? 50,
+    }));
+    socket?.emit("debate:submit-judge-scores", { debateId, scores }, (res: any) => {
+      if (res?.success) {
+        setJudgeSubmitted(true);
+        socket?.emit("debate:lock-judge-scores", { debateId });
+        if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
+      } else {
+        setError(res?.error || "Failed to submit scores");
       }
     });
   };
@@ -428,36 +487,6 @@ export function DebatePage() {
           </div>
         )}
 
-        <nav className="game-nav">
-          <NavLogo />
-          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "0.5rem" : "1rem" }}>
-            {!isBuzzer && turn && !finished && (
-              <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem" }}>
-                R{turn.roundNumber}/{debate.totalRounds}
-              </div>
-            )}
-            {isBuzzer && !finished && !isMobile && (
-              <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem" }}>
-                {debate.rounds.length} turn{debate.rounds.length !== 1 ? "s" : ""} · Buzzer
-              </div>
-            )}
-            {mySide && (
-              <span className={`badge ${mySide === "for" ? "badge-for" : "badge-against"}`}>
-                {mySide === "for" ? "FOR" : "AGN"}
-              </span>
-            )}
-            {isBuzzer && isHost && !finished && (
-              <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.35rem 0.75rem", fontSize: "0.75rem" }}>
-                ⏹ {isMobile ? "End" : "End Debate"}
-              </button>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-              {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>}
-            </div>
-          </div>
-        </nav>
-
         <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
           <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, gap: "0.875rem" }}>
 
@@ -466,6 +495,35 @@ export function DebatePage() {
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", width: "100%" }}>
                 <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", flexShrink: 0 }}>Motion</div>
                 <div style={{ fontWeight: 700, color: "var(--text)", fontSize: isMobile ? "0.85rem" : "0.95rem", flex: 1 }}>{debate.topic}</div>
+                {/* Status bar (was in nav) */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                  {!isBuzzer && turn && !finished && (
+                    <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem" }}>
+                      R{turn.roundNumber}/{debate.totalRounds}
+                    </div>
+                  )}
+                  {isBuzzer && !finished && !isMobile && (
+                    <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem" }}>
+                      {debate.rounds.length} turn{debate.rounds.length !== 1 ? "s" : ""} · Buzzer
+                    </div>
+                  )}
+                  {mySide && !isObserver && (
+                    <span className={`badge ${mySide === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.68rem" }}>
+                      {mySide === "for" ? "FOR" : "AGN"}
+                    </span>
+                  )}
+                  {isObserver && (
+                    <span className="badge badge-muted" style={{ fontSize: "0.68rem", background: isJudge ? "rgba(167,139,250,0.15)" : undefined, color: isJudge ? "#a78bfa" : undefined }}>
+                      {isJudge ? "JUDGE" : "SPECTATOR"}
+                    </span>
+                  )}
+                  {isBuzzer && isHost && !finished && (
+                    <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.25rem 0.6rem", fontSize: "0.72rem" }}>
+                      ⏹ {isMobile ? "End" : "End Debate"}
+                    </button>
+                  )}
+                  <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
+                </div>
               </div>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <span className="badge badge-muted" style={{ fontSize: "0.7rem", textTransform: "capitalize" }}>Mode: {debate.mode}</span>
@@ -661,8 +719,90 @@ export function DebatePage() {
                   </div>
                 )}
 
-                {/* Finished */}
-                {finished && (
+                {/* Observer banner (judges / spectators) */}
+                {isObserver && !finished && !showJudgePanel && (
+                  <div className="glass fade-up" style={{ padding: "1.5rem 2rem", textAlign: "center", border: `1px solid ${isJudge ? "rgba(167,139,250,0.3)" : "var(--border)"}`, background: isJudge ? "rgba(167,139,250,0.06)" : "rgba(107,114,128,0.06)" }}>
+                    <div style={{ fontSize: "1.75rem", marginBottom: "0.5rem" }}>{isJudge ? "⚖️" : "👁️"}</div>
+                    <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "var(--text)", marginBottom: "0.35rem" }}>
+                      You are observing as {isJudge ? "Judge" : "Spectator"}
+                    </div>
+                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
+                      {isJudge
+                        ? "Listen carefully — you'll score the debaters when the debate ends."
+                        : "Sit back and enjoy the debate live."}
+                    </p>
+                  </div>
+                )}
+
+                {/* ── JUDGE SCORING PANEL ── */}
+                {showJudgePanel && isJudge && debate && (
+                  <div className="glass fade-up" style={{ padding: "2rem", border: "1px solid rgba(167,139,250,0.4)", background: "rgba(167,139,250,0.06)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+                      <div>
+                        <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#a78bfa", marginBottom: "0.3rem" }}>Judge Scoring</div>
+                        <h2 style={{ fontSize: "1.4rem", fontWeight: 900, color: "var(--text)", margin: 0 }}>Score the Debaters</h2>
+                      </div>
+                      {!judgeSubmitted && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem", background: judgeSecsLeft <= 10 ? "rgba(244,63,94,0.12)" : "rgba(167,139,250,0.1)", border: `1px solid ${judgeSecsLeft <= 10 ? "rgba(244,63,94,0.3)" : "rgba(167,139,250,0.2)"}` }}>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.1rem", fontWeight: 800, color: judgeSecsLeft <= 10 ? "var(--against)" : "#a78bfa" }}>{judgeSecsLeft}s</span>
+                          <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>to submit</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
+                      Rate each debater 0–100 overall. Your scores will be averaged with the AI judge's evaluation.
+                    </p>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
+                      {debate.turnOrder.map((p) => {
+                        const score = judgeScores[p.userId] ?? 50;
+                        return (
+                          <div key={p.userId} style={{ padding: "1rem 1.25rem", borderRadius: "0.75rem", background: "rgba(249,247,255,0.5)", border: "1px solid var(--border)" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
+                              <div className={`avatar ${p.side === "for" ? "avatar-for" : "avatar-against"}`} style={{ width: "2rem", height: "2rem", fontSize: "0.8rem" }}>
+                                {p.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem" }}>{p.username}</div>
+                                <span className={`badge ${p.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.62rem" }}>{p.side === "for" ? "FOR" : "AGAINST"}</span>
+                              </div>
+                              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.5rem", fontWeight: 900, color: score >= 70 ? "var(--for)" : score >= 40 ? "var(--cyan)" : "var(--against)", minWidth: 48, textAlign: "right" }}>
+                                {score}
+                              </div>
+                            </div>
+                            <input
+                              type="range"
+                              min={0} max={100} step={1}
+                              value={score}
+                              disabled={judgeSubmitted}
+                              onChange={(e) => setJudgeScores((prev) => ({ ...prev, [p.userId]: Number(e.target.value) }))}
+                              style={{ width: "100%", accentColor: "#a78bfa" }}
+                            />
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+                              <span>0 — Weak</span>
+                              <span>50 — Average</span>
+                              <span>Excellent — 100</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {!judgeSubmitted ? (
+                      <button onClick={handleJudgeSubmit} className="btn-primary" style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800, background: "linear-gradient(135deg,#7c3aed,#a78bfa)" }}>
+                        ⚖️ Submit Scores →
+                      </button>
+                    ) : (
+                      <div style={{ padding: "1rem", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "0.75rem", textAlign: "center", color: "var(--for)", fontWeight: 700 }}>
+                        ✓ Scores submitted — navigating to results…
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Finished (non-judge) */}
+                {finished && !showJudgePanel && (
                   <div className="glass fade-up glow-gold" style={{ padding: "2.5rem", textAlign: "center", border: "1px solid rgba(245,158,11,0.3)" }}>
                     <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold)", marginBottom: "0.5rem" }}>Debate Complete</div>
                     <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "var(--text)", margin: "0 0 0.5rem", letterSpacing: "-0.02em" }} className="text-glow-gold">All turns finished</h2>

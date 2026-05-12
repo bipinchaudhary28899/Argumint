@@ -1,4 +1,4 @@
-import { Room } from "../models/Room.model.js";
+import { Room, type ParticipantRole } from "../models/Room.model.js";
 import { generateUniqueRoomCode } from "../utils/room.utils.js";
 import { CreateRoomInput, UpdateRoomSettingsInput } from "@argumint/shared";
 
@@ -33,6 +33,9 @@ export class RoomService {
       description: data.description,
       debateMode: data.debateMode || "buzzer",
       maxParticipants: data.maxParticipants || 10,
+      maxJudges: 3,
+      maxSpectators: 50,
+      isPremiumRoom: false,
       votingEnabled: data.votingEnabled || false,
       votingTopics: votingTopics,
       votingDuration: data.votingDuration || 30,
@@ -77,8 +80,19 @@ export class RoomService {
    *
    * Uses atomic findOneAndUpdate operations to avoid Mongoose VersionError
    * when multiple sockets emit room:join concurrently for the same room.
+   *
+   * @param role - The role the user wants to join as. Defaults to "participant".
+   *               "moderator" is reserved for the host and cannot be self-assigned.
    */
-  static async joinRoom(roomCode: string, userId: string, username: string) {
+  static async joinRoom(
+    roomCode: string,
+    userId: string,
+    username: string,
+    role: ParticipantRole = "participant",
+  ) {
+    // Prevent guests from self-assigning host role
+    const safeRole: ParticipantRole =
+      role === "moderator" ? "participant" : role;
     const code = roomCode.toUpperCase();
 
     // ── Case 1a: existing slot, disconnected → revive to "joined" ───────
@@ -89,6 +103,8 @@ export class RoomService {
           "participants.$[elem].status": "joined",
           "participants.$[elem].username": username,
           "participants.$[elem].joinedAt": new Date(),
+          // Update role only if they're changing from participant; preserve moderator role
+          "participants.$[elem].role": safeRole,
         },
       },
       { arrayFilters: [{ "elem.userId": userId }], new: true },
@@ -137,7 +153,7 @@ export class RoomService {
           participants: {
             userId,
             username,
-            role: "participant",
+            role: safeRole,
             joinedAt: new Date(),
             status: "joined",
           },
@@ -244,21 +260,28 @@ export class RoomService {
       return null;
     }
 
-    // If the leaving participant was the host/moderator, promote a new host
+    // If the leaving participant was the host/moderator, promote a new host.
+    // Priority: judges first, then participants, then spectators.
     if (leavingParticipant?.role === "moderator") {
       // Clear any existing moderator roles just in case
-      room.participants.forEach((participant) => {
-        if (participant.role === "moderator") {
-          participant.role = "participant";
-        }
+      room.participants.forEach((p) => {
+        if (p.role === "moderator") p.role = "participant";
       });
 
-      // Pick a random remaining participant to become the new host
-      const newHostIndex = Math.floor(Math.random() * room.participants.length);
-      const newHost = room.participants[newHostIndex];
+      // Pick by priority: judge → participant → spectator
+      const priorityOrder: ParticipantRole[] = ["judge", "participant", "spectator"];
+      let newHost: typeof room.participants[0] | undefined;
+      for (const priorityRole of priorityOrder) {
+        const candidates = room.participants.filter((p) => p.role === priorityRole);
+        if (candidates.length > 0) {
+          newHost = candidates[Math.floor(Math.random() * candidates.length)];
+          break;
+        }
+      }
+      // Fallback: any remaining participant
+      if (!newHost) newHost = room.participants[0];
 
       newHost.role = "moderator";
-      // New host should be considered ready by default
       newHost.status = "ready" as any;
 
       // Update creator info so future "creator-only" checks align with the current host
@@ -330,6 +353,84 @@ export class RoomService {
     room.votingTopics.forEach((t) => {
       t.votes = room.userVotes.filter((v) => v.topicId === t.id).length;
     });
+
+    await room.save();
+    return room;
+  }
+
+  /**
+   * Change a participant's role. Only the host may call this, and only
+   * while the room is in "lobby" status (roles lock once the debate starts).
+   * The moderator role cannot be assigned this way — use transferHost instead.
+   */
+  static async changeParticipantRole(
+    roomId: string,
+    requesterId: string,
+    targetUserId: string,
+    newRole: ParticipantRole,
+  ) {
+    const room = await this.getRoomById(roomId);
+    if (!room) throw new Error("Room not found");
+
+    const requester = room.participants.find((p) => p.userId === requesterId);
+    const isHost = room.creatorId === requesterId || requester?.role === "moderator";
+    if (!isHost) throw new Error("Only the host can change participant roles");
+
+    if (room.status !== "lobby") {
+      throw new Error("Roles are locked once the debate has started");
+    }
+
+    const validRoles: ParticipantRole[] = ["participant", "judge", "spectator"];
+    if (!validRoles.includes(newRole)) {
+      throw new Error("Invalid role — choose participant, judge, or spectator");
+    }
+
+    // Cannot change the host's own role via this method
+    if (targetUserId === requesterId) {
+      throw new Error("Use transfer-host to change the host role");
+    }
+
+    const updated = await Room.findOneAndUpdate(
+      { _id: roomId, "participants.userId": targetUserId },
+      { $set: { "participants.$[elem].role": newRole } },
+      { arrayFilters: [{ "elem.userId": targetUserId }], new: true },
+    );
+    if (!updated) throw new Error("Participant not found");
+    return updated;
+  }
+
+  /**
+   * Transfer the host role to another participant.
+   * The old host becomes a regular participant.
+   * Only the current host may call this.
+   */
+  static async transferHost(
+    roomId: string,
+    currentHostId: string,
+    targetUserId: string,
+  ) {
+    const room = await this.getRoomById(roomId);
+    if (!room) throw new Error("Room not found");
+
+    const isHost =
+      room.creatorId === currentHostId ||
+      room.participants.find((p) => p.userId === currentHostId)?.role === "moderator";
+    if (!isHost) throw new Error("Only the current host can transfer host");
+
+    const target = room.participants.find((p) => p.userId === targetUserId);
+    if (!target) throw new Error("Target participant not found");
+
+    // Demote old host
+    room.participants.forEach((p) => {
+      if (p.userId === currentHostId) p.role = "participant";
+    });
+
+    // Promote new host
+    target.role = "moderator";
+    target.status = "ready" as any;
+
+    room.creatorId = targetUserId;
+    room.creatorUsername = target.username;
 
     await room.save();
     return room;

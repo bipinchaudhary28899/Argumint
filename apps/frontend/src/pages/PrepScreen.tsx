@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
-import { NavLogo } from "../components/NavLogo";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { useIsMobile } from "../hooks/useIsMobile";
 import type { Debate, TurnOrderEntry } from "@argumint/shared";
@@ -108,16 +107,6 @@ export function PrepScreen() {
 
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <nav className="game-nav">
-        <NavLogo />
-        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-            <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{isConnected ? "Live" : "Offline"}</span>
-          </div>
-          {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>{user?.username}</span>}
-        </div>
-      </nav>
 
       <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem" }}>
         <div style={{

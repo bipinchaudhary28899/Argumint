@@ -1,9 +1,11 @@
 import mongoose, { Schema, Document } from "mongoose";
 
+export type ParticipantRole = "moderator" | "participant" | "judge" | "spectator";
+
 export interface IParticipant {
   userId: string;
   username: string;
-  role?: "moderator" | "participant";
+  role?: ParticipantRole;
   joinedAt: Date;
   status: "joined" | "ready" | "in-debate" | "disconnected";
   side?: "for" | "against"; // Assigned during debate start
@@ -53,6 +55,13 @@ export interface IRoom extends Document {
   transcriptionMode: "whisper" | "browser" | "off";
   whisperBudgetMinutes?: number; // optional cap; undefined = unlimited
   whisperMinutesUsed: number; // running tally (trimmed minutes)
+
+  // Spectator / judge seat limits
+  maxJudges: number;
+  maxSpectators: number;
+
+  // Payment gate flag — reserved for future paid feature toggle
+  isPremiumRoom: boolean;
 
   // Debate runtime — populated once host starts the debate
   activeDebateId?: string;
@@ -108,7 +117,7 @@ const participantSchema = new Schema<IParticipant>(
     },
     role: {
       type: String,
-      enum: ["moderator", "participant"],
+      enum: ["moderator", "participant", "judge", "spectator"],
       default: "participant",
     },
     joinedAt: {
@@ -224,6 +233,22 @@ const roomSchema = new Schema<IRoom>(
     whisperMinutesUsed: {
       type: Number,
       default: 0,
+    },
+    maxJudges: {
+      type: Number,
+      default: 3,
+      min: 0,
+      max: 20,
+    },
+    maxSpectators: {
+      type: Number,
+      default: 50,
+      min: 0,
+      max: 500,
+    },
+    isPremiumRoom: {
+      type: Boolean,
+      default: false,
     },
     activeDebateId: {
       type: String,
