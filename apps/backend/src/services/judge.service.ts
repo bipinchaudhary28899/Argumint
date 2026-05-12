@@ -275,8 +275,26 @@ export class JudgeService {
       throw new Error("Judge returned unparseable output");
     }
 
+    // Persist token usage + estimated cost to apiCosts.
+    // Pricing as of 2025: gpt-4o-mini $0.15/1M input, $0.60/1M output.
+    const inputTokens  = completion.usage?.prompt_tokens     ?? 0;
+    const outputTokens = completion.usage?.completion_tokens ?? 0;
+    const INPUT_COST_PER_TOKEN  = 0.15  / 1_000_000;
+    const OUTPUT_COST_PER_TOKEN = 0.60  / 1_000_000;
+    const judgeCostUSD = inputTokens * INPUT_COST_PER_TOKEN + outputTokens * OUTPUT_COST_PER_TOKEN;
+
     const result = normalizeResult(raw, debate);
     debate.result = result;
+    const existing = debate.apiCosts ?? {} as any;
+    debate.apiCosts = {
+      whisperCalls:      existing.whisperCalls      ?? 0,
+      whisperMinutes:    existing.whisperMinutes    ?? 0,
+      whisperCostUSD:    existing.whisperCostUSD    ?? 0,
+      judgeInputTokens:  (existing.judgeInputTokens  ?? 0) + inputTokens,
+      judgeOutputTokens: (existing.judgeOutputTokens ?? 0) + outputTokens,
+      judgeCostUSD:      (existing.judgeCostUSD      ?? 0) + judgeCostUSD,
+      totalCostUSD:      (existing.totalCostUSD      ?? 0) + judgeCostUSD,
+    };
     await debate.save();
     return result;
   }

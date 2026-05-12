@@ -151,9 +151,9 @@ export function initializeSocketIO(
               {
                 $inc: {
                   xp: xpGained,
-                  totalDebates: 1,
-                  debatesWon: won ? 1 : 0,
-                  debatesLost: won ? 0 : 1,
+                  "stats.totalDebates": 1,
+                  "stats.debatesWon": won ? 1 : 0,
+                  "stats.debatesLost": won ? 0 : 1,
                 },
               },
               { new: true, select: "xp" },

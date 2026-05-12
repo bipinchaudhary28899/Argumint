@@ -124,9 +124,20 @@ export function createDebateRoutes(redisClient: Redis | null) {
         // two transcribe calls overlap (rare, but possible on retries).
         // We only count minutes when ffmpeg gave us a measurable duration.
         if (trimmedDurationMin > 0) {
+          // Whisper pricing: $0.006 per minute
+          const WHISPER_COST_PER_MIN = 0.006;
+          const whisperCostUSD = trimmedDurationMin * WHISPER_COST_PER_MIN;
           await Debate.updateOne(
             { _id: debate._id },
-            { $inc: { whisperMinutesUsed: trimmedDurationMin } },
+            {
+              $inc: {
+                whisperMinutesUsed:          trimmedDurationMin,
+                "apiCosts.whisperCalls":     1,
+                "apiCosts.whisperMinutes":   trimmedDurationMin,
+                "apiCosts.whisperCostUSD":   whisperCostUSD,
+                "apiCosts.totalCostUSD":     whisperCostUSD,
+              },
+            },
           );
         }
 

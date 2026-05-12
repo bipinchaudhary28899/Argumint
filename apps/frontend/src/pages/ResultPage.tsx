@@ -77,7 +77,7 @@ function ScoreBar({ k, val }: { k: string; val: number }) {
 export function ResultPage() {
   const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate   = useNavigate();
-  const { user }   = useAuth();
+  const { user, checkAuth } = useAuth();
   const { socket, isConnected } = useSocket();
   const isMobile   = useIsMobile();
 
@@ -94,6 +94,11 @@ export function ResultPage() {
   const [barPct,        setBarPct]        = useState(0);       // animated bar %
   const [barTransition, setBarTransition] = useState(true);    // CSS transition on/off
   const [showLevelUp,   setShowLevelUp]   = useState(false);   // level-up banner
+  // Level badge display — starts at OLD level, flips to new level on level-up
+  const [displayedLevel, setDisplayedLevel]   = useState<number | null>(null);
+  const [displayedTitle, setDisplayedTitle]   = useState<string | null>(null);
+  const [levelBadgePop,  setLevelBadgePop]    = useState(false); // triggers pop anim
+  const [displayedBarNext, setDisplayedBarNext] = useState<boolean>(true); // show bar?
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
@@ -103,6 +108,9 @@ export function ResultPage() {
     socket.emit("debate:get-state", { debateId }, (res: any) => {
       if (!res?.success) { setError(res?.error || "Failed to load debate"); return; }
       setDebate(res.debate as Debate);
+      // If debate is already ended (navigating directly to result URL),
+      // refresh user so stats/XP in the UI reflect the latest DB values.
+      if (res.debate?.status === "ended") void checkAuth();
     });
   }, [socket, isConnected, debateId]);
 
@@ -115,6 +123,8 @@ export function ResultPage() {
         const award = d.xpAwards.find((a: any) => a.userId === user.id);
         if (award) setMyXPAward(award);
       }
+      // Refresh user so Home page stats (Won/Lost/Total/XP) are up to date
+      void checkAuth();
     };
     const onFailed = (d: any) => setJudgingError(d?.error || "Judge unavailable");
     socket.on("debate:result-ready",  onReady);
@@ -170,6 +180,12 @@ export function ResultPage() {
     setBarPct(oldInfo.next ? oldInfo.progressPct : 100);
     setBarTransition(true);
 
+    // Start badge showing OLD level so the user sees the progression
+    setDisplayedLevel(oldInfo.current.level);
+    setDisplayedTitle(oldInfo.current.title);
+    setDisplayedBarNext(!!oldInfo.next);
+    setLevelBadgePop(false);
+
     // ── Phase 1: show popup ──────────────────────────────────────────────
     push(() => {
       setPopupVisible(true);
@@ -194,8 +210,16 @@ export function ResultPage() {
       if (_leveledUp) {
         // Fill bar to 100 %
         setBarPct(100);
-        // Show level-up banner after bar reaches full
-        push(() => setShowLevelUp(true), 900);
+        // Flip badge to NEW level + show banner after bar reaches full
+        push(() => {
+          setShowLevelUp(true);
+          setDisplayedLevel(targetInfo.current.level);
+          setDisplayedTitle(targetInfo.current.title);
+          setDisplayedBarNext(!!targetInfo.next);
+          setLevelBadgePop(true);
+          // Clear the pop class after the animation so it can re-trigger if needed
+          setTimeout(() => setLevelBadgePop(false), 600);
+        }, 900);
         // Reset bar without transition, then fill remainder
         push(() => {
           setBarTransition(false);
@@ -263,8 +287,15 @@ export function ResultPage() {
           0%   { background-position: -200% center; }
           100% { background-position:  200% center; }
         }
+        @keyframes levelBadgePop {
+          0%   { transform: scale(1); }
+          30%  { transform: scale(1.45); box-shadow: 0 0 14px 4px rgba(16,185,129,0.55); }
+          60%  { transform: scale(0.92); }
+          100% { transform: scale(1); box-shadow: none; }
+        }
         .mvp-glow { animation: mvpPulse 2s ease-in-out infinite; }
         .level-up-pop { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .level-badge-pop { animation: levelBadgePop 0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
         .shimmer-text {
           background: linear-gradient(90deg, #f59e0b, #10b981, #22d3ee, #f59e0b);
           background-size: 300% auto;
@@ -410,33 +441,45 @@ export function ResultPage() {
                   </div>
 
                   {/* Level badge + animated progress bar */}
-                  <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth: isMobile ? 100 : 120 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", flexWrap:"wrap" }}>
-                      <span style={{
-                        fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", fontWeight:900,
-                        padding:"0.1rem 0.4rem", borderRadius:"0.3rem",
-                        background: leveledUp ? "rgba(16,185,129,0.15)" : "rgba(79,142,247,0.12)",
-                        border:`1px solid ${leveledUp ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.3)"}`,
-                        color: leveledUp ? "var(--for)" : "var(--cyan)",
-                      }}>
-                        Lv.{levelInfo.current.level}
-                      </span>
-                      <span style={{ fontSize:"0.72rem", fontWeight:700, color:"var(--text)" }}>{levelInfo.current.title}</span>
-                    </div>
-                    {levelInfo.next && (
-                      <div>
-                        <div className="score-bar-track" style={{ height:5 }}>
-                          <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${barPct}%`, transition: barTransition ? "width 0.85s cubic-bezier(.4,0,.2,1)" : "none" }} />
+                  {(() => {
+                    const shownLevel = displayedLevel ?? levelInfo.current.level;
+                    const shownTitle = displayedTitle ?? levelInfo.current.title;
+                    const shownHasNext = displayedBarNext;
+                    const badgeIsNew = leveledUp && shownLevel === levelInfo.current.level;
+                    return (
+                      <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth: isMobile ? 100 : 120 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", flexWrap:"wrap" }}>
+                          <span
+                            className={levelBadgePop ? "level-badge-pop" : ""}
+                            style={{
+                              fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", fontWeight:900,
+                              padding:"0.1rem 0.4rem", borderRadius:"0.3rem",
+                              background: badgeIsNew ? "rgba(16,185,129,0.15)" : "rgba(79,142,247,0.12)",
+                              border:`1px solid ${badgeIsNew ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.3)"}`,
+                              color: badgeIsNew ? "var(--for)" : "var(--cyan)",
+                              display:"inline-block",
+                              transition:"background 0.3s, border-color 0.3s, color 0.3s",
+                            }}>
+                            Lv.{shownLevel}
+                          </span>
+                          <span style={{ fontSize:"0.72rem", fontWeight:700, color:"var(--text)", transition:"color 0.3s" }}>{shownTitle}</span>
                         </div>
-                        <div style={{ fontSize:"0.56rem", color:"var(--muted)", marginTop:"0.15rem" }}>
-                          {levelInfo.progressXP}/{levelInfo.neededXP} XP
-                        </div>
+                        {shownHasNext && (
+                          <div>
+                            <div className="score-bar-track" style={{ height:5 }}>
+                              <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${barPct}%`, transition: barTransition ? "width 0.85s cubic-bezier(.4,0,.2,1)" : "none" }} />
+                            </div>
+                            <div style={{ fontSize:"0.56rem", color:"var(--muted)", marginTop:"0.15rem" }}>
+                              {levelInfo.progressXP}/{levelInfo.neededXP} XP
+                            </div>
+                          </div>
+                        )}
+                        {!shownHasNext && (
+                          <div style={{ fontSize:"0.6rem", color:"var(--for)", fontWeight:700 }}>MAX LEVEL</div>
+                        )}
                       </div>
-                    )}
-                    {!levelInfo.next && (
-                      <div style={{ fontSize:"0.6rem", color:"var(--for)", fontWeight:700 }}>MAX LEVEL</div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
               </div>
 
