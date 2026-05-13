@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ConnectionStatusBanner } from "../components/ConnectionStatusBanner";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getLevelInfo } from "@argumint/shared";
 import type { Debate, ScoreBreakdown } from "@argumint/shared";
@@ -77,7 +79,7 @@ export function ResultPage() {
   const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate   = useNavigate();
   const { user, checkAuth } = useAuth();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const isMobile   = useIsMobile();
 
   const [debate,        setDebate]        = useState<Debate | null>(null);
@@ -108,6 +110,24 @@ export function ResultPage() {
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
+
+  // ── Reconnection: re-fetch debate state on socket restore ────────────────
+  const reconnectParamsRef = useRef({ socket, debateId });
+  useEffect(() => { reconnectParamsRef.current = { socket, debateId }; });
+
+  useReconnectHandler({
+    onReconnect,
+    enabled: !!debateId,
+    reconnectFn: () => {
+      const { socket: s, debateId: id } = reconnectParamsRef.current;
+      if (!s || !id) return;
+      s.emit("debate:get-state", { debateId: id }, (res: any) => {
+        if (!res?.success) return;
+        setDebate(res.debate as Debate);
+        if (res.debate?.status === "ended") void checkAuth();
+      });
+    },
+  });
 
   useEffect(() => {
     if (!socket || !isConnected || !debateId) return;
@@ -362,6 +382,7 @@ export function ResultPage() {
         </div>
       )}
 
+      <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
       <div className="bg-grid" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
 
 

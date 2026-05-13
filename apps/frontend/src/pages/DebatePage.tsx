@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ConnectionStatusBanner } from "../components/ConnectionStatusBanner";
 import { useSocket } from "../hooks/useSocket";
 import { useRecorder } from "../hooks/useRecorder";
 import { InAppBrowserGate } from "../components/InAppBrowserGate";
 import { useWebRTCMesh } from "../hooks/useWebRTCMesh";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { debateApi } from "../services/api";
 import type { Debate, Round, BuzzerState } from "@argumint/shared";
@@ -61,7 +63,7 @@ export function DebatePage() {
   const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate           = useNavigate();
   const { user }           = useAuth();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const isMobile           = useIsMobile();
 
   const [debate, setDebate]           = useState<Debate | null>(null);
@@ -97,6 +99,27 @@ export function DebatePage() {
   }, [sr.transcript, sr.interim]);
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
+
+  // ── Reconnection handling ─────────────────────────────────────────────────
+  const reconnectParamsRef = useRef({ socket, debateId });
+  useEffect(() => { reconnectParamsRef.current = { socket, debateId }; });
+
+  useReconnectHandler({
+    onReconnect,
+    enabled: !!debateId,
+    reconnectFn: () => {
+      const { socket: s, debateId: id } = reconnectParamsRef.current;
+      if (!s || !id) return;
+      s.emit("debate:get-state", { debateId: id }, (res: any) => {
+        if (!res?.success) return;
+        const d = res.debate as Debate;
+        setDebate(d);
+        if (d.mode === "buzzer" && d.buzzerState) setBuzzerState(d.buzzerState as BuzzerState);
+        // Restore judge panel if debate ended and we haven't submitted yet
+        if (d.status === "finished" && isJudge && !judgeSubmitted) setShowJudgePanel(true);
+      });
+    },
+  });
 
   const isBuzzer         = debate?.mode === "buzzer";
   const speakerUserId    = debate?.currentTurn?.speakerId ?? null;
@@ -462,6 +485,7 @@ export function DebatePage() {
 
   return (
     <InAppBrowserGate>
+      <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
       <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
 
         {/* Prep warning flash (buzzer mode) */}

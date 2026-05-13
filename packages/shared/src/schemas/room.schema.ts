@@ -3,7 +3,7 @@ import { z } from "zod";
 export const ParticipantSchema = z.object({
   userId: z.string(),
   username: z.string(),
-  role: z.enum(["moderator", "participant"]).optional(),
+  role: z.enum(["moderator", "participant", "judge", "spectator"]).optional(),
   joinedAt: z.date(),
   status: z.enum(["joined", "ready", "in-debate", "disconnected"]),
   side: z.enum(["for", "against"]).optional(),
@@ -52,6 +52,8 @@ export const CreateRoomSchema = z
     description: z.string().max(2000).optional(),
     debateMode: z.enum(["buzzer", "alternate"]).default("buzzer"),
     maxParticipants: z.number().min(2).max(100).default(10),
+    maxJudges: z.number().min(0).max(20).default(3),
+    maxSpectators: z.number().min(0).max(500).default(50),
     votingEnabled: z.boolean().default(false),
     votingTopics: z.array(z.string().trim().min(1).max(500)).default([]),
     votingDuration: z.number().default(30),

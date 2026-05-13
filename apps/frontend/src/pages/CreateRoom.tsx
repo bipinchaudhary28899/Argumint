@@ -72,9 +72,10 @@ export function CreateRoom() {
   const [isLoading,   setIsLoading]   = useState(false);
   const [localError,  setLocalError]  = useState<string | null>(null);
 
-  const [formData, setFormData] = useState<CreateRoomInput>({
+  const [formData, setFormData] = useState<CreateRoomInput & { maxJudges: number; maxSpectators: number }>({
     topic: "", description: "", debateMode: "alternate",
-    maxParticipants: 10, votingEnabled: false, votingTopics: [],
+    maxParticipants: 10, maxJudges: 3, maxSpectators: 50,
+    votingEnabled: false, votingTopics: [],
     votingDuration: 30, prepDuration: 30, turnDuration: 60,
     totalRounds: 2, transcriptionMode: "whisper" as const,
   });
@@ -258,13 +259,15 @@ export function CreateRoom() {
             <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.875rem" }}>
               ⚙️ Settings
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+
+            {/* Timing + rounds */}
+            <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.5rem" }}>
+              Timing
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
               <Stepper label="Rounds" hint="turns per side"
                 value={formData.totalRounds} min={1} max={10} step={1}
                 onChange={v => set("totalRounds", v)} />
-              <Stepper label="Max players" hint="in the room"
-                value={formData.maxParticipants} min={2} max={20} step={1}
-                onChange={v => set("maxParticipants", v)} />
               <Stepper label="Prep time" hint="before debate starts"
                 value={formData.prepDuration} min={0} max={300} step={15}
                 display={fmtTime}
@@ -275,21 +278,46 @@ export function CreateRoom() {
                 onChange={v => set("turnDuration", v)} />
             </div>
 
+            {/* Seat limits */}
+            <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.5rem" }}>
+              Seat Limits
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
+              <Stepper label="Max Debaters" hint="speakers in the debate"
+                value={formData.maxParticipants} min={2} max={20} step={1}
+                onChange={v => set("maxParticipants", v)} />
+              <Stepper label="Max Judges" hint="human scorers allowed"
+                value={(formData as any).maxJudges} min={0} max={20} step={1}
+                onChange={v => setFormData(prev => ({ ...prev, maxJudges: v }))} />
+              <Stepper label="Max Spectators" hint="listen-only observers"
+                value={(formData as any).maxSpectators} min={0} max={100} step={5}
+                onChange={v => setFormData(prev => ({ ...prev, maxSpectators: v }))} />
+            </div>
+
             {/* Summary strip */}
-            <div style={{ marginTop: "1rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
+            <div style={{ marginTop: "0.25rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
               <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
                 <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{totalTurns}</span>
-                {" "}total turns
+                {" "}turns
               </span>
               <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
               <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
                 ≈ <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{fmtTime(totalTimeSec)}</span>
-                {" "}debate time
               </span>
               <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
               <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                up to <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{formData.maxParticipants}</span>
-                {" "}players
+                <span style={{ fontWeight: 800, color: "var(--for)", fontFamily: "'JetBrains Mono', monospace" }}>{formData.maxParticipants}</span>
+                {" "}debaters
+              </span>
+              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                <span style={{ fontWeight: 800, color: "#a78bfa", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxJudges}</span>
+                {" "}judges
+              </span>
+              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                <span style={{ fontWeight: 800, color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxSpectators}</span>
+                {" "}spectators
               </span>
             </div>
           </div>

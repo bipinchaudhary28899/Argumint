@@ -292,10 +292,19 @@ export function initializeSocketIO(
         const existingSlot = room.participants.find(
           (p: any) => p.userId === userId && p.status !== "disconnected",
         );
+        // The role from data.role is only used when creating a brand-new slot.
+        // Once a slot exists the DB role is authoritative — the host may have
+        // reassigned it via room:change-role, and we must never overwrite that
+        // with the stale URL param the client sends on every page load/refresh.
+        const desiredRole = (data.role as string) || "participant";
+
         if (!existingSlot) {
-          const desiredRole = (data.role as string) || "participant";
           room = await RoomService.joinRoom(roomCode, userId, username, desiredRole as any);
         }
+        // If existingSlot is found, we intentionally skip joinRoom so the
+        // DB role is preserved. Username refresh is handled inside joinRoom
+        // Case 1b, but we don't need it here since the socket already knows
+        // the username from the auth token.
 
         // Auto-ready the host/creator: their status should always be "ready"
         // because they're the one starting the debate. This handles the case

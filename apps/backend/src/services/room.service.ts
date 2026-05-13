@@ -33,8 +33,8 @@ export class RoomService {
       description: data.description,
       debateMode: data.debateMode || "buzzer",
       maxParticipants: data.maxParticipants || 10,
-      maxJudges: 3,
-      maxSpectators: 50,
+      maxJudges:       (data as any).maxJudges      ?? 3,
+      maxSpectators:   (data as any).maxSpectators  ?? 50,
       isPremiumRoom: false,
       votingEnabled: data.votingEnabled || false,
       votingTopics: votingTopics,
@@ -96,6 +96,9 @@ export class RoomService {
     const code = roomCode.toUpperCase();
 
     // ── Case 1a: existing slot, disconnected → revive to "joined" ───────
+    // Do NOT update the role here. The DB role is authoritative — it may have
+    // been assigned by the host after the user first joined. Overwriting it
+    // with the URL-derived safeRole would revert host assignments on reconnect.
     const revivedRoom = await Room.findOneAndUpdate(
       { code, "participants.userId": userId, "participants.status": "disconnected" },
       {
@@ -103,15 +106,17 @@ export class RoomService {
           "participants.$[elem].status": "joined",
           "participants.$[elem].username": username,
           "participants.$[elem].joinedAt": new Date(),
-          // Update role only if they're changing from participant; preserve moderator role
-          "participants.$[elem].role": safeRole,
         },
       },
       { arrayFilters: [{ "elem.userId": userId }], new: true },
     );
     if (revivedRoom) return revivedRoom;
 
-    // ── Case 1b: existing slot, non-disconnected → refresh username ──────
+    // ── Case 1b: existing slot, non-disconnected → refresh username only ────
+    // The DB role is the source of truth. The only way to change a role for
+    // an already-joined user is via changeParticipantRole (host action) or
+    // transferHost. Never overwrite it here — that would revert host
+    // assignments every time the user refreshes.
     const existingRoom = await Room.findOneAndUpdate(
       { code, "participants.userId": userId },
       { $set: { "participants.$[elem].username": username } },
@@ -128,11 +133,25 @@ export class RoomService {
     const room = await Room.findOne({ code });
     if (!room) throw new Error("Room not found");
 
-    const activeCount = room.participants.filter(
-      (p) => p.status !== "disconnected"
-    ).length;
+    const active = room.participants.filter((p) => p.status !== "disconnected");
+    const activeCount = active.length;
+
     if (activeCount >= room.maxParticipants) {
       throw new Error("Room is full");
+    }
+
+    // Role-specific capacity checks
+    if (safeRole === "judge") {
+      const judgeCount = active.filter((p) => p.role === "judge").length;
+      if (judgeCount >= (room.maxJudges ?? 3)) {
+        throw new Error(`Judge slots are full (max ${room.maxJudges ?? 3})`);
+      }
+    }
+    if (safeRole === "spectator") {
+      const spectatorCount = active.filter((p) => p.role === "spectator").length;
+      if (spectatorCount >= (room.maxSpectators ?? 50)) {
+        throw new Error(`Spectator slots are full (max ${room.maxSpectators ?? 50})`);
+      }
     }
 
     const newRoom = await Room.findOneAndUpdate(
@@ -388,6 +407,21 @@ export class RoomService {
     // Cannot change the host's own role via this method
     if (targetUserId === requesterId) {
       throw new Error("Use transfer-host to change the host role");
+    }
+
+    // Enforce role-specific capacity when assigning judge or spectator
+    const active = room.participants.filter((p) => p.status !== "disconnected" && p.userId !== targetUserId);
+    if (newRole === "judge") {
+      const judgeCount = active.filter((p) => p.role === "judge").length;
+      if (judgeCount >= (room.maxJudges ?? 3)) {
+        throw new Error(`Judge slots are full (max ${room.maxJudges ?? 3})`);
+      }
+    }
+    if (newRole === "spectator") {
+      const spectatorCount = active.filter((p) => p.role === "spectator").length;
+      if (spectatorCount >= (room.maxSpectators ?? 50)) {
+        throw new Error(`Spectator slots are full (max ${room.maxSpectators ?? 50})`);
+      }
     }
 
     const updated = await Room.findOneAndUpdate(

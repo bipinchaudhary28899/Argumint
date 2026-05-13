@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { ConnectionStatusBanner } from "../components/ConnectionStatusBanner";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
 import type { Debate, TurnOrderEntry } from "@argumint/shared";
 
@@ -10,7 +12,7 @@ export function PrepScreen() {
   const { code, debateId } = useParams<{ code: string; debateId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const isMobile = useIsMobile();
 
   const [debate, setDebate] = useState<Debate | null>(null);
@@ -19,13 +21,32 @@ export function PrepScreen() {
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
-  useEffect(() => {
-    if (!socket || !isConnected || !debateId) return;
-    socket.emit("debate:get-state", { debateId }, (res: any) => {
+  // Stable ref for reconnect closure
+  const reconnectParamsRef = useRef({ socket, debateId });
+  useEffect(() => { reconnectParamsRef.current = { socket, debateId }; });
+
+  const fetchDebateState = (s: typeof socket, id: typeof debateId) => {
+    if (!s || !id) return;
+    s.emit("debate:get-state", { debateId: id }, (res: any) => {
       if (!res?.success) { setError(res?.error || "Failed to load debate"); return; }
       setDebate(res.debate as Debate);
     });
+  };
+
+  useEffect(() => {
+    if (!socket || !isConnected || !debateId) return;
+    fetchDebateState(socket, debateId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, isConnected, debateId]);
+
+  useReconnectHandler({
+    onReconnect,
+    enabled: !!debateId,
+    reconnectFn: () => {
+      const { socket: s, debateId: id } = reconnectParamsRef.current;
+      fetchDebateState(s, id);
+    },
+  });
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -107,6 +128,7 @@ export function PrepScreen() {
 
   return (
     <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
 
       <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem" }}>
         <div style={{

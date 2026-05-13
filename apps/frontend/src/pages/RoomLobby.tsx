@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { InAppBrowserGate } from "../components/InAppBrowserGate";
+import { ConnectionStatusBanner } from "../components/ConnectionStatusBanner";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
+import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
 import { VotingPanel } from "../components/VotingPanel";
@@ -24,6 +26,56 @@ const ROLE_OPTIONS: { role: ParticipantRole; label: string }[] = [
   { role: "spectator",   label: "Spectator" },
 ];
 
+/**
+ * Compute how many slots remain for a role, excluding a specific participant
+ * (the one whose role we're about to change) so we don't double-count them.
+ *
+ * Returns { available: boolean; slotsLeft: number; reason: string | null }
+ *   available  – false = option should be hidden / disabled
+ *   slotsLeft  – how many seats can still be filled
+ *   reason     – short string explaining why it's unavailable (for tooltip/label)
+ */
+function roleAvailability(
+  role: ParticipantRole,
+  participants: { userId: string; role?: string; status: string }[],
+  excludeUserId: string,
+  maxJudges: number,
+  maxSpectators: number,
+  maxParticipants: number,
+): { available: boolean; slotsLeft: number; reason: string | null } {
+  const active = participants.filter(
+    (p) => p.status !== "disconnected" && p.userId !== excludeUserId,
+  );
+
+  if (role === "participant") {
+    const used = active.filter((p) => p.role === "participant" || p.role === "moderator").length;
+    const slotsLeft = Math.max(0, maxParticipants - used);
+    return slotsLeft > 0
+      ? { available: true, slotsLeft, reason: null }
+      : { available: false, slotsLeft: 0, reason: "Debater slots full" };
+  }
+
+  if (role === "judge") {
+    if (maxJudges === 0) return { available: false, slotsLeft: 0, reason: "Judges disabled" };
+    const used = active.filter((p) => p.role === "judge").length;
+    const slotsLeft = Math.max(0, maxJudges - used);
+    return slotsLeft > 0
+      ? { available: true, slotsLeft, reason: null }
+      : { available: false, slotsLeft: 0, reason: `Judge slots full (max ${maxJudges})` };
+  }
+
+  if (role === "spectator") {
+    if (maxSpectators === 0) return { available: false, slotsLeft: 0, reason: "Spectators disabled" };
+    const used = active.filter((p) => p.role === "spectator").length;
+    const slotsLeft = Math.max(0, maxSpectators - used);
+    return slotsLeft > 0
+      ? { available: true, slotsLeft, reason: null }
+      : { available: false, slotsLeft: 0, reason: `Spectator slots full (max ${maxSpectators})` };
+  }
+
+  return { available: false, slotsLeft: 0, reason: "Unknown role" };
+}
+
 export function RoomLobby() {
   const { code }             = useParams<{ code: string }>();
   const [searchParams]       = useSearchParams();
@@ -31,12 +83,36 @@ export function RoomLobby() {
   const isMobile             = useIsMobile();
   const { user }             = useAuth();
   const { room, setRoom, setError } = useRoom();
-  const { socket, isConnected }    = useSocket();
+  const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const [isLoading, setIsLoading]  = useState(!room);
   const [copied, setCopied]        = useState(false);
   const [roleMenuFor, setRoleMenuFor] = useState<string | null>(null); // userId whose role menu is open
 
   useLeaveRoomOnNavigate(code, room?._id, socket);
+
+  // Keep a stable ref to the latest join params so the reconnect closure
+  // always uses the current values without re-registering the handler.
+  const reconnectParamsRef = useRef({ socket, isConnected, code, user });
+  useEffect(() => {
+    reconnectParamsRef.current = { socket, isConnected, code, user };
+  });
+
+  useReconnectHandler({
+    onReconnect,
+    enabled: !!code,
+    reconnectFn: () => {
+      const { socket: s, code: c, user: u } = reconnectParamsRef.current;
+      if (!s || !c) return;
+      const role = sessionStorage.getItem("argumint_room_role") || searchParams.get("role") || "participant";
+      s.emit("room:join", { roomCode: c, role }, (response: any) => {
+        if (response?.success && response.room) {
+          const mySlot = response.room.participants?.find((p: any) => p.userId === u?.id);
+          if (mySlot?.role) sessionStorage.setItem("argumint_room_role", mySlot.role);
+          setRoom(response.room);
+        }
+      });
+    },
+  });
 
   // ── Fetch room on first mount if context is empty (direct link / refresh) ─
   useEffect(() => {
@@ -110,7 +186,13 @@ export function RoomLobby() {
       }
     };
     const onRoleChanged = (data: any) => {
-      if (data.participants) setRoom((prev) => prev ? { ...prev, participants: data.participants } : prev);
+      if (data.participants) {
+        setRoom((prev) => prev ? { ...prev, participants: data.participants } : prev);
+        // If the host changed OUR role, persist it to sessionStorage so
+        // DebatePage picks up the correct role after the debate starts.
+        const myUpdated = data.participants?.find((p: any) => p.userId === user?.id);
+        if (myUpdated?.role) sessionStorage.setItem("argumint_room_role", myUpdated.role);
+      }
     };
     const onHostTransferred = (data: any) => {
       setRoom((prev) => {
@@ -234,6 +316,7 @@ export function RoomLobby() {
 
   return (
     <InAppBrowserGate>
+      <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
       <div
         className="bg-grid"
         style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflowX: "hidden" }}
@@ -386,27 +469,60 @@ export function RoomLobby() {
                                   <div style={{
                                     position: "absolute", right: 0, top: "calc(100% + 4px)",
                                     background: "var(--surface)", border: "1px solid var(--border)",
-                                    borderRadius: "0.625rem", zIndex: 50, minWidth: 180,
+                                    borderRadius: "0.625rem", zIndex: 50, minWidth: 200,
                                     boxShadow: "0 8px 32px rgba(0,0,0,0.35)", overflow: "hidden",
                                   }}>
                                     <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.65rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: "1px solid var(--border)" }}>
                                       Change Role
                                     </div>
-                                    {ROLE_OPTIONS.map(({ role: r, label }) => (
-                                      <button
-                                        key={r}
-                                        onClick={() => handleChangeRole(p.userId, r)}
-                                        style={{
-                                          display: "block", width: "100%", textAlign: "left",
-                                          padding: "0.55rem 0.75rem", fontSize: "0.83rem",
-                                          background: pRole === r ? "rgba(16,185,129,0.1)" : "transparent",
-                                          color: pRole === r ? "var(--for)" : "var(--text)",
-                                          border: "none", cursor: "pointer", fontWeight: pRole === r ? 700 : 400,
-                                        }}
-                                      >
-                                        {pRole === r ? "✓ " : "  "}{label}
-                                      </button>
-                                    ))}
+                                    {ROLE_OPTIONS.map(({ role: r, label }) => {
+                                      // Check capacity before rendering each option
+                                      const avail = roleAvailability(
+                                        r,
+                                        participants,
+                                        p.userId,
+                                        (room as any).maxJudges ?? 3,
+                                        (room as any).maxSpectators ?? 50,
+                                        room.maxParticipants,
+                                      );
+                                      const isCurrent = pRole === r;
+                                      // Always show current role (to unblock manual re-assignment)
+                                      // and always show "participant" (debater) as escape hatch.
+                                      // Hide other options that are disabled/full.
+                                      if (!avail.available && !isCurrent && r !== "participant") return null;
+
+                                      return (
+                                        <button
+                                          key={r}
+                                          onClick={() => avail.available && handleChangeRole(p.userId, r)}
+                                          disabled={!avail.available && !isCurrent}
+                                          title={avail.reason ?? undefined}
+                                          style={{
+                                            display: "flex", alignItems: "center", justifyContent: "space-between",
+                                            width: "100%", textAlign: "left",
+                                            padding: "0.55rem 0.75rem", fontSize: "0.83rem",
+                                            background: isCurrent ? "rgba(16,185,129,0.1)" : "transparent",
+                                            color: isCurrent ? "var(--for)" : (!avail.available ? "var(--muted)" : "var(--text)"),
+                                            border: "none", cursor: avail.available ? "pointer" : "default",
+                                            fontWeight: isCurrent ? 700 : 400,
+                                            opacity: !avail.available && !isCurrent ? 0.5 : 1,
+                                          }}
+                                        >
+                                          <span>{isCurrent ? "✓ " : "  "}{label}</span>
+                                          {/* Show remaining slot count on available non-current options */}
+                                          {!isCurrent && avail.available && r !== "participant" && (
+                                            <span style={{ fontSize: "0.65rem", color: avail.slotsLeft <= 1 ? "var(--gold)" : "var(--muted)", marginLeft: "0.5rem" }}>
+                                              {avail.slotsLeft} left
+                                            </span>
+                                          )}
+                                          {!isCurrent && !avail.available && r !== "participant" && (
+                                            <span style={{ fontSize: "0.6rem", color: "var(--against)", marginLeft: "0.5rem", fontWeight: 700 }}>
+                                              {avail.reason}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
                                     <div style={{ height: 1, background: "var(--border)", margin: "0.25rem 0" }} />
                                     <button
                                       onClick={() => handleTransferHost(p.userId)}

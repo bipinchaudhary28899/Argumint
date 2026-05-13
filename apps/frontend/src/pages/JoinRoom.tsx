@@ -3,10 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
 import { roomApi } from "../services/api";
+import type { Room } from "@argumint/shared";
 
 type JoinRole = "participant" | "judge" | "spectator";
 
-const ROLE_OPTIONS: { role: JoinRole; icon: string; label: string; desc: string }[] = [
+interface RoleOption {
+  role: JoinRole;
+  icon: string;
+  label: string;
+  desc: string;
+}
+
+const ROLE_OPTIONS: RoleOption[] = [
   {
     role: "participant",
     icon: "🎤",
@@ -27,14 +35,64 @@ const ROLE_OPTIONS: { role: JoinRole; icon: string; label: string; desc: string 
   },
 ];
 
+/**
+ * Returns capacity info for a role given the fetched room.
+ *  - max   : the configured cap (-1 = unlimited, 0 = disabled)
+ *  - used  : how many active participants currently hold this role
+ *  - full  : true when no more slots available (disabled OR at capacity)
+ *  - label : human-readable availability string ("3 / 5 slots" etc.)
+ */
+function getRoleCapacity(role: JoinRole, room: Room): {
+  max: number;
+  used: number;
+  full: boolean;
+  slotsLeft: number;
+  label: string;
+} {
+  const active = room.participants.filter((p) => p.status !== "disconnected");
+
+  if (role === "participant") {
+    // Participants fill the overall maxParticipants pool
+    const used  = active.filter((p) => p.role === "participant" || p.role === "moderator").length;
+    const max   = room.maxParticipants ?? 10;
+    const slotsLeft = Math.max(0, max - used);
+    return { max, used, full: slotsLeft === 0, slotsLeft, label: `${slotsLeft} slot${slotsLeft !== 1 ? "s" : ""} left` };
+  }
+
+  if (role === "judge") {
+    const max   = (room as any).maxJudges ?? 3;
+    const used  = active.filter((p) => p.role === "judge").length;
+    const slotsLeft = Math.max(0, max - used);
+    const full  = max === 0 || slotsLeft === 0;
+    const label = max === 0 ? "Disabled for this room" : slotsLeft === 0 ? "Full" : `${slotsLeft} slot${slotsLeft !== 1 ? "s" : ""} left`;
+    return { max, used, full, slotsLeft, label };
+  }
+
+  if (role === "spectator") {
+    const max   = (room as any).maxSpectators ?? 50;
+    const used  = active.filter((p) => p.role === "spectator").length;
+    const slotsLeft = Math.max(0, max - used);
+    const full  = max === 0 || slotsLeft === 0;
+    const label = max === 0 ? "Disabled for this room" : slotsLeft === 0 ? "Full" : `${slotsLeft} slot${slotsLeft !== 1 ? "s" : ""} left`;
+    return { max, used, full, slotsLeft, label };
+  }
+
+  return { max: -1, used: 0, full: false, slotsLeft: 99, label: "Open" };
+}
+
 export function JoinRoom() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { setRoom, error, setError } = useRoom();
-  const [isLoading, setIsLoading] = useState(false);
-  const [roomCode, setRoomCode] = useState("");
-  const [step, setStep] = useState<"code" | "role">("code");
+  const [isLoading, setIsLoading]   = useState(false);
+  const [roomCode, setRoomCode]     = useState("");
+  const [step, setStep]             = useState<"code" | "role">("code");
   const [selectedRole, setSelectedRole] = useState<JoinRole>("participant");
+  // Store the fetched room so step 2 can read capacity data
+  const [fetchedRoom, setFetchedRoom]   = useState<Room | null>(null);
+
+  // Suppress unused-variable lint for `user` — it's read by the auth context
+  void user;
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,8 +101,14 @@ export function JoinRoom() {
       setIsLoading(true);
       setError(null);
       const code = roomCode.toUpperCase().trim();
-      // Validate the room exists
-      await roomApi.getRoomByCode(code);
+      // Fetch room for existence check AND capacity data
+      const room = await roomApi.getRoomByCode(code);
+      setFetchedRoom(room as any);
+      // Auto-fallback: if judge is disabled, default role to participant
+      const judgeInfo = getRoleCapacity("judge", room as any);
+      if (selectedRole === "judge" && judgeInfo.full) setSelectedRole("participant");
+      const spectatorInfo = getRoleCapacity("spectator", room as any);
+      if (selectedRole === "spectator" && spectatorInfo.full) setSelectedRole("participant");
       setStep("role");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Room not found");
@@ -54,11 +118,21 @@ export function JoinRoom() {
   };
 
   const handleRoleConfirm = async () => {
+    // Guard: never allow joining a full/disabled role
+    if (fetchedRoom) {
+      const cap = getRoleCapacity(selectedRole, fetchedRoom);
+      if (cap.full) {
+        setError(`${ROLE_OPTIONS.find(r => r.role === selectedRole)?.label} slots are unavailable for this room`);
+        return;
+      }
+    }
     try {
       setIsLoading(true);
       setError(null);
       const code = roomCode.toUpperCase().trim();
-      const room = await roomApi.joinRoom({ code });
+      // Pass the selected role to the HTTP join endpoint so the user lands in
+      // the room with the correct role before the socket room:join fires.
+      const room = await roomApi.joinRoom({ code, role: selectedRole } as any);
       setRoom(room);
       navigate(`/room/${room.code}/lobby?role=${selectedRole}`);
     } catch (err) {
@@ -143,36 +217,63 @@ export function JoinRoom() {
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.5rem" }}>
                   {ROLE_OPTIONS.map(({ role, icon, label, desc }) => {
-                    const active = selectedRole === role;
+                    const cap     = fetchedRoom ? getRoleCapacity(role, fetchedRoom) : null;
+                    const disabled = cap?.full ?? false;
+                    const active   = selectedRole === role && !disabled;
+
                     return (
                       <button
                         key={role}
-                        onClick={() => setSelectedRole(role)}
+                        onClick={() => !disabled && setSelectedRole(role)}
+                        disabled={disabled}
                         style={{
                           display: "flex", alignItems: "center", gap: "1rem",
                           padding: "1rem 1.25rem",
                           borderRadius: "0.75rem",
                           border: active
                             ? "2px solid var(--for)"
+                            : disabled
+                            ? "2px solid var(--border)"
                             : "2px solid var(--border)",
                           background: active
                             ? "rgba(16,185,129,0.08)"
+                            : disabled
+                            ? "rgba(0,0,0,0.04)"
                             : "rgba(255,255,255,0.03)",
-                          cursor: "pointer",
+                          cursor: disabled ? "not-allowed" : "pointer",
                           textAlign: "left",
                           width: "100%",
                           transition: "all 0.18s",
                           boxShadow: active ? "0 0 0 3px rgba(16,185,129,0.15)" : "none",
+                          opacity: disabled ? 0.55 : 1,
                         }}
                       >
                         <span style={{ fontSize: "1.75rem", flexShrink: 0 }}>{icon}</span>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 800, fontSize: "0.95rem", color: active ? "var(--for)" : "var(--text)", marginBottom: "0.2rem" }}>{label}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+                            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: active ? "var(--for)" : disabled ? "var(--muted)" : "var(--text)" }}>{label}</span>
+                            {disabled && (
+                              <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: 9999, background: "rgba(244,63,94,0.12)", color: "var(--against)", letterSpacing: "0.05em" }}>
+                                {cap?.max === 0 ? "DISABLED" : "FULL"}
+                              </span>
+                            )}
+                          </div>
                           <div style={{ fontSize: "0.8rem", color: "var(--muted)", lineHeight: 1.4 }}>{desc}</div>
+                          {/* Slot availability indicator */}
+                          {cap && !disabled && role !== "participant" && (
+                            <div style={{ marginTop: "0.3rem", fontSize: "0.7rem", color: cap.slotsLeft <= 1 ? "var(--gold)" : "var(--for)", fontWeight: 600 }}>
+                              {cap.label}
+                            </div>
+                          )}
+                          {cap && disabled && role !== "participant" && (
+                            <div style={{ marginTop: "0.3rem", fontSize: "0.7rem", color: "var(--against)", fontWeight: 600 }}>
+                              {cap.label}
+                            </div>
+                          )}
                         </div>
                         <div style={{
                           width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-                          border: active ? "5px solid var(--for)" : "2px solid var(--border2)",
+                          border: active ? "5px solid var(--for)" : disabled ? "2px solid var(--border)" : "2px solid var(--border2)",
                           background: active ? "var(--for)" : "transparent",
                           transition: "all 0.18s",
                         }} />
@@ -183,7 +284,7 @@ export function JoinRoom() {
 
                 <button
                   onClick={handleRoleConfirm}
-                  disabled={isLoading}
+                  disabled={isLoading || (fetchedRoom ? getRoleCapacity(selectedRole, fetchedRoom).full : false)}
                   className="btn-for"
                   style={{ width: "100%", padding: "0.9rem", fontSize: "1rem" }}
                 >

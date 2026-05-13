@@ -77,10 +77,23 @@ export function createRoomRoutes(redisClient: Redis | null) {
 
   /**
    * POST /rooms/join - Join an existing room
+   *
+   * Accepts an optional `role` field ("participant" | "judge" | "spectator").
+   * Defaults to "participant" when omitted.  The role is enforced against
+   * maxJudges / maxSpectators in RoomService.joinRoom so that capacity
+   * violations surface here, before the user ever reaches the lobby.
    */
   router.post("/join", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const parsed = JoinRoomSchema.safeParse(req.body);
+      // Extend JoinRoomSchema with optional role field
+      const { z } = await import("zod");
+      const JoinRoomWithRoleSchema = JoinRoomSchema.and(
+        z.object({
+          role: z.enum(["participant", "judge", "spectator"]).optional().default("participant"),
+        })
+      );
+
+      const parsed = JoinRoomWithRoleSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error });
       }
@@ -88,7 +101,8 @@ export function createRoomRoutes(redisClient: Redis | null) {
       const room = await RoomService.joinRoom(
         parsed.data.code,
         req.userId!,
-        req.username! // ← was: req.email!.split("@")[0]
+        req.username!,
+        parsed.data.role as any,
       );
 
       res.json(room);
@@ -100,6 +114,10 @@ export function createRoomRoutes(redisClient: Redis | null) {
       }
       if (error.message === "Room is full") {
         return res.status(403).json({ error: "Room is full" });
+      }
+      // Capacity errors for specific roles (e.g. "Judge slots are full (max 2)")
+      if (/slots are full/i.test(error.message)) {
+        return res.status(403).json({ error: error.message });
       }
 
       res.status(500).json({ error: "Failed to join room" });
