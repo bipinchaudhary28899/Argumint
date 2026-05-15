@@ -66,12 +66,19 @@ export class AuthController {
 
       const force = req.body.force === true;
 
-      const { user, token } = await this.authService.login(validationResult.data);
+      // Step 1: Verify credentials WITHOUT creating a session yet.
+      // This ensures we don't overwrite the old token in Redis before
+      // we know whether the user is allowed to proceed.
+      const { user, userId, userEmail, username } =
+        await this.authService.validateCredentials(
+          validationResult.data.email,
+          validationResult.data.password,
+        );
 
-      // If there is already an active session for this user AND the caller
-      // did not explicitly ask to force-evict it, return a 409 so the
-      // frontend can prompt "you're already signed in on another device".
-      const hasActiveSession = await this.authService.hasActiveSession(user.id);
+      // Step 2: Check for an existing active session.
+      // If one exists and force is false, tell the frontend so it can
+      // prompt "Sign in here → (end the other session)".
+      const hasActiveSession = await this.authService.hasActiveSession(userId);
       if (hasActiveSession && !force) {
         res.status(409).json({
           error: "active_session",
@@ -80,8 +87,13 @@ export class AuthController {
         return;
       }
 
-      // Evict existing socket (fires session:evicted on the other device).
-      evictUserSocket(user.id);
+      // Step 3: Create the new session (generates + stores token in Redis).
+      // Only reached when there is no conflict, or the user chose force=true.
+      const token = await this.authService.createSession(userId, userEmail, username);
+
+      // Step 4: Evict the old socket AFTER the new session is committed.
+      // This fires session:evicted on the other device so it redirects cleanly.
+      evictUserSocket(userId);
 
       // Set HTTP-only cookie (kept for same-origin / legacy clients)
       res.cookie("authToken", token, COOKIE_OPTIONS);

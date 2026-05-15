@@ -19,6 +19,7 @@ import { activateProForSubscription, deactivateProForSubscription } from "./razo
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 
 export async function handleRazorpayWebhook(req: Request, res: Response): Promise<void> {
+  try {
   if (!WEBHOOK_SECRET) {
     console.error("[Webhook] RAZORPAY_WEBHOOK_SECRET is not set");
     res.status(500).json({ error: "Webhook secret not configured" });
@@ -31,10 +32,20 @@ export async function handleRazorpayWebhook(req: Request, res: Response): Promis
     return;
   }
 
+  // Use the raw body captured by express.json()'s verify callback.
+  // Route-level express.raw() doesn't work because the global express.json()
+  // runs first and body-parser won't re-parse an already-parsed body.
+  const rawBody: Buffer | undefined = (req as any).rawBody;
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    console.error("[Webhook] rawBody not available — check express.json verify option in app.ts");
+    res.status(400).json({ error: "Raw body unavailable" });
+    return;
+  }
+
   // Verify HMAC-SHA256 signature
   const expectedSig = crypto
     .createHmac("sha256", WEBHOOK_SECRET)
-    .update(req.body as Buffer)
+    .update(rawBody)
     .digest("hex");
 
   if (expectedSig !== sig) {
@@ -46,7 +57,7 @@ export async function handleRazorpayWebhook(req: Request, res: Response): Promis
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let event: any;
   try {
-    event = JSON.parse((req.body as Buffer).toString("utf8"));
+    event = JSON.parse(rawBody.toString("utf8"));
   } catch {
     res.status(400).json({ error: "Invalid JSON body" });
     return;
@@ -112,4 +123,10 @@ export async function handleRazorpayWebhook(req: Request, res: Response): Promis
   }
 
   res.json({ received: true });
+
+  } catch (err) {
+    // Catch-all: never let a webhook crash the server process.
+    console.error("[Webhook] Unhandled error — returning 200 to prevent Razorpay retries:", err);
+    if (!res.headersSent) res.json({ received: true });
+  }
 }

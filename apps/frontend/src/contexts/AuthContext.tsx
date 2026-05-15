@@ -33,7 +33,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkAuth();
+    // Track when we last successfully validated so we don't spam /auth/me.
+    let lastCheckedAt = 0;
+
+    const maybeCheck = (force = false) => {
+      const now = Date.now();
+      // Only re-validate if forced (initial load) or it's been >5 min since
+      // the last check. This prevents a /auth/me call on every tab switch
+      // while still catching evictions reasonably quickly.
+      if (!force && now - lastCheckedAt < 5 * 60_000) return;
+      lastCheckedAt = now;
+      checkAuth();
+    };
+
+    // Always check on first mount
+    maybeCheck(true);
+
+    // Poll every 5 min as a fallback for missed socket eviction events
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") maybeCheck();
+    }, 5 * 60_000);
+
+    // On tab focus: only re-validate if the cooldown has elapsed
+    const onVisible = () => {
+      if (document.visibilityState === "visible") maybeCheck();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const checkAuth = async () => {
@@ -57,9 +87,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // A real auth failure (401 expired/invalid token) — clear everything.
+      // A real auth failure (401 expired/invalid token) — our session was
+      // evicted (e.g. the user logged in on another device). Clear everything
+      // and redirect to login with an explanation banner.
+      // We only hard-redirect if there was a cached user — this avoids
+      // redirecting during the initial unauthenticated app load.
+      const hadSession = !!readCachedUser();
       setUser(null);
       writeCachedUser(null);
+      localStorage.removeItem("token");
+      if (hadSession && err?.response?.status === 401) {
+        window.location.href = "/login?reason=evicted";
+        return;
+      }
     } finally {
       setIsLoading(false);
     }

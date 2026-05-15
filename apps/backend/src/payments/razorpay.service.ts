@@ -114,11 +114,24 @@ export async function createSubscription(userId: string): Promise<{ subscription
   const existing = await User.findById(userId).lean();
   if (existing?.subscriptionId && existing.subscriptionStatus &&
       REUSABLE_STATUSES.includes(existing.subscriptionStatus)) {
-    console.log(`[Razorpay] Reusing existing subscription ${existing.subscriptionId} (status: ${existing.subscriptionStatus})`);
-    return {
-      subscriptionId: existing.subscriptionId,
-      keyId:          process.env.RAZORPAY_KEY_ID!,
-    };
+    // Verify the stored subscription still uses the CURRENT plan — it might
+    // have been created under a different plan (e.g. ₹50 prod plan while
+    // we're now in dev mode using the ₹1 plan).  If the plan doesn't match
+    // we fall through and create a fresh subscription rather than presenting
+    // the user with an unexpected amount in the Razorpay checkout popup.
+    try {
+      const sub = await razorpay.subscriptions.fetch(existing.subscriptionId);
+      if (sub.plan_id === PLAN_ID) {
+        console.log(`[Razorpay] Reusing existing subscription ${existing.subscriptionId} (status: ${existing.subscriptionStatus})`);
+        return {
+          subscriptionId: existing.subscriptionId,
+          keyId:          process.env.RAZORPAY_KEY_ID!,
+        };
+      }
+      console.log(`[Razorpay] Existing subscription ${existing.subscriptionId} uses plan ${sub.plan_id} but current plan is ${PLAN_ID} — creating a new subscription`);
+    } catch (err) {
+      console.warn(`[Razorpay] Could not fetch existing subscription ${existing.subscriptionId} — creating a new one:`, err);
+    }
   }
 
   const subscription = await razorpay.subscriptions.create({

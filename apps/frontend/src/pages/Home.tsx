@@ -83,12 +83,11 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
   );
 }
 
-// ─── Main ────────────────────────────────────────────────────────────────────
+// ─── Module-level cache (survives tab switches / route navigations) ───────────
+let _statsCache: { activeRooms: number; liveDebates: number; totalDebates: number } | null = null;
+let _leaderboardCache: LeaderboardEntry[] | null = null;
 
-const TOTAL_BASE = 2847;
-const MOCK_ONLINE   = 47;
-const MOCK_DEBATER  = "lex_argues";
-const MOCK_ARGUMENT = "\"Sentience is binary — there is no partial consciousness.\"";
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 export function Home() {
   const navigate  = useNavigate();
@@ -102,8 +101,9 @@ export function Home() {
   const subStatus      = (user as any)?.subscriptionStatus ?? null;
   const isCancelled    = subStatus === "cancelled";
 
-  const [stats,       setStats]       = useState<{ activeRooms: number; liveDebates: number } | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  // Seed from cache so there's no empty-state flash on remount
+  const [stats,       setStats]       = useState<{ activeRooms: number; liveDebates: number; totalDebates: number } | null>(_statsCache);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(_leaderboardCache ?? []);
 
   // Pro welcome modal — shown once per user after first upgrade
   const userId = (user as any)?.id ?? (user as any)?._id ?? "";
@@ -117,16 +117,18 @@ export function Home() {
   const userStats = (user as any)?.stats ?? { debatesWon: 0, debatesLost: 0, totalDebates: 0 };
 
   useEffect(() => {
+    // Fetch once on first visit; skip on subsequent mounts (cache is warm).
+    // Data refreshes naturally on full page reload — no polling needed.
+    if (_statsCache && _leaderboardCache) return;
     let alive = true;
-    const load = async () => {
-      const [s, lb] = await Promise.all([platformApi.getStats(), platformApi.getLeaderboard()]);
+    Promise.all([platformApi.getStats(), platformApi.getLeaderboard()]).then(([s, lb]) => {
       if (!alive) return;
+      _statsCache = s;
+      _leaderboardCache = lb;
       setStats(s);
       setLeaderboard(lb);
-    };
-    void load();
-    const interval = setInterval(load, 30_000);
-    return () => { alive = false; clearInterval(interval); };
+    });
+    return () => { alive = false; };
   }, []);
 
   const handleLogout = async () => { try { await logout(); navigate("/login"); } catch {} };
@@ -160,8 +162,10 @@ export function Home() {
   const PlayerCard = (
     <div
       className="glass glass-interactive fade-up"
+      onClick={() => navigate("/level-rewards")}
       style={{
         padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem",
+        cursor: "pointer",
         ...(isPro ? {
           border: `1.5px solid ${ac.border.replace("0.4","0.45")}`,
           boxShadow: ac.glow,
@@ -310,18 +314,20 @@ export function Home() {
   );
 
   // ─── Social proof strip ───────────────────────────────────────────────────
-  const totalDebates = TOTAL_BASE + (stats?.liveDebates ?? 0);
+  const topDebater = leaderboard[0] ?? null;
   const SocialStrip = (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
       <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--blue)", fontFamily: "'JetBrains Mono', monospace" }}>{totalDebates.toLocaleString()}</span>
+        <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--blue)", fontFamily: "'JetBrains Mono', monospace" }}>{(stats?.totalDebates ?? 0).toLocaleString()}</span>
         <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>debates hosted</span>
       </div>
-      <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <div className="pulse-dot pulse-dot-green" style={{ flexShrink: 0 }} />
-        <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{MOCK_ONLINE + (stats?.activeRooms ?? 0)}</span>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>online now</span>
-      </div>
+      {(stats?.activeRooms ?? 0) > 0 && (
+        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <div className="pulse-dot pulse-dot-green" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{stats?.activeRooms}</span>
+          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>rooms open</span>
+        </div>
+      )}
       {(stats?.liveDebates ?? 0) > 0 && (
         <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
           <div className="pulse-dot pulse-dot-red" style={{ flexShrink: 0 }} />
@@ -329,22 +335,12 @@ export function Home() {
           <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>live now</span>
         </div>
       )}
-      <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <span style={{ fontSize: "0.74rem" }}>🔥</span>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>Trending:</span>
-        <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "var(--text)" }}>AI vs Humans</span>
-      </div>
-      <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <span style={{ fontSize: "0.74rem" }}>⭐</span>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>Featured:</span>
-        <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "var(--blue)" }}>{MOCK_DEBATER}</span>
-      </div>
-      {!isMobile && (
-        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem", maxWidth: 280 }}>
-          <span style={{ fontSize: "0.74rem" }}>💬</span>
-          <span style={{ fontSize: "0.68rem", color: "var(--subtle)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: "italic" }}>
-            {MOCK_ARGUMENT}
-          </span>
+      {topDebater && (
+        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+          <span style={{ fontSize: "0.74rem" }}>🥇</span>
+          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>Top debater:</span>
+          <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "var(--blue)" }}>{topDebater.username}</span>
+          <span style={{ fontSize: "0.65rem", color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{topDebater.xp} XP</span>
         </div>
       )}
     </div>
@@ -392,12 +388,12 @@ export function Home() {
   // ── MOBILE LAYOUT (no scroll, bottom nav) ─────────────────────────────────
   // ══════════════════════════════════════════════════════════════════════════
   if (isMobile) {
-    const totalDebates = TOTAL_BASE + (stats?.liveDebates ?? 0);
+    const totalDebates = stats?.totalDebates ?? 0;
 
     // Compact player summary used in Profile tab
     const MobilePlayerCard = (
-      <div className="glass" style={{
-        padding: "1rem 1.125rem",
+      <div className="glass" onClick={() => navigate("/level-rewards")} style={{
+        padding: "1rem 1.125rem", cursor: "pointer",
         ...(isPro ? { border: `1.5px solid ${ac.border}`, boxShadow: ac.glow, background: ac.bgCard } : {}),
       }}>
         {isPro && (
@@ -468,7 +464,7 @@ export function Home() {
         </nav>
 
         {/* ── CONTENT AREA ── */}
-        <div style={{ flex: 1, minHeight: 0, position: "relative", zIndex: 1 }}>
+        <div style={{ flex: 1, minHeight: 0, position: "relative", zIndex: 1, paddingBottom: "calc(58px + env(safe-area-inset-bottom, 0px))" }}>
 
           {/* ─── HOME TAB ─── */}
           {activeTab === "home" && (
@@ -507,8 +503,8 @@ export function Home() {
                 </div>
                 <div className="glass" style={{ padding: "0.28rem 0.55rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.28rem" }}>
                   <div className="pulse-dot pulse-dot-green" style={{ flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 900, color: "var(--text)" }}>{MOCK_ONLINE + (stats?.activeRooms ?? 0)}</span>
-                  <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>online</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 900, color: "var(--text)" }}>{stats?.activeRooms ?? 0}</span>
+                  <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>rooms open</span>
                 </div>
                 {(stats?.liveDebates ?? 0) > 0 && (
                   <div className="glass" style={{ padding: "0.28rem 0.55rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.28rem" }}>
@@ -564,22 +560,6 @@ export function Home() {
             <div style={{ height: "100%", overflowY: "auto", padding: "0.875rem 1rem" }}>
               {MobilePlayerCard}
               <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                {/* Level rewards teaser */}
-                <div className="glass" onClick={() => navigate("/level-rewards")} style={{ padding: "0.75rem 1rem", cursor: "pointer", borderRadius: "0.75rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                      <span>🗺️</span>
-                      <span style={{ fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>Level Rewards</span>
-                    </div>
-                    <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--blue)" }}>See all →</span>
-                  </div>
-                  <div style={{ height: 5, borderRadius: 9999, background: "var(--border)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", borderRadius: 9999, width: `${((lvlInfo.current.level - 1) / 9) * 100 + (lvlInfo.progressPct / 100) * (100 / 9)}%`, background: isGlacier ? "linear-gradient(90deg,#0369a1,#38bdf8)" : "linear-gradient(90deg,var(--blue),var(--violet))" }} />
-                  </div>
-                  <div style={{ fontSize: "0.58rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                    Lv.{lvlInfo.current.level} · {lvlInfo.current.title} {lvlInfo.current.level < 5 ? "· 🧊 Glacier at Lv.5" : "· 🧊 Glacier unlocked!"}
-                  </div>
-                </div>
                 {/* Dev tools */}
                 {isDev && (
                   <div className="glass" style={{ padding: "0.625rem 0.875rem", borderRadius: "0.75rem" }}>
@@ -642,7 +622,7 @@ export function Home() {
         </div>
 
         {/* ── BOTTOM NAV ── */}
-        <nav style={{ position: "relative", zIndex: 10, flexShrink: 0, height: 58, borderTop: "1px solid var(--border)", background: "var(--bg)", display: "flex", alignItems: "stretch", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100, height: "calc(58px + env(safe-area-inset-bottom, 0px))", borderTop: "1px solid var(--border)", background: "var(--bg)", display: "flex", alignItems: "stretch", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
           {([
             { id: "home",        icon: "🏠", label: "Home" },
             { id: "leaderboard", icon: "🏆", label: "Rank" },
@@ -948,31 +928,6 @@ export function Home() {
             )}
 
             {isMobile && <div style={{ marginTop: "0.25rem" }}>{LeaderboardPanel}</div>}
-            {isMobile && (
-              <div
-                className="glass glass-interactive fade-up"
-                onClick={() => navigate("/level-rewards")}
-                style={{ marginTop: "0.25rem", padding: "0.875rem 1.125rem", cursor: "pointer" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <span>🗺️</span>
-                    <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>Level Rewards</span>
-                  </div>
-                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--blue)" }}>See all →</span>
-                </div>
-                <div style={{ height: 5, borderRadius: 9999, background: "var(--border)", overflow: "hidden", marginBottom: "0.4rem" }}>
-                  <div style={{
-                    height: "100%", borderRadius: 9999,
-                    width: `${((lvlInfo.current.level - 1) / 9) * 100 + (lvlInfo.progressPct / 100) * (100 / 9)}%`,
-                    background: isGlacier ? "linear-gradient(90deg,#0369a1,#38bdf8)" : "linear-gradient(90deg,var(--blue),var(--violet))",
-                  }} />
-                </div>
-                <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>
-                  Lv.{lvlInfo.current.level} · {lvlInfo.current.title} {lvlInfo.current.level < 5 ? "· 🧊 Glacier at Lv.5" : "· 🧊 Glacier unlocked!"}
-                </span>
-              </div>
-            )}
           </div>
 
           {/* ── RIGHT (desktop) ── */}
@@ -980,43 +935,6 @@ export function Home() {
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {PlayerCard}
               {LeaderboardPanel}
-              {/* Level Rewards teaser */}
-              <div
-                className="glass glass-interactive fade-up"
-                onClick={() => navigate("/level-rewards")}
-                style={{ padding: "1rem 1.25rem", cursor: "pointer" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.6rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <span style={{ fontSize: "1rem" }}>🗺️</span>
-                    <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>Level Rewards</span>
-                  </div>
-                  <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--blue)" }}>See all →</span>
-                </div>
-                {/* Mini progress bar */}
-                <div style={{ height: 5, borderRadius: 9999, background: "var(--border)", overflow: "hidden", marginBottom: "0.5rem" }}>
-                  <div style={{
-                    height: "100%", borderRadius: 9999,
-                    width: `${((lvlInfo.current.level - 1) / 9) * 100 + (lvlInfo.progressPct / 100) * (100 / 9)}%`,
-                    background: isGlacier ? "linear-gradient(90deg,#0369a1,#38bdf8)" : "linear-gradient(90deg,var(--blue),var(--violet))",
-                    transition: "width 1.1s cubic-bezier(.4,0,.2,1)",
-                  }} />
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>
-                    Lv.{lvlInfo.current.level} · {lvlInfo.current.title}
-                  </span>
-                  {lvlInfo.current.level < 5 ? (
-                    <span style={{ fontSize: "0.6rem", fontWeight: 700, color: isGlacier ? "#0284c7" : "var(--blue)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
-                      🧊 Glacier at Lv.5
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: "0.6rem", fontWeight: 700, color: isGlacier ? "#38bdf8" : "#0ea5e9", display: "flex", alignItems: "center", gap: "0.2rem" }}>
-                      🧊 Glacier unlocked!
-                    </span>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </div>

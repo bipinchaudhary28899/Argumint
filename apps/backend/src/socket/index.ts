@@ -36,8 +36,13 @@ export function evictUserSocket(userId: string): void {
   if (!socketId) return;
   const staleSocket = _io.sockets.sockets.get(socketId);
   if (staleSocket) {
+    // Emit the eviction event first, then close the transport after a short
+    // delay. Calling disconnect(true) synchronously after emit() can kill the
+    // connection before the event is flushed to the client.
     staleSocket.emit("session:evicted");
-    staleSocket.disconnect(true);
+    setTimeout(() => {
+      try { staleSocket.disconnect(true); } catch { /* already gone */ }
+    }, 300);
   }
   userSocketMap.delete(userId);
 }

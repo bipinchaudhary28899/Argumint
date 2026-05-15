@@ -10,7 +10,8 @@ export function Login() {
   const { login, checkAuth, isLoading } = useAuth();
   const [formData, setFormData] = useState<LoginInput>({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
-  const evicted = searchParams.get("reason") === "evicted";
+  const reason  = searchParams.get("reason");
+  const evicted = reason === "evicted" || reason === "session_expired";
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [activeSessionConflict, setActiveSessionConflict] = useState(false);
   const [forceLoading, setForceLoading] = useState(false);
@@ -76,7 +77,9 @@ export function Login() {
           <p style={{ color: "var(--muted)", fontSize: "0.875rem", margin: "0 0 1.75rem" }}>Sign in to your arena account</p>
           {evicted && (
             <div style={{ padding: "0.75rem 1rem", background: "rgba(217,119,6,0.1)", border: "1px solid rgba(217,119,6,0.3)", borderRadius: "0.625rem", color: "var(--gold)", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>
-              ⚠ You were signed out because your account logged in on another device.
+              {reason === "session_expired"
+                ? "⚠ Your session expired. Please sign in again to continue."
+                : "⚠ You were signed out because your account logged in on another device."}
             </div>
           )}
           {activeSessionConflict && (

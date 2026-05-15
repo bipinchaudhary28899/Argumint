@@ -10,7 +10,11 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children, guestOnly = false }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
 
-  if (isLoading) {
+  // Only block rendering on the very first load (no user in state yet).
+  // If we already have a user (seeded from localStorage cache), keep showing
+  // the page while auth re-validates in the background — avoids a full-screen
+  // spinner flash on every tab-focus or 60s poll.
+  if (isLoading && !user) {
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
         <img

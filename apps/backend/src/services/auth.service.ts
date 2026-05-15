@@ -32,26 +32,42 @@ export class AuthService {
   return toPublicUser(user);
 }
 
-  // ------------------- LOGIN -------------------
-  async login(data: LoginInput): Promise<{ user: PublicUser; token: string }> {
-    const normalizedEmail = data.email.toLowerCase().trim();
+  // ------------------- VALIDATE CREDENTIALS (no session created) -------------------
+  // Use this to verify email + password without touching Redis.
+  // Lets the login endpoint check for session conflicts before committing.
+  async validateCredentials(email: string, password: string): Promise<{ user: PublicUser; userId: string; userEmail: string; username: string }> {
+    const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) throw new Error("Invalid email or password");
-
-    const isPasswordValid = await user.comparePassword(data.password);
+    const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) throw new Error("Invalid email or password");
+    return {
+      user: toPublicUser(user),
+      userId: user._id.toString(),
+      userEmail: user.email,
+      username: user.username,
+    };
+  }
 
+  // ------------------- CREATE SESSION (token + Redis) -------------------
+  // Call only after the session-conflict check passes.
+  async createSession(userId: string, email: string, username: string): Promise<string> {
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email, username: user.username },
+      { userId, email, username },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRY },
     );
-
     if (this.redisClient) {
-      await this.redisClient.setex(`session:${user._id}`, SESSION_EXPIRY, token);
+      await this.redisClient.setex(`session:${userId}`, SESSION_EXPIRY, token);
     }
+    return token;
+  }
 
-    return { user: toPublicUser(user), token };
+  // ------------------- LOGIN (kept for backward-compat, e.g. auto-login after register) -------------------
+  async login(data: LoginInput): Promise<{ user: PublicUser; token: string }> {
+    const { user, userId, userEmail, username } = await this.validateCredentials(data.email, data.password);
+    const token = await this.createSession(userId, userEmail, username);
+    return { user, token };
   }
 
   // ------------------- VERIFY TOKEN -------------------

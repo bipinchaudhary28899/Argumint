@@ -31,6 +31,10 @@ apiClient.interceptors.request.use((config) => {
 });
 
 // Response interceptor — persist token whenever the server sends one (login / register).
+// Also handles global 401: when any non-auth request comes back 401 while we
+// have a token in localStorage, the session has been evicted server-side.
+// We clear local auth state and redirect to /login with an explanation so the
+// user isn't stuck on a broken screen with a cryptic error message.
 apiClient.interceptors.response.use(
   (response) => {
     const data = response.data as { token?: string };
@@ -39,7 +43,23 @@ apiClient.interceptors.response.use(
     }
     return response;
   },
-  (error) => {
+  (error: AxiosError) => {
+    const isAuthEndpoint = (error.config?.url ?? "").startsWith("/auth/");
+    const had401 = error.response?.status === 401;
+    // Check both token AND cached user — checkAuth() may have already cleared
+    // the token by the time the user triggers another API call, so fall back
+    // to argumint_user as a proxy for "there was an active session".
+    const hadToken = !!localStorage.getItem("token") || !!localStorage.getItem("argumint_user");
+
+    // Only redirect for non-auth endpoints (login/register expect 401s).
+    if (had401 && hadToken && !isAuthEndpoint) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("argumint_user");
+      window.location.href = "/login?reason=session_expired";
+      // Return a never-resolving promise so the caller doesn't also show an error
+      return new Promise(() => {});
+    }
+
     return Promise.reject(error);
   }
 );
@@ -154,18 +174,44 @@ export const roomApi = {
 };
 
 export const platformApi = {
-  async getStats(): Promise<{ activeRooms: number; liveDebates: number }> {
+  async getStats(): Promise<{ activeRooms: number; liveDebates: number; totalDebates: number }> {
     try {
-      const res = await apiClient.get<{ activeRooms: number; liveDebates: number }>("/rooms/stats");
+      const res = await apiClient.get<{ activeRooms: number; liveDebates: number; totalDebates: number }>("/rooms/stats");
       return res.data;
     } catch {
-      return { activeRooms: 0, liveDebates: 0 };
+      return { activeRooms: 0, liveDebates: 0, totalDebates: 0 };
     }
   },
 
   async getLeaderboard(): Promise<{ id: string; username: string; xp: number; debatesWon: number; totalDebates: number }[]> {
     try {
       const res = await apiClient.get("/auth/leaderboard");
+      return res.data;
+    } catch {
+      return [];
+    }
+  },
+};
+
+export interface DebateHistoryEntry {
+  id:                string;
+  roomCode:          string;
+  topic:             string;
+  mode:              "buzzer" | "alternate";
+  endedAt:           string;
+  totalDebaters:     number;
+  totalJudges:       number;
+  rank:              number | null;
+  totalParticipants: number;
+  points:            number | null;
+  isWinner:          boolean | null;
+  side:              "for" | "against" | null;
+}
+
+export const historyApi = {
+  async getHistory(): Promise<DebateHistoryEntry[]> {
+    try {
+      const res = await apiClient.get<DebateHistoryEntry[]>("/auth/history");
       return res.data;
     } catch {
       return [];

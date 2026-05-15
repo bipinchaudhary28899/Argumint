@@ -26,14 +26,10 @@ export function createPaymentRoutes(redisClient: Redis | null) {
   const router         = express.Router();
   const authMiddleware = createAuthMiddleware(redisClient);
 
-  // ── Webhook — MUST be registered before express.json() body parser ────────
-  // express.raw() keeps the body as a raw Buffer so the HMAC signature can be
-  // verified against the exact bytes Razorpay sent.
-  router.post(
-    "/webhook",
-    express.raw({ type: "application/json" }),
-    handleRazorpayWebhook,
-  );
+  // ── Webhook — no auth, raw body is captured by express.json()'s verify ────
+  // The raw bytes are stored on req.rawBody in app.ts so the HMAC signature
+  // can be verified. express.raw() here is NOT used (global json() runs first).
+  router.post("/webhook", handleRazorpayWebhook);
 
   // ── Create Subscription ───────────────────────────────────────────────────
   // Returns { subscriptionId, keyId } — the frontend passes these to Razorpay

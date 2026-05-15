@@ -34,7 +34,15 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({
+  // Store the raw body buffer on the request so the Razorpay webhook handler
+  // can verify the HMAC signature against the exact bytes Razorpay sent.
+  // express.raw() scoped to the route doesn't work here because express.json()
+  // runs first globally and body-parser won't re-parse an already-parsed body.
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 

@@ -3,21 +3,20 @@ import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../payments/useSubscription";
 
 const FREE_FEATURES = [
-  "Up to 10 debaters per room",
-  "2 judges per room",
-  "Buzzer & alternate debate modes",
-  "Browser-based transcription",
-  "Basic AI scoring after debate",
-  "XP & leaderboard",
+  "Ranked debates & XP leaderboard",
+  "Create & join rooms — alternate mode",
+  "Live transcription on desktop",
+  "AI scoring after every debate",
+  "Light & dark mode",
+  "Level-up surprises (e.g. Glacier theme at Lv. 5)",
 ];
 
 const PRO_FEATURES = [
+  "Exclusive gold UI & profile badge",
+  "Buzzer mode for fast-paced debates",
+  "Judges & spectators in your room",
+  "Detailed AI analysis of your performance",
   "Everything in Free",
-  "Unlimited debaters & judges",
-  "Whisper AI transcription (higher accuracy)",
-  "Whisper minute budget controls",
-  "Premium room badge",
-  "Priority support",
 ];
 
 export function PricingPage() {
@@ -79,7 +78,7 @@ export function PricingPage() {
                 <span style={{ color: "var(--muted)", fontSize: "0.875rem" }}>/ forever</span>
               </div>
               <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0, lineHeight: 1.5 }}>
-                Everything you need to host great debates.
+                Ranked debates, AI scoring, and surprises as you level up.
               </p>
             </div>
 
@@ -127,7 +126,7 @@ export function PricingPage() {
                 <span style={{ color: "var(--muted)", fontSize: "0.875rem" }}>/ month</span>
               </div>
               <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0, lineHeight: 1.5 }}>
-                For serious debaters and communities.
+                Gold UI, buzzer mode, judges, spectators & deep AI analysis.
               </p>
             </div>
 

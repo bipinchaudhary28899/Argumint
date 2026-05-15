@@ -67,14 +67,18 @@ export function createRoomRoutes(redisClient: Redis | null) {
    */
   router.get("/stats", authMiddleware, async (_req: Request, res: Response) => {
     try {
-      const { Room } = await import("../models/Room.model.js");
-      const [activeRooms, liveDebates] = await Promise.all([
+      const [{ Room }, { Debate }] = await Promise.all([
+        import("../models/Room.model.js"),
+        import("../models/Debate.model.js"),
+      ]);
+      const [activeRooms, liveDebates, totalDebates] = await Promise.all([
         Room.countDocuments({ status: { $in: ["lobby", "voting", "ready-up", "prep"] } }),
         Room.countDocuments({ status: "live" }),
+        Debate.countDocuments({}),
       ]);
-      res.json({ activeRooms, liveDebates });
+      res.json({ activeRooms, liveDebates, totalDebates });
     } catch {
-      res.json({ activeRooms: 0, liveDebates: 0 });
+      res.json({ activeRooms: 0, liveDebates: 0, totalDebates: 0 });
     }
   });
 

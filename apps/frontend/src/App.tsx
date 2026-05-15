@@ -31,6 +31,7 @@ import { PricingPage } from "./pages/PricingPage";
 import { SubscriptionSuccess } from "./pages/SubscriptionSuccess";
 import { SubscriptionCancel } from "./pages/SubscriptionCancel";
 import { LevelRewards } from "./pages/LevelRewards";
+import { DebateAnalysisPage } from "./pages/DebateAnalysisPage";
 
 function App() {
   return (
@@ -115,6 +116,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <SubscriptionCancel />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* ── Debate analysis ── */}
+          <Route
+            path="/room/:code/analysis/:debateId"
+            element={
+              <ProtectedRoute>
+                <DebateAnalysisPage />
               </ProtectedRoute>
             }
           />

@@ -1,64 +1,23 @@
 /**
  * LevelRewards.tsx
  *
- * Viewport-locked, no-scroll layout:
+ * Layout:
  *   TOP STRIP  — XP card (left) + horizontal milestone roadmap (right)
- *   GRID       — 2-column × 3-row milestone cards, flex-fills remaining height
- *
- * Mobile: single column, natural scroll (expected on small screens)
+ *   HISTORY    — scrollable list of past debates: motion, debaters, judges, rank, points
  */
 
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { getLevelInfo, LEVEL_TABLE } from "@argumint/shared";
 import { NavLogo } from "../components/NavLogo";
+import { historyApi, type DebateHistoryEntry } from "../services/api";
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
-
-interface Milestone {
-  level:   number;
-  icon:    string;
-  reward:  string;
-  desc:    string;
-  detail:  string;
-  glacier?: boolean;
-}
-
-const MILESTONES: Milestone[] = [
-  {
-    level: 1, icon: "🎙️", reward: "Debates",
-    desc:   "Start competing & earn XP",
-    detail: "Every debate earns XP — win or lose.",
-  },
-  {
-    level: 2, icon: "📊", reward: "Analytics",
-    desc:   "Full debate history & stats",
-    detail: "Win rate, argument scores, performance trends.",
-  },
-  {
-    level: 3, icon: "🏷️", reward: "Unique Titles",
-    desc:   "New debater title every level",
-    detail: "From Novice to Grand Master — shown on your profile.",
-  },
-  {
-    level: 5, icon: "🧊", reward: "Glacier Theme",
-    desc:   "Icy glassmorphism UI",
-    detail: "No paywall — switch on from the theme picker.",
-    glacier: true,
-  },
-  {
-    level: 7, icon: "⚡", reward: "Elite Badge",
-    desc:   "Exclusive badge in every room",
-    detail: "A permanent signal that you've earned it.",
-  },
-  {
-    level: 10, icon: "👑", reward: "Grand Master",
-    desc:   "Crown status & highest title",
-    detail: "A gold crown on your profile and in every room.",
-  },
-];
+// Module-level cache — survives tab switches (component unmount/remount) within
+// the same browser session. Cleared on full page reload automatically.
+let _historyCache: DebateHistoryEntry[] | null = null;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -75,15 +34,30 @@ export function LevelRewards() {
   const lvlInfo   = getLevelInfo(xp);
   const curLevel  = lvlInfo.current.level;
 
+  const [history, setHistory]   = useState<DebateHistoryEntry[]>(_historyCache ?? []);
+  const [loading, setLoading]   = useState(_historyCache === null);
+
+  useEffect(() => {
+    // If we already have cached data, skip the fetch entirely
+    if (_historyCache !== null) return;
+
+    historyApi.getHistory().then(data => {
+      _historyCache = data;
+      setHistory(data);
+      setLoading(false);
+    });
+  }, []);
+
   const trackGrad = isGlacier
     ? "linear-gradient(90deg,#0369a1,#0284c7,#38bdf8)"
     : "linear-gradient(90deg,var(--blue),var(--violet))";
 
-  // ── Horizontal roadmap fill % (based on current level position) ──────────────
+  // ── Roadmap fill % ──────────────────────────────────────────────────────────
+  const MILESTONE_LEVELS = [1, 2, 3, 5, 7, 10];
   const milestoneAt = (level: number) => ((level - 1) / 9) * 100;
-  const nextMilestone = MILESTONES.find(m => m.level > curLevel);
+  const nextMilestoneLevel = MILESTONE_LEVELS.find(l => l > curLevel);
   const curMilPos  = milestoneAt(curLevel);
-  const nextMilPos = nextMilestone ? milestoneAt(nextMilestone.level) : 100;
+  const nextMilPos = nextMilestoneLevel ? milestoneAt(nextMilestoneLevel) : 100;
   const fillPct    = curMilPos + (nextMilPos - curMilPos) * (lvlInfo.progressPct / 100);
 
   // ─── XP Card ─────────────────────────────────────────────────────────────────
@@ -158,40 +132,39 @@ export function LevelRewards() {
   );
 
   // ─── Horizontal Roadmap ───────────────────────────────────────────────────────
+  const ROADMAP_MILESTONES = [
+    { level: 1,  icon: "🎙️" },
+    { level: 2,  icon: "📊" },
+    { level: 3,  icon: "🏷️" },
+    { level: 5,  icon: "🧊" },
+    { level: 7,  icon: "⚡" },
+    { level: 10, icon: "👑" },
+  ];
+
   const Roadmap = (
     <div className="glass" style={{ flex: 1, padding: "0.875rem 1.5rem", display: "flex", flexDirection: "column", justifyContent: "center", gap: "0.75rem" }}>
       <div style={{ fontSize: "0.56rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>
         🛤️ Your Roadmap
       </div>
-      {/* Track — dots are absolutely positioned at their real level % so the
-           fill line always lines up with the circles correctly */}
       <div style={{ position: "relative", height: 52, margin: "0 15px" }}>
-        {/* Background track */}
         <div style={{ position: "absolute", top: 14, left: 0, right: 0, height: 3, borderRadius: 9999, background: isDark ? "rgba(255,255,255,0.08)" : "var(--border)" }} />
-        {/* Filled track */}
         <div style={{ position: "absolute", top: 14, left: 0, height: 3, borderRadius: 9999, width: `${fillPct}%`, background: trackGrad, boxShadow: isGlacier ? "0 0 8px rgba(56,189,248,0.4)" : "0 0 8px rgba(79,70,229,0.25)", transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }} />
-        {/* Milestone dots — each pinned at its true level position */}
-        {MILESTONES.map((m) => {
+        {ROADMAP_MILESTONES.map((m) => {
           const reached = curLevel >= m.level;
           const active  = curLevel === m.level;
-          const pct     = milestoneAt(m.level); // 0–100
+          const pct     = milestoneAt(m.level);
           return (
             <div key={m.level} style={{
-              position: "absolute",
-              left: `${pct}%`,
-              transform: "translateX(-50%)",
-              top: 0,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem",
+              position: "absolute", left: `${pct}%`, transform: "translateX(-50%)",
+              top: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.25rem",
             }}>
               <div style={{
                 width: 30, height: 30, borderRadius: "50%", zIndex: 1,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: "0.75rem", lineHeight: 1,
-                background: reached
-                  ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.2)" : "rgba(14,165,233,0.1)") : "rgba(var(--blue-rgb),0.12)")
-                  : "var(--surface)",
+                background: reached ? "rgba(var(--blue-rgb),0.12)" : "var(--surface)",
                 border: reached
-                  ? `2px solid ${m.glacier ? (isGlacier ? "#38bdf8" : "#0ea5e9") : "var(--blue)"}`
+                  ? `2px solid var(--blue)`
                   : `2px solid ${isDark ? "rgba(255,255,255,0.15)" : "var(--border)"}`,
                 boxShadow: active ? "0 0 0 3px rgba(var(--blue-rgb),0.2)" : "none",
                 opacity: reached ? 1 : 0.38,
@@ -208,94 +181,161 @@ export function LevelRewards() {
     </div>
   );
 
-  // ─── Milestone Cards (2×3 grid) ───────────────────────────────────────────────
-  const MilestoneGrid = (
-    <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "repeat(3, 1fr)", gap: "0.625rem" }}>
-      {MILESTONES.map((m) => {
-        const reached      = curLevel >= m.level;
-        const active       = curLevel === m.level;
-        const isNext       = m.level === nextMilestone?.level;
-        const levelsNeeded = m.level - curLevel;
+  // ─── History helpers ──────────────────────────────────────────────────────────
+  const rankLabel = (rank: number | null, total: number) => {
+    if (rank === null) return "—";
+    if (rank === 1) return "🥇 1st";
+    if (rank === 2) return "🥈 2nd";
+    if (rank === 3) return "🥉 3rd";
+    return `${rank}/${total}`;
+  };
 
-        return (
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return "";
+    }
+  };
+
+  // ─── History List ─────────────────────────────────────────────────────────────
+  const HistoryList = (
+    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "0.5rem", overflowY: "auto", paddingBottom: "1rem", paddingRight: "0.25rem" }}>
+      {/* Header row */}
+      {!isMobile && (
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 80px 60px 80px 80px",
+          gap: "0.5rem",
+          padding: "0 1rem",
+          marginBottom: "0.1rem",
+        }}>
+          {["Motion", "Debaters", "Judges", "Rank", "Points"].map(h => (
+            <div key={h} style={{ fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>{h}</div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Loading history…</div>
+        </div>
+      ) : history.length === 0 ? (
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: "0.5rem", padding: "3rem 1rem",
+        }}>
+          <div style={{ fontSize: "2.5rem" }}>🎙️</div>
+          <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--text)" }}>No debates yet</div>
+          <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>Join or create a room to start earning XP</div>
+          <button onClick={() => navigate("/")} className="btn-primary" style={{ marginTop: "0.5rem", padding: "0.5rem 1.25rem", fontSize: "0.82rem" }}>
+            Enter the Arena →
+          </button>
+        </div>
+      ) : (
+        history.map((entry) => (
           <div
-            key={m.level}
+            key={entry.id}
+            className="glass"
             style={{
-              display: "flex", alignItems: "flex-start", gap: "0.75rem",
-              padding: "0.75rem 1rem",
+              flexShrink: 0,
+              padding: isMobile ? "0.875rem 1rem" : "0.75rem 1rem",
               borderRadius: "0.875rem",
-              background: reached
-                ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.07)" : "rgba(14,165,233,0.04)") : "var(--glass-bg)")
-                : (isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"),
-              border: `1.5px solid ${
-                active
-                  ? (isGlacier ? "#38bdf8" : "var(--blue)")
-                  : reached
-                    ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.3)" : "rgba(14,165,233,0.2)") : "rgba(var(--blue-rgb),0.18)")
-                    : (isDark ? "rgba(255,255,255,0.06)" : "var(--border)")
-              }`,
-              opacity: reached ? 1 : isNext ? 0.72 : 0.45,
-              backdropFilter: reached ? "blur(20px)" : "none",
-              WebkitBackdropFilter: reached ? "blur(20px)" : "none",
-              boxShadow: active
-                ? isGlacier ? "0 4px 24px rgba(56,189,248,0.14)" : "0 4px 24px rgba(79,70,229,0.1)"
-                : "none",
-              overflow: "hidden",
+              display: isMobile ? "flex" : "grid",
+              gridTemplateColumns: "1fr 80px 60px 80px 80px",
+              flexDirection: isMobile ? "column" : undefined,
+              gap: isMobile ? "0.4rem" : "0.5rem",
+              alignItems: isMobile ? undefined : "center",
+              cursor: "default",
             }}
           >
-            {/* Icon */}
-            <div style={{
-              width: 38, height: 38, borderRadius: "0.625rem", flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem",
-              background: reached
-                ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.15)" : "rgba(14,165,233,0.1)") : "rgba(var(--blue-rgb),0.1)")
-                : (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)"),
-              border: `1px solid ${reached
-                ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.3)" : "rgba(14,165,233,0.2)") : "rgba(var(--blue-rgb),0.18)")
-                : (isDark ? "rgba(255,255,255,0.07)" : "var(--border)")}`,
-            }}>
-              {m.icon}
+            {/* Motion */}
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontWeight: 700, fontSize: "0.83rem", color: "var(--text)",
+                overflow: "hidden", textOverflow: "ellipsis",
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                lineHeight: 1.4,
+              }}>
+                {entry.topic}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.62rem", color: "var(--muted)" }}>{formatDate(entry.endedAt)}</span>
+                <span style={{
+                  fontSize: "0.58rem", fontWeight: 700, padding: "0.08rem 0.4rem", borderRadius: 9999,
+                  background: entry.mode === "buzzer" ? "rgba(245,158,11,0.1)" : "rgba(79,142,247,0.1)",
+                  color: entry.mode === "buzzer" ? "var(--gold)" : "var(--blue)",
+                  textTransform: "uppercase", letterSpacing: "0.06em",
+                }}>
+                  {entry.mode}
+                </span>
+                {entry.side && (
+                  <span style={{
+                    fontSize: "0.58rem", fontWeight: 700, padding: "0.08rem 0.4rem", borderRadius: 9999,
+                    background: entry.side === "for" ? "rgba(34,197,94,0.1)" : "rgba(244,63,94,0.1)",
+                    color: entry.side === "for" ? "var(--for)" : "var(--against)",
+                    textTransform: "uppercase", letterSpacing: "0.06em",
+                  }}>
+                    {entry.side}
+                  </span>
+                )}
+                {entry.isWinner !== null && (
+                  <span style={{
+                    fontSize: "0.58rem", fontWeight: 800,
+                    color: entry.isWinner ? "var(--for)" : "var(--muted)",
+                  }}>
+                    {entry.isWinner ? "✓ Won" : "✗ Lost"}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Body */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem", flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 800, fontSize: "0.85rem", color: reached ? "var(--text)" : "var(--muted)" }}>
-                  {m.reward}
-                </span>
-                <span style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: "0.55rem", fontWeight: 800,
-                  padding: "0.08rem 0.38rem", borderRadius: "9999px",
-                  background: reached
-                    ? (m.glacier ? (isGlacier ? "rgba(56,189,248,0.18)" : "rgba(14,165,233,0.1)") : "rgba(var(--blue-rgb),0.1)")
-                    : (isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)"),
-                  color: reached ? (m.glacier && isGlacier ? "#38bdf8" : "var(--blue)") : "var(--muted)",
-                }}>
-                  Lv.{m.level}
-                </span>
-                <span style={{ marginLeft: "auto", fontSize: "0.56rem", fontWeight: reached ? 800 : 600, color: reached ? (isGlacier ? "#0284c7" : "var(--blue)") : "var(--muted)", flexShrink: 0 }}>
-                  {reached ? "✓ Unlocked" : isNext ? `${levelsNeeded}lv away` : `Lv.${m.level} req.`}
-                </span>
-              </div>
-              <div style={{ fontSize: "0.72rem", color: "var(--subtle)", fontWeight: 600, marginBottom: "0.15rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {m.desc}
-              </div>
-              <div style={{ fontSize: "0.65rem", color: "var(--muted)", lineHeight: 1.5 }}>
-                {m.detail}
-              </div>
-              {/* Glacier pill */}
-              {m.glacier && reached && (
-                <div style={{ marginTop: "0.35rem", display: "inline-flex", alignItems: "center", gap: "0.25rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", background: isGlacier ? "rgba(56,189,248,0.14)" : "rgba(14,165,233,0.07)", border: `1px solid ${isGlacier ? "rgba(56,189,248,0.35)" : "rgba(14,165,233,0.2)"}` }}>
-                  <span style={{ fontSize: "0.55rem" }}>🧊</span>
-                  <span style={{ fontSize: "0.55rem", fontWeight: 700, color: isGlacier ? "#0284c7" : "#0369a1" }}>
-                    {isGlacier ? "Active now" : "Enable in theme picker ↗"}
+            {/* Debaters */}
+            <div style={{ display: "flex", alignItems: isMobile ? "center" : "center", gap: "0.35rem" }}>
+              {isMobile && <span style={{ fontSize: "0.6rem", color: "var(--muted)", width: 56, flexShrink: 0 }}>Debaters</span>}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.88rem", fontWeight: 700, color: "var(--text)" }}>
+                {entry.totalDebaters}
+              </span>
+              <span style={{ fontSize: "0.62rem", color: "var(--muted)" }}>🎙️</span>
+            </div>
+
+            {/* Judges */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+              {isMobile && <span style={{ fontSize: "0.6rem", color: "var(--muted)", width: 56, flexShrink: 0 }}>Judges</span>}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.88rem", fontWeight: 700, color: entry.totalJudges > 0 ? "var(--text)" : "var(--muted)" }}>
+                {entry.totalJudges > 0 ? entry.totalJudges : "—"}
+              </span>
+              {entry.totalJudges > 0 && <span style={{ fontSize: "0.62rem", color: "var(--muted)" }}>⚖️</span>}
+            </div>
+
+            {/* Rank */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              {isMobile && <span style={{ fontSize: "0.6rem", color: "var(--muted)", width: 56, flexShrink: 0 }}>Rank</span>}
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: "0.82rem", fontWeight: 800,
+                color: entry.rank === 1 ? "#f59e0b" : entry.rank === 2 ? "#94a3b8" : entry.rank === 3 ? "#cd7f32" : "var(--text)",
+              }}>
+                {rankLabel(entry.rank, entry.totalParticipants)}
+              </span>
+            </div>
+
+            {/* Points */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              {isMobile && <span style={{ fontSize: "0.6rem", color: "var(--muted)", width: 56, flexShrink: 0 }}>Points</span>}
+              {entry.points !== null ? (
+                <>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.88rem", fontWeight: 800, color: "var(--blue)" }}>
+                    {entry.points}
                   </span>
-                </div>
+                  <span style={{ fontSize: "0.6rem", color: "var(--muted)" }}>pts</span>
+                </>
+              ) : (
+                <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>—</span>
               )}
             </div>
           </div>
-        );
-      })}
+        ))
+      )}
     </div>
   );
 
@@ -314,9 +354,6 @@ export function LevelRewards() {
             </div>
           )}
           <span style={{ fontSize: "0.88rem" }}>{themeMeta.icon}</span>
-          <button onClick={() => navigate("/")} className="btn-ghost" style={{ padding: "0.35rem 0.9rem", fontSize: "0.78rem" }}>
-            ← Home
-          </button>
         </div>
       </nav>
 
@@ -329,7 +366,14 @@ export function LevelRewards() {
         gap: "0.75rem",
       }}>
 
-        {/* Compact heading */}
+        {/* ← Home */}
+        <div style={{ flexShrink: 0 }}>
+          <button onClick={() => navigate("/")} className="btn-ghost" style={{ padding: "0.28rem 0.7rem", fontSize: "0.78rem" }}>
+            ← Home
+          </button>
+        </div>
+
+        {/* Heading */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div>
             <div className="badge badge-cyan" style={{ marginBottom: "0.2rem", fontSize: "0.62rem", display: "inline-block" }}>🗺️ Your Journey</div>
@@ -347,38 +391,21 @@ export function LevelRewards() {
           <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.75rem", paddingBottom: "1rem" }}>
             {XPCard}
             {Roadmap}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-              {MILESTONES.map((m) => {
-                const reached      = curLevel >= m.level;
-                const active       = curLevel === m.level;
-                const isNext       = m.level === nextMilestone?.level;
-                const levelsNeeded = m.level - curLevel;
-                return (
-                  <div key={m.level} style={{
-                    display: "flex", alignItems: "flex-start", gap: "0.75rem", padding: "0.875rem 1rem", borderRadius: "0.875rem",
-                    background: reached ? "var(--glass-bg)" : (isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)"),
-                    border: `1.5px solid ${active ? "var(--blue)" : reached ? "rgba(var(--blue-rgb),0.18)" : (isDark ? "rgba(255,255,255,0.06)" : "var(--border)")}`,
-                    opacity: reached ? 1 : isNext ? 0.72 : 0.45,
-                  }}>
-                    <div style={{ width: 38, height: 38, borderRadius: "0.625rem", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", background: reached ? "rgba(var(--blue-rgb),0.1)" : "transparent", border: `1px solid ${reached ? "rgba(var(--blue-rgb),0.2)" : "var(--border)"}` }}>
-                      {m.icon}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.2rem" }}>
-                        <span style={{ fontWeight: 800, fontSize: "0.88rem", color: reached ? "var(--text)" : "var(--muted)" }}>{m.reward}</span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.58rem", fontWeight: 800, padding: "0.08rem 0.38rem", borderRadius: 9999, background: "rgba(var(--blue-rgb),0.08)", color: "var(--blue)" }}>Lv.{m.level}</span>
-                        <span style={{ marginLeft: "auto", fontSize: "0.58rem", fontWeight: 700, color: reached ? "var(--blue)" : "var(--muted)" }}>{reached ? "✓" : isNext ? `${levelsNeeded}lv` : "🔒"}</span>
-                      </div>
-                      <div style={{ fontSize: "0.72rem", color: "var(--subtle)", fontWeight: 600 }}>{m.desc}</div>
-                      <div style={{ fontSize: "0.68rem", color: "var(--muted)", lineHeight: 1.5, marginTop: "0.1rem" }}>{m.detail}</div>
-                    </div>
-                  </div>
-                );
-              })}
+            {/* History section heading */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", paddingTop: "0.25rem" }}>
+              <span style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
+                📜 Debate History
+              </span>
+              {history.length > 0 && (
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.6rem", color: "var(--blue)", fontWeight: 700 }}>
+                  {history.length}
+                </span>
+              )}
             </div>
+            {HistoryList}
           </div>
         ) : (
-          /* ── Desktop: top strip + grid, all in fixed height ── */
+          /* ── Desktop: top strip + history ── */
           <>
             {/* Top strip: XP card + horizontal roadmap */}
             <div style={{ display: "flex", gap: "0.75rem", flexShrink: 0 }}>
@@ -386,8 +413,20 @@ export function LevelRewards() {
               {Roadmap}
             </div>
 
-            {/* 2×3 milestone grid — fills all remaining height */}
-            {MilestoneGrid}
+            {/* History section heading */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+              <span style={{ fontSize: "0.62rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>
+                📜 Debate History
+              </span>
+              {history.length > 0 && (
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.6rem", color: "var(--blue)", fontWeight: 700 }}>
+                  {history.length}
+                </span>
+              )}
+            </div>
+
+            {/* Scrollable history list */}
+            {HistoryList}
           </>
         )}
       </div>
