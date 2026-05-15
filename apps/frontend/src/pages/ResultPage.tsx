@@ -65,7 +65,8 @@ export function ResultPage() {
   const [displayedTitle, setDisplayedTitle]   = useState<string | null>(null);
   const [levelBadgePop,  setLevelBadgePop]    = useState(false); // triggers pop anim
   const [displayedBarNext, setDisplayedBarNext] = useState<boolean>(true); // show bar?
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const timersRef       = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const animFiredRef    = useRef(false);
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
@@ -242,6 +243,8 @@ export function ResultPage() {
   //   ↳ if level-up: bar fills to 100 % first, then banner + reset
   useEffect(() => {
     if (!debate?.result || !myScore) return;
+    if (animFiredRef.current) return;   // only ever play once
+    animFiredRef.current = true;
     const ts = timersRef.current;
 
     const push = (fn: () => void, delay: number) => {
@@ -431,6 +434,23 @@ export function ResultPage() {
         .play-btn { transition: transform 0.15s, box-shadow 0.15s; }
         .play-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(124,58,237,0.48) !important; }
         .play-btn:active { transform: translateY(0); }
+        @keyframes rhetorBadgePop {
+          0%   { opacity:0; transform:scale(0.6) translateY(8px); }
+          65%  { opacity:1; transform:scale(1.1) translateY(-2px); }
+          100% { opacity:1; transform:scale(1) translateY(0); }
+        }
+        @keyframes rankDeltaFloat {
+          0%   { opacity:0; transform:translateY(10px); }
+          30%  { opacity:1; transform:translateY(-3px); }
+          100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes barFillIn {
+          from { transform:scaleX(0); transform-origin:left; }
+          to   { transform:scaleX(1); transform-origin:left; }
+        }
+        .rhetor-badge    { animation:rhetorBadgePop 0.45s cubic-bezier(.34,1.56,.64,1) both; }
+        .rank-delta-chip { animation:rankDeltaFloat 0.5s ease-out 0.35s both; }
+        .bar-fill-in     { animation:barFillIn 0.9s cubic-bezier(.4,0,.2,1) both; }
       `}</style>
 
       {/* ── XP EARNED POPUP ── */}
@@ -617,6 +637,47 @@ export function ResultPage() {
                       <span style={{ color:"var(--muted)", fontSize:"0.7rem" }}>·</span>
                       <span style={{ fontSize:"0.7rem", fontWeight:700, color:"var(--muted)", letterSpacing:"0.04em", textTransform:"uppercase" }}>{outcome.badge}</span>
                     </div>
+
+                    {/* ── RHETORIC TRAITS + ACHIEVEMENT BADGES ── */}
+                    {(() => {
+                      type Cat = 'clarity'|'evidence'|'rebuttal'|'organization';
+                      const cats: Cat[] = ['clarity','evidence','rebuttal','organization'];
+                      const topCat = cats.reduce((a,b) => ((myScore[a] as number) > (myScore[b] as number) ? a : b));
+                      type TraitDef = { label:string; icon:string; bg:string; bd:string; color:string };
+                      const traitMap: Record<Cat,TraitDef> = {
+                        clarity:      { label:"Crystal Communicator", icon:"💬", bg:"rgba(34,211,238,0.12)",  bd:"rgba(34,211,238,0.35)",  color:"#22d3ee" },
+                        evidence:     { label:"Evidence Expert",       icon:"📊", bg:"rgba(16,185,129,0.12)",  bd:"rgba(16,185,129,0.35)",  color:"#10b981" },
+                        rebuttal:     { label:"Sharp Rebutter",        icon:"⚔️", bg:"rgba(244,63,94,0.12)",   bd:"rgba(244,63,94,0.35)",   color:"#f43f5e" },
+                        organization: { label:"Logical Thinker",       icon:"🧠", bg:"rgba(167,139,250,0.12)", bd:"rgba(167,139,250,0.35)", color:"#a78bfa" },
+                      };
+                      const trait = traitMap[topCat];
+                      const avgScore = rankedAll.length > 1 ? Math.round(rankedAll.reduce((s,x)=>s+x.total,0)/rankedAll.length) : null;
+                      const aboveAvg = avgScore !== null ? myScore.total - avgScore : null;
+                      const achiev: TraitDef[] = [];
+                      if (myRank===1 && rankedAll.length>1) achiev.push({ label:"Top Scorer",       icon:"👑", bg:"rgba(245,158,11,0.12)", bd:"rgba(245,158,11,0.40)", color:"#fbbf24" });
+                      if (myScore.total>=85)                achiev.push({ label:"Elite Debater",    icon:"🔥", bg:"rgba(239,68,68,0.10)",  bd:"rgba(239,68,68,0.35)",  color:"#f87171" });
+                      else if (myScore.total>=70)           achiev.push({ label:"Strong Performer", icon:"⭐", bg:"rgba(79,142,247,0.10)", bd:"rgba(79,142,247,0.30)", color:"#60a5fa" });
+                      return (
+                        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:"0.4rem", marginTop:"0.875rem" }}>
+                          {/* Rhetoric trait */}
+                          <div className="rhetor-badge" style={{ display:"inline-flex", alignItems:"center", gap:"0.3rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:trait.bg, border:`1px solid ${trait.bd}`, fontSize:"0.72rem", fontWeight:800, color:trait.color, letterSpacing:"0.02em" }}>
+                            <span>{trait.icon}</span><span>{trait.label}</span>
+                          </div>
+                          {/* Achievement badges */}
+                          {achiev.map((b,i)=>(
+                            <div key={i} className="rhetor-badge" style={{ display:"inline-flex", alignItems:"center", gap:"0.3rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:b.bg, border:`1px solid ${b.bd}`, fontSize:"0.72rem", fontWeight:800, color:b.color, animationDelay:`${0.10+i*0.09}s` }}>
+                              <span>{b.icon}</span><span>{b.label}</span>
+                            </div>
+                          ))}
+                          {/* Above-average chip */}
+                          {aboveAvg!==null && aboveAvg>0 && (
+                            <div className="rank-delta-chip" style={{ display:"inline-flex", alignItems:"center", gap:"0.25rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:"rgba(16,185,129,0.1)", border:"1px solid rgba(16,185,129,0.35)", fontSize:"0.72rem", fontWeight:800, color:"#10b981" }}>
+                              <span>↑</span><span>+{aboveAvg} above avg</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}
@@ -642,6 +703,28 @@ export function ResultPage() {
 
             {/* ── centred content wrapper ── */}
             <div style={{ maxWidth:640, margin:"0 auto", display:"flex", flexDirection:"column", gap:"0.75rem" }}>
+
+              {/* ── SCORE BREAKDOWN ── */}
+              <div className="glass res-col" style={{ padding:"0.875rem 1rem", borderRadius:"1rem" }}>
+                <div style={{ fontSize:"0.55rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--muted)", marginBottom:"0.7rem" }}>📊 Your Performance</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:"0.55rem" }}>
+                  {(["clarity","evidence","rebuttal","organization"] as const).map((cat, ci) => {
+                    const val = myScore[cat] as number;
+                    const pct = Math.round((val / 25) * 100);
+                    const catLabels: Record<string,string> = { clarity:"Clarity", evidence:"Evidence", rebuttal:"Rebuttal", organization:"Organization" };
+                    const catColors: Record<string,string> = { clarity:"#22d3ee", evidence:"#10b981", rebuttal:"#f43f5e", organization:"#a78bfa" };
+                    return (
+                      <div key={cat} style={{ display:"flex", alignItems:"center", gap:"0.65rem" }}>
+                        <span style={{ fontSize:"0.68rem", fontWeight:700, color:"var(--muted)", width:82, flexShrink:0 }}>{catLabels[cat]}</span>
+                        <div style={{ flex:1, height:5, borderRadius:"9999px", background:"var(--surface2)", overflow:"hidden" }}>
+                          <div className="bar-fill-in" style={{ height:"100%", borderRadius:"9999px", background:catColors[cat], width:`${pct}%`, animationDelay:`${0.45+ci*0.08}s` }} />
+                        </div>
+                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.72rem", fontWeight:900, color:catColors[cat], width:26, textAlign:"right", flexShrink:0 }}>{val}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* ── STANDINGS (Leaderboard) ── */}
               <div className="glass res-col" style={{ padding:"0.875rem 1rem", borderRadius:"1rem" }}>

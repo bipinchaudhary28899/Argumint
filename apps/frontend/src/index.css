@@ -81,16 +81,16 @@
    ─────────────────────────────────────────────────────────────────────── */
 :root {
   /* Surfaces */
-  --bg:       #f5f3ff;   /* page background */
+  --bg:       #f0edff;   /* page background — slightly richer violet tint */
   --surface:  #ffffff;   /* card */
-  --surface2: #ede9fe;   /* inset / secondary surface */
-  --border:   #ddd6fe;   /* violet-200 */
-  --border2:  #c4b5fd;   /* violet-300 */
+  --surface2: #e9e4fe;   /* inset / secondary surface */
+  --border:   #c4b5fd;   /* violet-300 — was violet-200, stronger grid lines */
+  --border2:  #a78bfa;   /* violet-400 — was violet-300 */
 
   /* Text */
   --text:   #1e1b4b;   /* indigo-950 */
-  --muted:  #4b5563;   /* gray-600 */
-  --subtle: #374151;   /* gray-700 */
+  --muted:  #374151;   /* gray-700 — was gray-600, more readable */
+  --subtle: #1f2937;   /* gray-800 — was gray-700 */
 
   /* Primary accent — indigo/violet (Pro overrides to amber; Glacier overrides to sky) */
   --blue:        #4f46e5;   /* indigo-600 */
@@ -116,11 +116,11 @@
   /* ── Component tokens — override these in theme blocks, not the classes ── */
 
   /* Glass card */
-  --glass-bg:           rgba(255,255,255,0.76);
-  --glass-border:       rgba(196,181,253,0.38);
-  --glass-border-hover: rgba(196,181,253,0.55);
+  --glass-bg:           rgba(255,255,255,0.82);
+  --glass-border:       rgba(167,139,250,0.55);   /* stronger — was 0.38 */
+  --glass-border-hover: rgba(167,139,250,0.80);   /* stronger — was 0.55 */
   --glass-shadow-rgb:   79, 70, 229;
-  --glass-inset-top:    rgba(255,255,255,0.95);  /* top shine; dimmed in dark themes */
+  --glass-inset-top:    rgba(255,255,255,0.98);  /* top shine; dimmed in dark themes */
 
   /* Primary button gradient */
   --btn-primary-from: var(--blue);
@@ -171,9 +171,9 @@ body  {
   box-shadow:
     0 2px 0 var(--glass-inset-top) inset,
     0 -1px 0 var(--glass-border) inset,
-    0 8px 40px rgba(var(--glass-shadow-rgb),0.07),
-    0 2px 8px  rgba(var(--glass-shadow-rgb),0.04),
-    0 1px 2px  rgba(0,0,0,0.03);
+    0 8px 40px rgba(var(--glass-shadow-rgb),0.10),
+    0 3px 12px rgba(var(--glass-shadow-rgb),0.07),
+    0 1px 3px  rgba(0,0,0,0.06);
   transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
 }
 .glass-interactive:hover {
@@ -182,9 +182,9 @@ body  {
   box-shadow:
     0 2px 0 var(--glass-inset-top) inset,
     0 -1px 0 var(--glass-border) inset,
-    0 16px 56px rgba(var(--glass-shadow-rgb),0.13),
-    0 4px 16px rgba(var(--glass-shadow-rgb),0.07),
-    0 1px 3px  rgba(0,0,0,0.04);
+    0 20px 60px rgba(var(--glass-shadow-rgb),0.18),
+    0 6px 20px rgba(var(--glass-shadow-rgb),0.10),
+    0 1px 4px  rgba(0,0,0,0.07);
 }
 
 /* §4b  Elevation / glow helpers ────────────────────────────────────── */
@@ -201,14 +201,23 @@ body  {
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   padding: 0.75rem 1.75rem;
-  background: linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  background: linear-gradient(160deg, var(--btn-primary-from), var(--btn-primary-to));
   color: #fff; font-weight: 800; font-size: 1rem; letter-spacing: 0.01em;
   border: none; border-radius: 0.75rem; cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 4px 16px rgba(var(--btn-primary-rgb),0.4);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.2) inset,
+    0 4px 18px rgba(var(--btn-primary-rgb),0.45),
+    0 1px 4px  rgba(var(--btn-primary-rgb),0.3);
   font-family: inherit;
 }
-.btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(var(--btn-primary-rgb),0.5); }
-.btn-primary:active:not(:disabled) { transform: translateY(0); }
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.25) inset,
+    0 10px 32px rgba(var(--btn-primary-rgb),0.55),
+    0 2px 8px  rgba(var(--btn-primary-rgb),0.35);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0); box-shadow: 0 2px 8px rgba(var(--btn-primary-rgb),0.4); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-ghost {
@@ -227,22 +236,22 @@ body  {
 
 .btn-for {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  background: linear-gradient(135deg, var(--for-dark), var(--for));
-  box-shadow: 0 4px 16px rgba(var(--for-rgb),0.4);
+  background: linear-gradient(160deg, var(--for-dark), var(--for));
+  box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 4px 18px rgba(var(--for-rgb),0.45), 0 1px 4px rgba(var(--for-rgb),0.3);
   color: #fff; font-weight: 800; font-size: 1rem; border: none; border-radius: 0.75rem;
   padding: 0.75rem 1.75rem; cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
-.btn-for:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(var(--for-rgb),0.5); }
+.btn-for:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 32px rgba(var(--for-rgb),0.55), 0 2px 8px rgba(var(--for-rgb),0.35); }
 .btn-for:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-against {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-  background: linear-gradient(135deg, var(--against-dark), var(--against));
-  box-shadow: 0 4px 16px rgba(var(--against-rgb),0.4);
+  background: linear-gradient(160deg, var(--against-dark), var(--against));
+  box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset, 0 4px 18px rgba(var(--against-rgb),0.45), 0 1px 4px rgba(var(--against-rgb),0.3);
   color: #fff; font-weight: 800; font-size: 1rem; border: none; border-radius: 0.75rem;
   padding: 0.75rem 1.75rem; cursor: pointer; transition: all 0.2s; font-family: inherit;
 }
-.btn-against:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(var(--against-rgb),0.5); }
+.btn-against:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 10px 32px rgba(var(--against-rgb),0.55), 0 2px 8px rgba(var(--against-rgb),0.35); }
 
 .btn-danger {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
@@ -347,8 +356,8 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 
 .bg-grid {
   background-image:
-    linear-gradient(rgba(var(--blue-rgb),0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--blue-rgb),0.07) 1px, transparent 1px);
+    linear-gradient(rgba(var(--blue-rgb),0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--blue-rgb),0.10) 1px, transparent 1px);
   background-size: 44px 44px;
 }
 
@@ -487,6 +496,62 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
   50%       { opacity: 1; }
 }
 
+/* ── Debate arena energy ─────────────────────────────────────── */
+@keyframes waveform-bar {
+  0%, 100% { transform: scaleY(0.15); opacity: 0.5; }
+  50%       { transform: scaleY(1);   opacity: 1;   }
+}
+.waveform-bar {
+  display: inline-block;
+  width: 3px; border-radius: 9999px;
+  transform-origin: bottom;
+  animation: waveform-bar var(--bar-dur, 0.9s) ease-in-out infinite;
+  animation-delay: var(--bar-delay, 0s);
+}
+
+@keyframes ai-pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.ai-pulse-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  animation: ai-pulse-ring 1.4s ease-out infinite;
+  animation-delay: var(--ring-delay, 0s);
+}
+
+@keyframes score-tick-up {
+  0%   { transform: translateY(6px); opacity: 0; }
+  30%  { transform: translateY(0);   opacity: 1; }
+  80%  { transform: translateY(0);   opacity: 1; }
+  100% { transform: translateY(-6px); opacity: 0; }
+}
+.score-tick { animation: score-tick-up 1.8s ease forwards; }
+
+@keyframes rhetoric-badge-pop {
+  0%   { transform: scale(0.7) translateY(8px); opacity: 0; }
+  60%  { transform: scale(1.06) translateY(-2px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.rhetoric-badge-pop { animation: rhetoric-badge-pop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+
+@keyframes xp-fill {
+  from { width: 0%; }
+}
+.xp-fill-animate { animation: xp-fill 1.4s cubic-bezier(.4,0,.2,1) forwards; }
+
+@keyframes rank-delta-float {
+  0%   { transform: translateY(0);   opacity: 1; }
+  60%  { transform: translateY(-14px); opacity: 1; }
+  100% { transform: translateY(-20px); opacity: 0; }
+}
+.rank-delta { animation: rank-delta-float 2s ease forwards; animation-delay: 0.8s; opacity: 0; }
+
+@keyframes streak-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(245,158,11,0.4); }
+  50%       { box-shadow: 0 0 20px rgba(245,158,11,0.75), 0 0 40px rgba(245,158,11,0.3); }
+}
+.streak-glow { animation: streak-glow 1.8s ease-in-out infinite; }
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    §6  THEMES
@@ -516,18 +581,18 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
   --bg:       #08080f;
   --surface:  #0f0f1a;
   --surface2: #161624;
-  --border:   #2a2a40;
-  --border2:  #3b3b58;
+  --border:   #38385a;   /* brighter — was #2a2a40 */
+  --border2:  #4e4e75;   /* brighter — was #3b3b58 */
 
   /* Text */
   --text:   #f1f5f9;
-  --muted:  #94a3b8;
-  --subtle: #cbd5e1;
+  --muted:  #b0bdd0;     /* brighter — was #94a3b8 */
+  --subtle: #d8e0ec;     /* brighter — was #cbd5e1 */
 
   /* Glass */
-  --glass-bg:           rgba(15,15,26,0.82);
-  --glass-border:       rgba(59,59,88,0.55);
-  --glass-border-hover: rgba(var(--violet-rgb),0.45);
+  --glass-bg:           rgba(15,15,26,0.88);
+  --glass-border:       rgba(78,78,117,0.70);   /* brighter — was 0.55 */
+  --glass-border-hover: rgba(var(--violet-rgb),0.58);
   --glass-shadow-rgb:   0, 0, 0;
   --glass-inset-top:    rgba(255,255,255,0.04);   /* barely visible in dark */
 
@@ -580,8 +645,8 @@ textarea.input-dark { resize: vertical; min-height: 90px; }
 [data-theme="dark"] .score-bar-track   { background: rgba(255,255,255,0.08); }
 [data-theme="dark"] .bg-grid {
   background-image:
-    linear-gradient(rgba(var(--blue-rgb),0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--blue-rgb),0.05) 1px, transparent 1px);
+    linear-gradient(rgba(var(--blue-rgb),0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--blue-rgb),0.09) 1px, transparent 1px);
 }
 [data-theme="dark"] .divider           { background: linear-gradient(90deg, transparent, var(--border2), transparent); }
 [data-theme="dark"] .avatar-neutral    { background: rgba(var(--blue-rgb),0.2);     color: var(--blue-light);    border-color: rgba(var(--blue-rgb),0.4); }

@@ -1258,6 +1258,65 @@ export function DebatePage() {
                     )}
                   </div>
 
+                  {/* ── ENERGY STRIP ─────────────────────────────────────────── */}
+                  {/* Waveform — visible when someone is actively speaking */}
+                  {activeSpeakerUserId && (
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: "3px", height: 28, padding: "0 0.25rem" }}>
+                      {[0.9, 0.5, 1, 0.7, 0.4, 0.85, 0.6, 1, 0.45, 0.75, 0.55, 0.9, 0.35].map((h, i) => {
+                        const side = isBuzzer ? holderSide : turn?.side;
+                        const color = side === "for" ? "var(--for)" : "var(--against)";
+                        return (
+                          <span key={i} className="waveform-bar" style={{
+                            height: `${h * 100}%`, background: color,
+                            opacity: 0.75,
+                            "--bar-dur": `${0.6 + (i % 5) * 0.12}s`,
+                            "--bar-delay": `${(i * 0.07) % 0.5}s`,
+                          } as React.CSSProperties} />
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Speaking streak + live stats row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap", justifyContent: "center" }}>
+                    {/* Round / turn count */}
+                    {debate.rounds.length > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.2rem", padding: "0.12rem 0.4rem", borderRadius: "9999px", background: "rgba(var(--blue-rgb),0.07)", border: "1px solid rgba(var(--blue-rgb),0.15)" }}>
+                        <span style={{ fontSize: "0.52rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Rounds</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.62rem", fontWeight: 900, color: "var(--blue)" }}>{debate.rounds.length}</span>
+                      </div>
+                    )}
+                    {/* Streak — if active speaker has spoken 2+ times */}
+                    {(() => {
+                      const speakerId = activeSpeakerUserId;
+                      if (!speakerId) return null;
+                      const streak = isBuzzer
+                        ? (buzzerState?.speakHistory.filter(id => id === speakerId).length ?? 0)
+                        : debate.rounds.filter(r => r.speakerId === speakerId).length;
+                      if (streak < 2) return null;
+                      return (
+                        <div className="streak-glow" style={{ display: "flex", alignItems: "center", gap: "0.2rem", padding: "0.12rem 0.4rem", borderRadius: "9999px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                          <span style={{ fontSize: "0.65rem" }}>🔥</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.6rem", fontWeight: 900, color: "var(--gold)" }}>{streak}× streak</span>
+                        </div>
+                      );
+                    })()}
+                    {/* Judge evaluating indicator — shown after argument submitted while judges are present */}
+                    {debate.rounds.length > 0 && judgeMembers.length > 0 && !finished && !showJudgePanel && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.12rem 0.4rem", borderRadius: "9999px", background: "rgba(167,139,250,0.08)", border: "1px solid rgba(167,139,250,0.2)" }}>
+                        <div className="pulse-dot pulse-dot-cyan" style={{ width: 6, height: 6 }} />
+                        <span style={{ fontSize: "0.52rem", fontWeight: 700, color: "#a78bfa", letterSpacing: "0.06em" }}>Judge watching</span>
+                      </div>
+                    )}
+                    {/* AI evaluation indicator — shown briefly after a round is submitted */}
+                    {isUploading && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.12rem 0.4rem", borderRadius: "9999px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)" }}>
+                        <div className="pulse-dot pulse-dot-cyan" style={{ width: 6, height: 6 }} />
+                        <span style={{ fontSize: "0.52rem", fontWeight: 700, color: "var(--cyan)", letterSpacing: "0.06em" }}>AI evaluating…</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Action buttons */}
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
                     {isHolder && (
