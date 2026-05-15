@@ -63,6 +63,10 @@ export const PublicUserSchema = z.object({
     debatesLost: z.number(),
     totalDebates: z.number(),
   }),
+  // Subscription status exposed to the frontend
+  isPro: z.boolean().default(false),
+  subscriptionStatus: z.string().nullable().optional(),
+  currentPeriodEnd: z.date().nullable().optional(),
   createdAt: z.date(),
 });
 

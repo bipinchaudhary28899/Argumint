@@ -81,6 +81,8 @@ export function ResultPage() {
   const { user, checkAuth } = useAuth();
   const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const isMobile   = useIsMobile();
+  const isPro      = (user as any)?.isPro ?? false;
+  const isPreview  = debateId === "preview";
 
   const [debate,        setDebate]        = useState<Debate | null>(null);
   const [error,         setError]         = useState<string | null>(null);
@@ -117,7 +119,7 @@ export function ResultPage() {
 
   useReconnectHandler({
     onReconnect,
-    enabled: !!debateId,
+    enabled: !!debateId && !isPreview,
     reconnectFn: () => {
       const { socket: s, debateId: id } = reconnectParamsRef.current;
       if (!s || !id) return;
@@ -129,8 +131,95 @@ export function ResultPage() {
     },
   });
 
+  // ── Preview mock ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!socket || !isConnected || !debateId) return;
+    if (!isPreview || !user) return;
+    const baseXP   = (user as any)?.xp ?? 0;
+    const xpGained = 81;
+    const newXP    = baseXP + xpGained;
+    const lvInfo   = getLevelInfo(newXP);
+    const mockDebate: Debate = {
+      _id:       "preview",
+      roomId:    "preview-room",
+      roomCode:  "PREVIEW",
+      creatorId: user.id,
+      topic:     "Artificial Intelligence will do more good than harm for humanity",
+      mode:      "alternate",
+      totalRounds:  3,
+      turnDuration: 120,
+      prepDuration: 60,
+      turnOrder: [
+        { userId: user.id,   username: user.username, side: "for"     },
+        { userId: "mock-p2", username: "Challenger",  side: "against" },
+      ],
+      rounds:      [],
+      currentTurn: null,
+      status:      "ended",
+      result: {
+        winnerSide: "for",
+        winningPoints: [
+          "Strong empirical evidence for AI medical breakthroughs",
+          "Proactive safety frameworks argued convincingly",
+          "Economic adaptation case backed with data",
+        ],
+        summary:
+          "The FOR side presented a compelling case with concrete examples of AI benefiting healthcare, education, and productivity. The AGAINST side raised valid concerns about job displacement but failed to rebut the long-term economic adaptation arguments.",
+        scores: [
+          {
+            userId:       user.id,
+            username:     user.username,
+            side:         "for",
+            clarity:      22,
+            evidence:     20,
+            rebuttal:     18,
+            organization: 21,
+            total:        81,
+            feedback:     "Exceptional clarity and strong evidence usage. Rebuttals were well-timed and effective throughout all three rounds.",
+            strengths:    [
+              "Clear structure with compelling opening and closing statements",
+              "Used real-world examples to ground abstract claims effectively",
+            ],
+            improvements: [
+              "Could push rebuttal depth further on economic disruption points",
+              "Slightly rushed delivery in round 2 — slow down for impact",
+            ],
+          },
+          {
+            userId:       "mock-p2",
+            username:     "Challenger",
+            side:         "against",
+            clarity:      17,
+            evidence:     15,
+            rebuttal:     14,
+            organization: 16,
+            total:        62,
+            feedback:     "Raised important concerns but lacked concrete data to back claims. Counter-arguments were too broad.",
+            strengths:    [
+              "Strong emotional appeal on job displacement narrative",
+              "Maintained consistent argument thread throughout",
+            ],
+            improvements: [
+              "Needs more empirical evidence — cite specific studies",
+              "Rebuttals were too general to land effectively",
+            ],
+          },
+        ],
+        judgedAt:   new Date(),
+        judgeModel: "gpt-4o",
+      },
+    };
+    setDebate(mockDebate);
+    setMyXPAward({
+      xpGained,
+      newXP,
+      leveledUp:     false,
+      newLevel:      lvInfo.current.level,
+      newLevelTitle: lvInfo.current.title,
+    });
+  }, [isPreview, user]);
+
+  useEffect(() => {
+    if (isPreview || !socket || !isConnected || !debateId) return;
     socket.emit("debate:get-state", { debateId }, (res: any) => {
       if (!res?.success) { setError(res?.error || "Failed to load debate"); return; }
       setDebate(res.debate as Debate);
@@ -141,7 +230,7 @@ export function ResultPage() {
   }, [socket, isConnected, debateId]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (isPreview || !socket) return;
     const onReady  = (d: any) => {
       setDebate((p) => p ? { ...p, result: d.result } : p);
       // Find this user's XP award in the broadcast
@@ -305,12 +394,33 @@ export function ResultPage() {
   const leveledUp   = myXPAward?.leveledUp ?? false;
   const newLevelTitle = myXPAward?.newLevelTitle ?? levelInfo.current.title;
 
+  // ── Lock overlay for Pro-only cards ──────────────────────────────────────
+  const lockOverlay = (name: string) => (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 2,
+      background: "linear-gradient(160deg,rgba(10,6,24,0.62) 0%,rgba(5,3,15,0.94) 100%)",
+      backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      borderRadius: "inherit",
+    }}>
+      <div style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
+        <div style={{ fontSize: "1.1rem", marginBottom: "0.22rem" }}>🔒</div>
+        <div style={{ fontSize: "0.5rem", fontWeight: 800, letterSpacing: "0.14em", color: "#d97706", marginBottom: "0.15rem", textTransform: "uppercase" }}>Pro Feature</div>
+        <div style={{ fontSize: "0.7rem", fontWeight: 700, color: "#e2e8f0", marginBottom: "0.45rem", lineHeight: 1.3, maxWidth: 130 }}>{name}</div>
+        <button onClick={() => navigate("/pricing")} style={{
+          fontSize: "0.65rem", fontWeight: 800, padding: "0.28rem 0.75rem",
+          borderRadius: "9999px", background: "linear-gradient(135deg,#f59e0b,#d97706)",
+          color: "#000", border: "none", cursor: "pointer", fontFamily: "inherit",
+        }}>⚡ Unlock Pro</button>
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {/* Keyframes */}
       <style>{`
         @keyframes mvpPulse {
-          0%,100% { box-shadow:0 0 0 0 rgba(16,185,129,0.0); }
+          0%,100% { box-shadow:0 0 0 0 rgba(16,185,129,0); }
           50%      { box-shadow:0 0 18px 4px rgba(16,185,129,0.35); }
         }
         @keyframes levelUpPop {
@@ -328,9 +438,30 @@ export function ResultPage() {
           60%  { transform: scale(0.92); }
           100% { transform: scale(1); box-shadow: none; }
         }
-        .mvp-glow { animation: mvpPulse 2s ease-in-out infinite; }
-        .level-up-pop { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+        @keyframes cardFadeUp {
+          0%   { opacity:0; transform:translateY(10px); }
+          100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes heroWinPulse {
+          0%,100% { border-color:rgba(16,185,129,0.45); box-shadow:0 4px 32px rgba(16,185,129,0.10); }
+          50%      { border-color:rgba(16,185,129,0.75); box-shadow:0 4px 32px rgba(16,185,129,0.22); }
+        }
+        @keyframes heroLosePulse {
+          0%,100% { box-shadow:0 2px 20px rgba(79,70,229,0.10); }
+          50%      { box-shadow:0 2px 28px rgba(79,70,229,0.20); }
+        }
+        .mvp-glow        { animation: mvpPulse 2s ease-in-out infinite; }
+        .hero-win-anim   { animation: heroWinPulse 2.8s ease-in-out infinite; }
+        .hero-lose-anim  { animation: heroLosePulse 3s ease-in-out infinite; }
+        .level-up-pop    { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
         .level-badge-pop { animation: levelBadgePop 0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .res-col > * { animation: cardFadeUp 0.38s cubic-bezier(.4,0,.2,1) both; }
+        .res-col > *:nth-child(1) { animation-delay:0.06s; }
+        .res-col > *:nth-child(2) { animation-delay:0.12s; }
+        .res-col > *:nth-child(3) { animation-delay:0.18s; }
+        .res-col > *:nth-child(4) { animation-delay:0.24s; }
+        .res-row { transition: background 0.18s, transform 0.15s; }
+        .res-row:hover { transform: translateX(2px); }
         .shimmer-text {
           background: linear-gradient(90deg, #f59e0b, #10b981, #22d3ee, #f59e0b);
           background-size: 300% auto;
@@ -339,6 +470,9 @@ export function ResultPage() {
           background-clip: text;
           animation: shimmer 2s linear infinite;
         }
+        .play-btn { transition: transform 0.15s, box-shadow 0.15s; }
+        .play-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(124,58,237,0.48) !important; }
+        .play-btn:active { transform: translateY(0); }
       `}</style>
 
       {/* ── XP EARNED POPUP ── */}
@@ -383,429 +517,394 @@ export function ResultPage() {
       )}
 
       <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
-      <div className="bg-grid" style={{ minHeight:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)" }}>
+      <div className="bg-grid" style={{ height:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)", overflow:"hidden", position:"relative" }}>
+        {/* Ambient gradient */}
+        <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0,
+          background:"radial-gradient(ellipse 65% 55% at 15% 5%,rgba(124,58,237,0.09) 0%,transparent 58%),radial-gradient(ellipse 45% 45% at 85% 95%,rgba(16,185,129,0.05) 0%,transparent 55%)"
+        }} />
 
-
-        {/* ── MAIN ── */}
-        <main style={{ flex:1, overflow:"auto", display:"flex", flexDirection:"column", padding: isMobile ? "0.75rem 0.75rem 2rem" : "0.5rem 0.875rem 1.5rem" }}>
-          <button onClick={() => navigate("/")} className="btn-ghost" style={{ alignSelf:"flex-start", fontSize:"0.82rem", padding:"0.35rem 0.75rem", marginBottom:"0.5rem" }}>← Home</button>
-
-          {/* Motion strip */}
-          <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", marginBottom:"0.5rem" }}>
-            <span style={{ fontSize:"0.6rem", fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--muted)", flexShrink:0 }}>Motion</span>
-            <span style={{ fontSize:"0.82rem", fontWeight:800, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace: isMobile ? "normal" : "nowrap" }}>{debate.topic}</span>
+        {/* ── JUDGING ── */}
+        {isJudging && (
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
+            <div className="glass fade-up glow-cyan" style={{ padding:isMobile?"1.5rem 1.25rem":"2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
+              <img src="/logo/logo.png" alt="Judging…" className="logo-heartbeat" style={{ width:64, height:64, margin:"0 auto 1.25rem" }} />
+              <h2 style={{ fontSize:"1.2rem", fontWeight:800, color:"var(--text)", margin:"0 0 0.35rem" }} className="text-glow-cyan">AI Judge reviewing…</h2>
+              <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>Scoring all speakers — 5–15 sec</p>
+            </div>
           </div>
+        )}
 
-          {/* ── JUDGING ── */}
-          {isJudging && (
-            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <div className="glass fade-up glow-cyan" style={{ padding: isMobile ? "1.5rem 1.25rem" : "2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
-                <img src="/logo/logo.png" alt="Judging…" className="logo-heartbeat" style={{ width: 64, height: 64, margin: "0 auto 1.25rem" }} />
-                <h2 style={{ fontSize:"1.2rem", fontWeight:800, color:"var(--text)", margin:"0 0 0.35rem" }} className="text-glow-cyan">AI Judge reviewing…</h2>
-                <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>Scoring all speakers — 5–15 sec</p>
-              </div>
+        {/* ── JUDGE FAILED ── */}
+        {judgingError && !result && (
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
+            <div style={{ padding:"1.5rem 2rem", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)", borderRadius:"1rem", textAlign:"center", maxWidth:380 }}>
+              <p style={{ fontWeight:700, color:"var(--gold)", marginBottom:"0.25rem" }}>Judge unavailable</p>
+              <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>{judgingError}</p>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── JUDGE FAILED ── */}
-          {judgingError && !result && (
-            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <div style={{ padding:"1.5rem 2rem", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)", borderRadius:"1rem", textAlign:"center", maxWidth:380 }}>
-                <p style={{ fontWeight:700, color:"var(--gold)", marginBottom:"0.25rem" }}>Judge unavailable</p>
-                <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>{judgingError}</p>
-              </div>
+        {/* ── NO SCORE FALLBACK ── */}
+        {result && !myScore && (
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
+            <div className="glass" style={{ padding:"2rem", textAlign:"center", maxWidth:340 }}>
+              <p style={{ color:"var(--muted)", marginBottom:"1rem" }}>Score not available — you may not have been in this debate.</p>
+              <button onClick={() => navigate("/")} className="btn-primary">Back to Home</button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ── RESULTS ── */}
-          {result && myScore && (
-            <>
-              {/* ── HERO BANNER ── */}
-              <div className={`glass fade-up ${myWon ? "mvp-glow" : ""}`} style={{
-                marginBottom:"0.5rem", padding:"0.625rem 1rem",
-                background: myWon ? "rgba(16,185,129,0.08)" : "rgba(249,247,255,0.88)",
-                border:`1px solid ${myWon ? "rgba(16,185,129,0.45)" : "var(--border2)"}`,
-                display:"flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? "0.625rem" : "1.5rem",
-              }}>
-                {/* Top row: winning side + outcome + score */}
-                <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", width:"100%", flexWrap:"wrap" }}>
-                  {/* Winning side */}
-                  <span style={{ fontSize: isMobile ? "1.1rem" : "1.35rem", fontWeight:900, letterSpacing:"-0.02em", color: result.winnerSide==="for" ? "var(--for)" : "var(--against)" }}>
-                    {result.winnerSide==="for" ? "FOR" : "AGAINST"} WINS
+        {/* ══════════════════════════════════════════
+            MAIN RESULT LAYOUT (unified Free + Pro)
+            ══════════════════════════════════════════ */}
+        {result && myScore && (
+          <div style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column", position:"relative", zIndex:1, padding:isMobile?"0.5rem":"0.5rem 0.875rem 0.625rem", gap:"0.4rem" }}>
+
+            {/* ── TOP BAR ── */}
+            <div style={{ display:"flex", alignItems:"center", gap:"0.625rem", flexShrink:0 }}>
+              <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize:"0.78rem", padding:"0.25rem 0.6rem", flexShrink:0 }}>← Home</button>
+              <span style={{ fontSize:"0.54rem", fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--muted)", flexShrink:0 }}>Motion</span>
+              <span style={{ fontSize:"0.78rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:isMobile?"normal":"nowrap", flex:1 }}>{debate.topic}</span>
+            </div>
+
+            {/* ── HERO BANNER ── */}
+            <div className={myWon ? "hero-win-anim" : "hero-lose-anim"} style={{
+              flexShrink:0, borderRadius:"1rem",
+              padding:isMobile?"0.75rem 0.875rem":"0.6rem 1.125rem",
+              background:myWon
+                ? "linear-gradient(135deg,rgba(16,185,129,0.11) 0%,rgba(5,150,105,0.04) 50%,rgba(8,8,20,0.75) 100%)"
+                : "linear-gradient(135deg,rgba(79,70,229,0.11) 0%,rgba(30,27,75,0.04) 50%,rgba(8,8,20,0.75) 100%)",
+              border:`1.5px solid ${myWon ? "rgba(16,185,129,0.45)" : "rgba(79,70,229,0.4)"}`,
+              backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)",
+              display:"flex", alignItems:"center", gap:isMobile?"0.75rem":"1.25rem", flexWrap:"wrap",
+            }}>
+              {/* Winner declaration */}
+              <div style={{ display:"flex", flexDirection:"column", gap:"0.15rem", minWidth:0, flex:1 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:"0.45rem", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:isMobile?"1.1rem":"1.4rem", fontWeight:900, letterSpacing:"-0.02em", lineHeight:1, color:result.winnerSide==="for"?"var(--for)":"var(--against)" }}>
+                    {result.winnerSide==="for"?"FOR":"AGAINST"} WINS
                   </span>
-                  {/* Winner name(s) */}
-                  <div style={{ display:"flex", gap:"0.4rem", flexWrap:"wrap", flex:1 }}>
+                  <div style={{ display:"flex", gap:"0.3rem", flexWrap:"wrap" }}>
                     {rankedAll.filter(s => s.side===result.winnerSide).map(s => (
-                      <span key={s.userId} style={{ fontSize:"0.82rem", fontWeight:800, color:"var(--text)" }}>
-                        {s.username}{s.userId===user?.id ? " 🔥" : ""}
-                      </span>
+                      <span key={s.userId} style={{
+                        fontSize:"0.75rem", fontWeight:800,
+                        padding:"0.1rem 0.45rem", borderRadius:"9999px",
+                        background:s.userId===user?.id?"rgba(245,158,11,0.15)":"var(--surface2)",
+                        border:`1px solid ${s.userId===user?.id?"rgba(245,158,11,0.4)":"var(--border)"}`,
+                        color:s.userId===user?.id?"#fbbf24":"var(--text)",
+                      }}>{s.username}{s.userId===user?.id?" 🔥":""}</span>
                     ))}
                   </div>
-                  {/* Outcome badge */}
-                  <div style={{ textAlign:"right", flexShrink:0 }}>
-                    <div style={{ fontSize: isMobile ? "0.9rem" : "1.05rem", fontWeight:900, color:outcome?.color, letterSpacing:"-0.01em" }}>{outcome?.label}</div>
-                    <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em" }}>{outcome?.badge}</div>
-                  </div>
-                  {/* My score */}
-                  <div style={{ textAlign:"center", flexShrink:0 }}>
-                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize: isMobile ? "1.6rem" : "2.2rem", fontWeight:900, lineHeight:1, background:scoreGradient(myScore.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>
-                      {myScore.total}
-                    </span>
-                    <div style={{ fontSize:"0.58rem", color:"var(--muted)", fontWeight:600 }}>/ 100</div>
-                  </div>
                 </div>
-
-                {/* XP Gained + Level progress */}
-                <div style={{ display:"flex", alignItems:"center", gap:"0.875rem", flexShrink:0 }}>
-                  {/* +XP static badge (visible after popup) */}
-                  <div style={{ textAlign:"center", flexShrink:0 }}>
-                    <div style={{ fontSize:"1.1rem", fontWeight:900, background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", lineHeight:1 }}>
-                      +{xpGained}
-                    </div>
-                    <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.1em" }}>XP</div>
-                  </div>
-
-                  {/* Level badge + animated progress bar */}
-                  {(() => {
-                    const shownLevel = displayedLevel ?? levelInfo.current.level;
-                    const shownTitle = displayedTitle ?? levelInfo.current.title;
-                    const shownHasNext = displayedBarNext;
-                    const badgeIsNew = leveledUp && shownLevel === levelInfo.current.level;
-                    return (
-                      <div style={{ display:"flex", flexDirection:"column", gap:"0.2rem", minWidth: isMobile ? 100 : 120 }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:"0.4rem", flexWrap:"wrap" }}>
-                          <span
-                            className={levelBadgePop ? "level-badge-pop" : ""}
-                            style={{
-                              fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", fontWeight:900,
-                              padding:"0.1rem 0.4rem", borderRadius:"0.3rem",
-                              background: badgeIsNew ? "rgba(16,185,129,0.15)" : "rgba(79,142,247,0.12)",
-                              border:`1px solid ${badgeIsNew ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.3)"}`,
-                              color: badgeIsNew ? "var(--for)" : "var(--cyan)",
-                              display:"inline-block",
-                              transition:"background 0.3s, border-color 0.3s, color 0.3s",
-                            }}>
-                            Lv.{shownLevel}
-                          </span>
-                          <span style={{ fontSize:"0.72rem", fontWeight:700, color:"var(--text)", transition:"color 0.3s" }}>{shownTitle}</span>
-                        </div>
-                        {shownHasNext && (
-                          <div>
-                            <div className="score-bar-track" style={{ height:5 }}>
-                              <div style={{ height:"100%", borderRadius:"9999px", background:"linear-gradient(90deg,#4f8ef7,#22d3ee)", width:`${barPct}%`, transition: barTransition ? "width 0.85s cubic-bezier(.4,0,.2,1)" : "none" }} />
-                            </div>
-                            <div style={{ fontSize:"0.56rem", color:"var(--muted)", marginTop:"0.15rem" }}>
-                              {levelInfo.progressXP}/{levelInfo.neededXP} XP
-                            </div>
-                          </div>
-                        )}
-                        {!shownHasNext && (
-                          <div style={{ fontSize:"0.6rem", color:"var(--for)", fontWeight:700 }}>MAX LEVEL</div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
+                {outcome && <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--muted)", letterSpacing:"0.08em", textTransform:"uppercase" }}>{outcome.badge}</div>}
               </div>
 
-              {/* ── LEVEL-UP BANNER ── */}
-              {showLevelUp && (
-                <div className="level-up-pop" style={{
-                  marginBottom:"0.5rem", padding:"0.875rem 1.25rem",
-                  borderRadius:"0.875rem",
-                  background:"rgba(16,185,129,0.08)",
-                  border:"1px solid rgba(16,185,129,0.4)",
-                  display:"flex", alignItems:"center", gap:"1rem",
-                  boxShadow:"0 0 24px rgba(16,185,129,0.18)",
-                }}>
-                  <span style={{ fontSize: isMobile ? "1.75rem" : "2.25rem", flexShrink:0 }}>⬆</span>
-                  <div>
-                    <div className="shimmer-text" style={{ fontSize: isMobile ? "1rem" : "1.2rem", fontWeight:900, letterSpacing:"-0.01em" }}>
-                      LEVEL UP!
-                    </div>
-                    <div style={{ fontSize:"0.82rem", color:"var(--text)", fontWeight:700, marginTop:"0.1rem" }}>
-                      You are now <span style={{ color:"var(--for)" }}>Level {levelInfo.current.level}</span> — {newLevelTitle}
-                    </div>
-                  </div>
+              {/* Outcome label */}
+              {outcome && (
+                <div style={{ textAlign:"center", flexShrink:0 }}>
+                  <div style={{ fontSize:isMobile?"0.9rem":"1.05rem", fontWeight:900, color:outcome.color, letterSpacing:"-0.01em" }}>{outcome.label}</div>
                 </div>
               )}
 
-              {/* ── 3-COLUMN GRID ── */}
-              <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1.1fr 0.85fr", gap:"0.5rem", paddingBottom:"0.5rem" }}>
+              {/* My Score */}
+              <div className={myWon?"mvp-glow":""} style={{
+                textAlign:"center", flexShrink:0, borderRadius:"0.7rem",
+                padding:"0.2rem 0.65rem",
+                background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)",
+              }}>
+                <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:isMobile?"1.75rem":"2.3rem", fontWeight:900, lineHeight:1,
+                  background:scoreGradient(myScore.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text"
+                }}>{myScore.total}</div>
+                <div style={{ fontSize:"0.5rem", color:"var(--muted)", fontWeight:600, letterSpacing:"0.06em" }}>/ 100</div>
+              </div>
 
-                {/* ══ COL A: BARS + KEY MOMENTS ══ */}
-                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
-
-                  {/* Score bars */}
-                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem", flex:"none" }}>
-                    <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.625rem" }}>
-                      Your Scores
-                    </div>
-                    {BAR_ORDER.map((k) => (
-                      <ScoreBar key={k as string} k={k as string} val={myScore[k] as number} />
-                    ))}
-                  </div>
-
-                  {/* Key Moments */}
-                  {(bestMove || missed) && (
-                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
-                      <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.625rem" }}>
-                        Key Moments
+              {/* XP + Level */}
+              <div style={{ display:"flex", alignItems:"center", gap:"0.75rem", flexShrink:0 }}>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:"0.95rem", fontWeight:900, lineHeight:1,
+                    background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text"
+                  }}>+{xpGained}</div>
+                  <div style={{ fontSize:"0.5rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.1em" }}>XP</div>
+                </div>
+                {(() => {
+                  const shownLevel = displayedLevel ?? levelInfo.current.level;
+                  const shownTitle = displayedTitle ?? levelInfo.current.title;
+                  const shownHasNext = displayedBarNext;
+                  const badgeIsNew = leveledUp && shownLevel === levelInfo.current.level;
+                  return (
+                    <div style={{ display:"flex", flexDirection:"column", gap:"0.18rem", minWidth:isMobile?85:105 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:"0.35rem" }}>
+                        <span className={levelBadgePop?"level-badge-pop":""} style={{
+                          fontFamily:"'JetBrains Mono',monospace", fontSize:"0.62rem", fontWeight:900,
+                          padding:"0.08rem 0.32rem", borderRadius:"0.3rem",
+                          background:badgeIsNew?"rgba(16,185,129,0.15)":"rgba(79,142,247,0.12)",
+                          border:`1px solid ${badgeIsNew?"rgba(16,185,129,0.4)":"rgba(79,142,247,0.3)"}`,
+                          color:badgeIsNew?"var(--for)":"var(--cyan)",
+                          transition:"background 0.3s,border-color 0.3s,color 0.3s",
+                        }}>Lv.{shownLevel}</span>
+                        <span style={{ fontSize:"0.65rem", fontWeight:700, color:"var(--text)" }}>{shownTitle}</span>
                       </div>
-                      {bestMove && (
-                        <div style={{ marginBottom:"0.55rem" }}>
-                          <div style={{ fontSize:"0.65rem", fontWeight:700, color:"var(--for)", marginBottom:"0.2rem" }}>🔥 Best Move</div>
-                          <p style={{ margin:0, fontSize:"0.78rem", color:"var(--subtle)", lineHeight:1.45, fontStyle:"italic" }}>"{bestMove}"</p>
-                        </div>
-                      )}
-                      {missed && (
+                      {shownHasNext && (
                         <div>
-                          <div style={{ fontSize:"0.65rem", fontWeight:700, color:"var(--against)", marginBottom:"0.2rem" }}>✗ Missed</div>
-                          <p style={{ margin:0, fontSize:"0.78rem", color:"var(--subtle)", lineHeight:1.45, fontStyle:"italic" }}>"{missed}"</p>
+                          <div className="score-bar-track" style={{ height:4 }}>
+                            <div className="xp-bar-fill" style={{ height:"100%", borderRadius:"9999px", width:`${barPct}%`, transition:barTransition?"width 0.85s cubic-bezier(.4,0,.2,1)":"none" }} />
+                          </div>
+                          <div style={{ fontSize:"0.48rem", color:"var(--muted)", marginTop:"0.1rem" }}>{levelInfo.progressXP}/{levelInfo.neededXP} XP</div>
                         </div>
                       )}
+                      {!shownHasNext && <div style={{ fontSize:"0.52rem", color:"var(--for)", fontWeight:700 }}>MAX LEVEL</div>}
                     </div>
-                  )}
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* ── LEVEL-UP BANNER ── */}
+            {showLevelUp && (
+              <div className="level-up-pop" style={{
+                flexShrink:0, padding:"0.55rem 1rem", borderRadius:"0.875rem",
+                background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.4)",
+                display:"flex", alignItems:"center", gap:"0.75rem",
+                boxShadow:"0 0 24px rgba(16,185,129,0.18)",
+              }}>
+                <span style={{ fontSize:"1.5rem", flexShrink:0 }}>⬆</span>
+                <div>
+                  <div className="shimmer-text" style={{ fontSize:"0.95rem", fontWeight:900 }}>LEVEL UP!</div>
+                  <div style={{ fontSize:"0.75rem", color:"var(--text)", fontWeight:700 }}>
+                    You are now <span style={{ color:"var(--for)" }}>Level {levelInfo.current.level}</span> — {newLevelTitle}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ══════════════════════════════════════════
+                3-COLUMN DASHBOARD GRID
+                ══════════════════════════════════════════ */}
+            <div style={{
+              flex:1, minHeight:0,
+              display: isMobile ? "flex" : "grid",
+              flexDirection: isMobile ? "column" : undefined,
+              gridTemplateColumns: isMobile ? undefined : "1fr 1.1fr 1fr",
+              gap:"0.5rem",
+              overflow: isMobile ? "auto" : "hidden",
+            }}>
+
+              {/* ──────────────── LEFT SIDEBAR ──────────────── */}
+              <div className="res-col" style={{ display:"flex", flexDirection:"column", gap:"0.5rem", overflow:"hidden", minHeight:0 }}>
+
+                {/* Performance Breakdown */}
+                <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flexShrink:0 }}>
+                  <div className="glass" style={{ padding:"0.7rem 0.875rem", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                    <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.5rem" }}>📊 Performance</div>
+                    {BAR_ORDER.map((k) => <ScoreBar key={k as string} k={k as string} val={myScore[k] as number} />)}
+                  </div>
+                  {!isPro && lockOverlay("Performance Breakdown")}
                 </div>
 
-                {/* ══ COL B: STRONG/WEAK + WHY WON ══ */}
-                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
-
-                  {/* Strong / Weak side-by-side */}
-                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem" }}>
-                      {/* Strong */}
-                      <div>
-                        <div style={{ fontSize:"0.62rem", fontWeight:700, color:"var(--for)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"0.5rem" }}>✅ Strong</div>
-                        {strengths.length > 0 ? (
-                          <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
-                            {strengths.slice(0, 3).map((s, i) => (
-                              <li key={i} style={{ display:"flex", gap:"0.35rem", alignItems:"flex-start" }}>
-                                <span style={{ color:"var(--for)", fontSize:"0.68rem", flexShrink:0, marginTop:"0.1rem" }}>•</span>
-                                <span style={{ color:"var(--subtle)", fontSize:"0.75rem", lineHeight:1.4 }}>{clip(s, 60)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p style={{ color:"var(--muted)", fontSize:"0.75rem", margin:0, fontStyle:"italic" }}>Nothing stood out</p>
-                        )}
-                      </div>
-                      {/* Weak */}
-                      <div>
-                        <div style={{ fontSize:"0.62rem", fontWeight:700, color:"var(--against)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"0.5rem" }}>❌ Weak</div>
-                        {improvements.length > 0 ? (
-                          <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
-                            {improvements.slice(0, 3).map((s, i) => (
-                              <li key={i} style={{ display:"flex", gap:"0.35rem", alignItems:"flex-start" }}>
-                                <span style={{ color:"var(--against)", fontSize:"0.68rem", flexShrink:0, marginTop:"0.1rem" }}>•</span>
-                                <span style={{ color:"var(--subtle)", fontSize:"0.75rem", lineHeight:1.4 }}>{clip(s, 60)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p style={{ color:"var(--muted)", fontSize:"0.75rem", margin:0, fontStyle:"italic" }}>No major gaps</p>
-                        )}
-                      </div>
+                {/* Strengths */}
+                <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flex:1, minHeight:0 }}>
+                  <div className="glass" style={{ height:"100%", padding:"0.7rem 0.875rem", display:"flex", flexDirection:"column", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                    <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--for)", marginBottom:"0.4rem", flexShrink:0 }}>✅ Strengths</div>
+                    <div style={{ flex:1, minHeight:0, overflowY:"auto", display:"flex", flexDirection:"column", gap:"0.28rem" }}>
+                      {strengths.length > 0 ? strengths.slice(0,4).map((s,i) => (
+                        <div key={i} style={{
+                          display:"flex", alignItems:"flex-start", gap:"0.35rem",
+                          padding:"0.28rem 0.45rem", borderRadius:"0.4rem",
+                          background:"rgba(16,185,129,0.07)", border:"1px solid rgba(16,185,129,0.17)",
+                        }}>
+                          <span style={{ color:"var(--for)", fontSize:"0.62rem", flexShrink:0, marginTop:"0.1rem" }}>•</span>
+                          <span style={{ color:"var(--subtle)", fontSize:"0.7rem", lineHeight:1.4 }}>{clip(s,60)}</span>
+                        </div>
+                      )) : <p style={{ color:"var(--muted)", fontSize:"0.7rem", margin:0, fontStyle:"italic" }}>Nothing stood out yet</p>}
                     </div>
                   </div>
-
-                  {/* Why won — game hints */}
-                  {result.winningPoints.length > 0 && (
-                    <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
-                      <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.55rem" }}>
-                        🔥 Why {result.winnerSide==="for" ? "FOR" : "AGAINST"} Won
-                      </div>
-                      <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:"0.4rem" }}>
-                        {result.winningPoints.slice(0, 4).map((pt, i) => (
-                          <li key={i} style={{ display:"flex", gap:"0.45rem", alignItems:"flex-start" }}>
-                            <span style={{ color:"var(--for)", fontSize:"0.7rem", flexShrink:0, marginTop:"0.1rem" }}>•</span>
-                            <span style={{ color:"var(--text)", fontSize:"0.77rem", lineHeight:1.45 }}>{clip(pt, 72)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {!isPro && lockOverlay("Strengths Analysis")}
                 </div>
 
-                {/* ══ COL C: LEADERBOARD + TRANSCRIPT + CTA ══ */}
-                <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem" }}>
-
-                  {/* Leaderboard */}
-                  <div className="glass fade-up" style={{ padding:"0.875rem 1rem" }}>
-                    <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.625rem" }}>
-                      Standings
-                    </div>
-                    <div style={{ display:"flex", flexDirection:"column", gap:"0.35rem" }}>
-                      {rankedAll.map((s, idx) => {
-                        const isMe = s.userId === user?.id;
-                        const won  = s.side === result.winnerSide;
-                        return (
-                          <div key={s.userId} style={{
-                            display:"flex", alignItems:"center", gap:"0.5rem",
-                            padding:"0.5rem 0.625rem", borderRadius:"0.5rem",
-                            background: isMe
-                              ? (myWon ? "rgba(16,185,129,0.12)" : "rgba(79,142,247,0.1)")
-                              : "rgba(249,247,255,0.45)",
-                            border:`1px solid ${isMe ? (myWon ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.35)") : "var(--border)"}`,
-                          }}>
-                            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.65rem", color:"var(--muted)", width:20, flexShrink:0 }}>
-                              #{idx+1}
-                            </span>
-                            {won && idx===0 && <span style={{ fontSize:"0.7rem", flexShrink:0 }}>🏆</span>}
-                            <span style={{ flex:1, fontWeight:800, fontSize:"0.82rem", color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                              {s.username}{isMe ? " 👤" : ""}
-                            </span>
-                            <span style={{
-                              fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"1rem",
-                              background:scoreGradient(s.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
-                              flexShrink:0,
-                            }}>
-                              {s.total}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Transcript */}
-                  <div className="glass fade-up" style={{ padding:"0.5rem 0.875rem" }}>
-                    <div style={{ display:"flex", alignItems:"center", cursor:"pointer", marginBottom: showTx ? "0.5rem" : 0 }}
-                      onClick={() => setShowTx(v => !v)}>
-                      <span style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--cyan)", flex:1 }}>
-                        🎤 Arguments ({debate.rounds.length})
-                      </span>
-                      <span style={{ color:"var(--muted)", fontSize:"0.7rem" }}>{showTx ? "▲" : "▼"}</span>
-                    </div>
-                    {showTx && (
-                      <div style={{ display:"flex", flexDirection:"column", gap:"0.35rem", maxHeight:"6.5rem", overflowY:"auto" }}>
-                        {debate.rounds.length === 0 && (
-                          <p style={{ color:"var(--muted)", fontSize:"0.75rem", textAlign:"center", margin:0 }}>Nothing captured.</p>
-                        )}
-                        {debate.rounds.map((r, i) => (
-                          <div key={i} style={{
-                            padding:"0.4rem 0.55rem", borderRadius:"0.375rem",
-                            background: r.side==="for" ? "rgba(16,185,129,0.05)" : "rgba(244,63,94,0.05)",
-                            border:`1px solid ${r.side==="for" ? "rgba(16,185,129,0.15)" : "rgba(244,63,94,0.15)"}`,
-                          }}>
-                            <div style={{ display:"flex", gap:"0.35rem", alignItems:"center", marginBottom:"0.12rem" }}>
-                              <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.6rem", color:"var(--muted)" }}>R{r.roundNumber}</span>
-                              <span style={{ fontWeight:700, color:"var(--text)", fontSize:"0.7rem" }}>{r.speakerUsername}</span>
-                              <span className={`badge ${r.side==="for" ? "badge-for" : "badge-against"}`} style={{ fontSize:"0.54rem", marginLeft:"auto" }}>
-                                {r.side==="for" ? "FOR" : "AGN"}
-                              </span>
-                            </div>
-                            <p style={{ color:"var(--subtle)", fontSize:"0.7rem", margin:0, lineHeight:1.35 }}>
-                              {r.argument ? clip(r.argument, 90) : "(no transcript)"}
-                            </p>
-                          </div>
-                        ))}
+                {/* Key Moments */}
+                <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flexShrink:0 }}>
+                  <div className="glass" style={{ padding:"0.7rem 0.875rem", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                    <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--gold)", marginBottom:"0.38rem" }}>⚡ Key Moments</div>
+                    {bestMove ? (
+                      <div style={{ marginBottom:missed?"0.38rem":0 }}>
+                        <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--for)", marginBottom:"0.12rem" }}>🔥 Best Move</div>
+                        <p style={{ margin:0, fontSize:"0.7rem", color:"var(--subtle)", lineHeight:1.4, fontStyle:"italic" }}>"{bestMove}"</p>
+                      </div>
+                    ) : <p style={{ margin:0, fontSize:"0.7rem", color:"var(--muted)", fontStyle:"italic" }}>No highlights captured.</p>}
+                    {missed && (
+                      <div>
+                        <div style={{ fontSize:"0.58rem", fontWeight:700, color:"var(--against)", marginBottom:"0.12rem" }}>✗ Missed</div>
+                        <p style={{ margin:0, fontSize:"0.7rem", color:"var(--subtle)", lineHeight:1.4, fontStyle:"italic" }}>"{missed}"</p>
                       </div>
                     )}
                   </div>
-
-                  {/* CTA */}
-                  <button onClick={() => navigate("/")} className="btn-primary"
-                    style={{ width:"100%", padding:"0.7rem", fontSize:"1rem", fontWeight:900, letterSpacing:"0.02em" }}>
-                    ⚔️ Play Again
-                  </button>
+                  {!isPro && lockOverlay("Key Moments")}
                 </div>
-
               </div>
 
-              {/* ── JUDGE SCORES PANEL ── */}
-              {judgeScores.length > 0 && result && (
-                <div className="glass fade-up" style={{ marginTop:"0.5rem", padding:"0.875rem 1rem", border:"1px solid rgba(167,139,250,0.3)", background:"rgba(167,139,250,0.04)" }}>
-                  <div style={{ fontSize:"0.58rem", fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase", color:"#a78bfa", marginBottom:"0.75rem" }}>
-                    ⚖️ Human Judge Scores
-                  </div>
-                  <div style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill,minmax(200px,1fr))", gap:"0.5rem" }}>
-                    {result.scores.map((aiScore) => {
-                      // Collect all judges' scores for this participant
-                      const scoresForUser = judgeScores.map((js) => ({
-                        judgeUsername: js.judgeUsername,
-                        score: js.scores.find((s) => s.userId === aiScore.userId)?.score ?? null,
-                      })).filter((s) => s.score !== null) as { judgeUsername: string; score: number }[];
+              {/* ──────────────── CENTER ──────────────── */}
+              <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem", overflow:"hidden", minHeight:0 }}>
 
-                      const avgJudgeScore = scoresForUser.length > 0
-                        ? Math.round(scoresForUser.reduce((sum, s) => sum + s.score, 0) / scoresForUser.length)
-                        : null;
-
-                      const blended = avgJudgeScore !== null
-                        ? Math.round((aiScore.total + avgJudgeScore) / 2)
-                        : null;
-
-                      const reliability = avgJudgeScore !== null
-                        ? Math.round((1 - Math.abs(aiScore.total - avgJudgeScore) / 100) * 100)
-                        : null;
-
-                      const isMe = aiScore.userId === user?.id;
+                {/* Standings */}
+                <div className="glass" style={{ flex:1, minHeight:0, display:"flex", flexDirection:"column", padding:"0.7rem 0.875rem" }}>
+                  <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.45rem", flexShrink:0 }}>🏆 Standings</div>
+                  <div style={{ flex:1, minHeight:0, overflowY:"auto", display:"flex", flexDirection:"column", gap:"0.28rem" }}>
+                    {rankedAll.map((s,idx) => {
+                      const isMe = s.userId===user?.id;
+                      const won  = s.side===result.winnerSide;
+                      const mc   = idx===0?"#f59e0b":idx===1?"#94a3b8":idx===2?"#b45309":"var(--muted)";
+                      const mbg  = idx===0?"rgba(245,158,11,0.1)":idx===1?"rgba(148,163,184,0.07)":idx===2?"rgba(180,83,9,0.09)":"var(--surface2)";
                       return (
-                        <div key={aiScore.userId} style={{
-                          padding:"0.75rem 0.875rem", borderRadius:"0.625rem",
-                          background: isMe ? "rgba(167,139,250,0.1)" : "rgba(249,247,255,0.5)",
-                          border:`1px solid ${isMe ? "rgba(167,139,250,0.4)" : "var(--border)"}`,
+                        <div key={s.userId} className="res-row" style={{
+                          display:"flex", alignItems:"center", gap:"0.45rem",
+                          padding:"0.45rem 0.6rem", borderRadius:"0.55rem",
+                          background:isMe?(myWon?"rgba(16,185,129,0.1)":"rgba(79,142,247,0.08)"):mbg,
+                          border:`1px solid ${isMe?(myWon?"rgba(16,185,129,0.38)":"rgba(79,142,247,0.28)"):`${mc}33`}`,
                         }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", marginBottom:"0.5rem" }}>
-                            <span style={{ fontWeight:800, fontSize:"0.85rem", color:"var(--text)" }}>{aiScore.username}{isMe ? " 👤" : ""}</span>
-                            <span className={`badge ${aiScore.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize:"0.58rem" }}>{aiScore.side === "for" ? "FOR" : "AGN"}</span>
-                          </div>
-                          <div style={{ display:"flex", gap:"0.75rem", flexWrap:"wrap", marginBottom:"0.4rem" }}>
-                            <div style={{ textAlign:"center" }}>
-                              <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>AI</div>
-                              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", color:"var(--cyan)" }}>{aiScore.total}</div>
-                            </div>
-                            {avgJudgeScore !== null && (
-                              <>
-                                <div style={{ textAlign:"center" }}>
-                                  <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>Judges</div>
-                                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", color:"#a78bfa" }}>{avgJudgeScore}</div>
-                                </div>
-                                <div style={{ textAlign:"center" }}>
-                                  <div style={{ fontSize:"0.58rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.06em" }}>Blended</div>
-                                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"0.95rem", background:scoreGradient(blended!), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>{blended}</div>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                          {scoresForUser.length > 0 && (
-                            <div style={{ fontSize:"0.65rem", color:"var(--muted)" }}>
-                              {scoresForUser.map((s, i) => (
-                                <span key={i}>{i > 0 ? " · " : ""}{s.judgeUsername}: <strong style={{ color:"#a78bfa" }}>{s.score}</strong></span>
-                              ))}
-                            </div>
-                          )}
-                          {reliability !== null && (
-                            <div style={{ fontSize:"0.62rem", color: reliability >= 80 ? "var(--for)" : reliability >= 60 ? "var(--gold)" : "var(--against)", marginTop:"0.25rem", fontWeight:700 }}>
-                              Reliability: {reliability}%
-                            </div>
-                          )}
-                          {scoresForUser.length === 0 && (
-                            <div style={{ fontSize:"0.65rem", color:"var(--muted)", fontStyle:"italic" }}>No judge scores yet</div>
-                          )}
+                          <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.8rem", width:24, flexShrink:0, textAlign:"center" }}>
+                            {idx===0?"🥇":idx===1?"🥈":idx===2?"🥉":`#${idx+1}`}
+                          </span>
+                          <span style={{ flex:1, fontWeight:800, fontSize:"0.8rem", color:isMe?(myWon?"var(--for)":"var(--cyan)"):"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {s.username}{isMe?" 👤":""}
+                          </span>
+                          <span className={`badge ${s.side==="for"?"badge-for":"badge-against"}`} style={{ fontSize:"0.52rem" }}>{s.side==="for"?"FOR":"AGN"}</span>
+                          <span style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"1rem", background:scoreGradient(s.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", flexShrink:0, minWidth:28, textAlign:"right" }}>
+                            {s.total}
+                          </span>
                         </div>
                       );
                     })}
                   </div>
-                  <p style={{ margin:"0.625rem 0 0", fontSize:"0.7rem", color:"var(--muted)" }}>
-                    Blended = (AI + avg judge) ÷ 2 · Reliability = 1 − |AI − judge| / 100
-                  </p>
                 </div>
-              )}
-            </>
-          )}
 
-          {/* No score fallback */}
-          {result && !myScore && (
-            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <div className="glass" style={{ padding:"2rem", textAlign:"center", maxWidth:340 }}>
-                <p style={{ color:"var(--muted)", marginBottom:"1rem" }}>Score not available — you may not have been in this debate.</p>
-                <button onClick={() => navigate("/")} className="btn-primary">Back to Home</button>
+                {/* Arguments */}
+                <div className="glass" style={{ padding:"0.5rem 0.875rem", flexShrink:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", cursor:"pointer", marginBottom:showTx?"0.38rem":0 }} onClick={()=>setShowTx(v=>!v)}>
+                    <span style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--cyan)", flex:1 }}>🎤 Arguments ({debate.rounds.length})</span>
+                    <span style={{ color:"var(--muted)", fontSize:"0.65rem" }}>{showTx?"▲":"▼"}</span>
+                  </div>
+                  {showTx && (
+                    <div style={{ display:"flex", flexDirection:"column", gap:"0.28rem", maxHeight:"5.5rem", overflowY:"auto" }}>
+                      {debate.rounds.length===0 && <p style={{ color:"var(--muted)", fontSize:"0.7rem", textAlign:"center", margin:0 }}>Nothing captured.</p>}
+                      {debate.rounds.map((r,i) => (
+                        <div key={i} style={{
+                          padding:"0.32rem 0.48rem", borderRadius:"0.375rem",
+                          background:r.side==="for"?"rgba(16,185,129,0.05)":"rgba(244,63,94,0.05)",
+                          border:`1px solid ${r.side==="for"?"rgba(16,185,129,0.15)":"rgba(244,63,94,0.15)"}`,
+                        }}>
+                          <div style={{ display:"flex", gap:"0.28rem", alignItems:"center", marginBottom:"0.08rem" }}>
+                            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.57rem", color:"var(--muted)" }}>R{r.roundNumber}</span>
+                            <span style={{ fontWeight:700, color:"var(--text)", fontSize:"0.67rem" }}>{r.speakerUsername}</span>
+                            <span className={`badge ${r.side==="for"?"badge-for":"badge-against"}`} style={{ fontSize:"0.51rem", marginLeft:"auto" }}>{r.side==="for"?"FOR":"AGN"}</span>
+                          </div>
+                          <p style={{ color:"var(--subtle)", fontSize:"0.67rem", margin:0, lineHeight:1.35 }}>{r.argument?clip(r.argument,90):"(no transcript)"}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display:"flex", gap:"0.4rem", flexShrink:0 }}>
+                  <button className="play-btn" onClick={()=>navigate("/")} style={{
+                    flex:1, padding:"0.55rem", borderRadius:"0.625rem",
+                    background:"linear-gradient(135deg,#4f46e5,#7c3aed)",
+                    border:"none", color:"#fff", fontWeight:900, fontSize:"0.875rem",
+                    cursor:"pointer", fontFamily:"inherit",
+                    boxShadow:"0 4px 18px rgba(124,58,237,0.35)",
+                    letterSpacing:"0.01em",
+                  }}>⚔️ Play Again</button>
+                  <button className="btn-ghost" style={{ padding:"0.55rem 0.75rem", fontSize:"0.82rem" }}
+                    onClick={()=>{
+                      const txt=`I just debated "${debate.topic}" on Argumint${myWon?" and WON":""}! Score: ${myScore.total}/100`;
+                      if(navigator.share)navigator.share({title:"Argumint Result",text:txt,url:window.location.href});
+                      else navigator.clipboard?.writeText(txt);
+                    }}>📤</button>
+                </div>
               </div>
-            </div>
-          )}
 
-        </main>
+              {/* ──────────────── RIGHT SIDEBAR ──────────────── */}
+              <div className="res-col" style={{ display:"flex", flexDirection:"column", gap:"0.5rem", overflow:"hidden", minHeight:0 }}>
+
+                {/* Why They Won */}
+                {result.winningPoints.length>0 && (
+                  <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flexShrink:0 }}>
+                    <div className="glass" style={{ padding:"0.7rem 0.875rem", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                      <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--gold)", marginBottom:"0.38rem" }}>
+                        🔥 Why {result.winnerSide==="for"?"FOR":"AGAINST"} Won
+                      </div>
+                      <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:"0.28rem" }}>
+                        {result.winningPoints.slice(0,4).map((pt,i)=>(
+                          <li key={i} style={{ display:"flex", gap:"0.38rem", alignItems:"flex-start" }}>
+                            <span style={{ color:"var(--for)", fontSize:"0.62rem", flexShrink:0, marginTop:"0.12rem" }}>✦</span>
+                            <span style={{ color:"var(--text)", fontSize:"0.7rem", lineHeight:1.4 }}>{clip(pt,68)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    {!isPro && lockOverlay("Why They Won")}
+                  </div>
+                )}
+
+                {/* Weaknesses */}
+                <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flexShrink:0 }}>
+                  <div className="glass" style={{ padding:"0.7rem 0.875rem", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                    <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--against)", marginBottom:"0.38rem" }}>❌ Weaknesses</div>
+                    <div style={{ display:"flex", flexDirection:"column", gap:"0.25rem" }}>
+                      {improvements.length>0 ? improvements.slice(0,3).map((s,i)=>(
+                        <div key={i} style={{
+                          display:"flex", alignItems:"flex-start", gap:"0.35rem",
+                          padding:"0.25rem 0.42rem", borderRadius:"0.4rem",
+                          background:"rgba(244,63,94,0.06)", border:"1px solid rgba(244,63,94,0.14)",
+                        }}>
+                          <span style={{ color:"var(--against)", fontSize:"0.62rem", flexShrink:0, marginTop:"0.1rem" }}>•</span>
+                          <span style={{ color:"var(--subtle)", fontSize:"0.7rem", lineHeight:1.4 }}>{clip(s,60)}</span>
+                        </div>
+                      )) : <p style={{ color:"var(--muted)", fontSize:"0.7rem", margin:0, fontStyle:"italic" }}>No major gaps found.</p>}
+                    </div>
+                  </div>
+                  {!isPro && lockOverlay("Weakness Detection")}
+                </div>
+
+                {/* AI Analysis */}
+                <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flex:1, minHeight:0 }}>
+                  <div className="glass" style={{ height:"100%", padding:"0.7rem 0.875rem", display:"flex", flexDirection:"column", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                    <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"#a78bfa", marginBottom:"0.38rem", flexShrink:0 }}>🤖 AI Analysis</div>
+                    <p style={{ margin:0, fontSize:"0.72rem", color:"var(--subtle)", lineHeight:1.55, flex:1, minHeight:0, overflowY:"auto" }}>
+                      {myScore.feedback||result.summary||"No AI feedback available."}
+                    </p>
+                  </div>
+                  {!isPro && lockOverlay("AI Judge Analysis")}
+                </div>
+
+                {/* Judge Scores (if any) */}
+                {judgeScores.length>0 && (
+                  <div style={{ position:"relative", borderRadius:"0.875rem", overflow:"hidden", flexShrink:0 }}>
+                    <div className="glass" style={{ padding:"0.7rem 0.875rem", ...(isPro?{}:{ filter:"blur(5px)", pointerEvents:"none", userSelect:"none" }) }}>
+                      <div style={{ fontSize:"0.53rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"#a78bfa", marginBottom:"0.38rem" }}>⚖️ Judge Scores</div>
+                      {result.scores.map(aiScore=>{
+                        const sfu=judgeScores.map(js=>({ judgeUsername:js.judgeUsername, score:js.scores.find(s=>s.userId===aiScore.userId)?.score??null })).filter(s=>s.score!==null) as {judgeUsername:string;score:number}[];
+                        const avg=sfu.length>0?Math.round(sfu.reduce((a,x)=>a+x.score,0)/sfu.length):null;
+                        const bl=avg!==null?Math.round((aiScore.total+avg)/2):null;
+                        const isMe=aiScore.userId===user?.id;
+                        return (
+                          <div key={aiScore.userId} style={{ display:"flex", alignItems:"center", gap:"0.45rem", padding:"0.28rem 0", borderBottom:"1px solid var(--border)" }}>
+                            <span style={{ flex:1, fontWeight:700, fontSize:"0.72rem", color:isMe?"var(--cyan)":"var(--text)" }}>{aiScore.username}{isMe?" 👤":""}</span>
+                            <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", color:"var(--muted)" }}>AI: <strong style={{ color:"var(--cyan)" }}>{aiScore.total}</strong></span>
+                            {avg!==null&&<span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.7rem", color:"var(--muted)" }}>→ <strong style={{ color:"#a78bfa" }}>{bl}</strong></span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!isPro && lockOverlay("Judge Scores")}
+                  </div>
+                )}
+              </div>
+
+            </div>{/* end 3-col grid */}
+          </div>
+        )}{/* end result && myScore */}
+
       </div>
     </>
   );

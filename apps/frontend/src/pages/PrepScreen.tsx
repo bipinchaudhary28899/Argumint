@@ -306,7 +306,7 @@ export function PrepScreen() {
                     { icon: "❄️", rule: "Cooldown grows with each turn — share the mic" },
                     { icon: "🏁", rule: "Host ends the debate when discussion is done" },
                   ].map(({ icon, rule }) => (
-                    <div key={rule} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", padding: "0.45rem 0.625rem", borderRadius: "0.5rem", background: "rgba(249,247,255,0.5)", border: "1px solid var(--border)" }}>
+                    <div key={rule} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start", padding: "0.45rem 0.625rem", borderRadius: "0.5rem", background: "var(--surface2)", border: "1px solid var(--border)" }}>
                       <span style={{ fontSize: "1rem", flexShrink: 0, lineHeight: 1.3 }}>{icon}</span>
                       <span style={{ fontSize: "0.74rem", color: "var(--subtle)", lineHeight: 1.4 }}>{rule}</span>
                     </div>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
 import type { CreateRoomInput } from "@argumint/shared";
@@ -44,7 +45,7 @@ function Stepper({ label, hint, value, min, max, step, display, onChange }: Step
       <span style={{ fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--blue)" }}>
         {label}
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "#fff", border: "1.5px solid var(--border)", borderRadius: "0.75rem", padding: "0.3rem 0.5rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "0.75rem", padding: "0.3rem 0.5rem" }}>
         <button type="button" onClick={() => onChange(Math.max(min, value - step))} disabled={atMin}
           style={{ ...btnBase, opacity: atMin ? 0.35 : 1, cursor: atMin ? "not-allowed" : "pointer" }}>
           −
@@ -64,17 +65,52 @@ function Stepper({ label, hint, value, min, max, step, display, onChange }: Step
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+// ── Pro lock badge ────────────────────────────────────────────────────────────
+function ProLock({ onClick, isGlacier }: { onClick: () => void; isGlacier?: boolean }) {
+  return (
+    <span
+      onClick={e => { e.stopPropagation(); onClick(); }}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: "0.2rem",
+        fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.08em",
+        padding: "0.15rem 0.45rem", borderRadius: "9999px", cursor: "pointer",
+        background: isGlacier
+          ? "linear-gradient(135deg,rgba(2,132,199,0.22),rgba(3,105,161,0.55))"
+          : "linear-gradient(135deg,rgba(245,158,11,0.18),rgba(12,12,22,0.7))",
+        border: isGlacier ? "1px solid rgba(2,132,199,0.55)" : "1px solid rgba(245,158,11,0.5)",
+        color: isGlacier ? "#7dd3fc" : "#fbbf24",
+        boxShadow: isGlacier ? "0 0 8px rgba(2,132,199,0.15)" : "0 0 8px rgba(245,158,11,0.1)",
+      }}
+    >
+      👑 PRO
+    </span>
+  );
+}
+
 export function CreateRoom() {
   const navigate  = useNavigate();
   const { user }  = useAuth();
   const { setRoom, setError } = useRoom();
+  const { theme } = useTheme();
   const isMobile  = useIsMobile();
+  const isPro      = (user as any)?.isPro ?? false;
+  const isGlacier  = theme === "glacier";
+
+  // Accent palette: blue in glacier, gold everywhere else
+  const proColor   = isGlacier ? "#38bdf8"              : "#fbbf24";
+  const proDark    = isGlacier ? "#0369a1"              : "#d97706";
+  const proLockBg  = isGlacier
+    ? "linear-gradient(135deg,rgba(2,132,199,0.22),rgba(3,105,161,0.55))"
+    : "linear-gradient(135deg,rgba(245,158,11,0.18),rgba(12,12,22,0.7))";
+  const proLockBorder = isGlacier ? "rgba(2,132,199,0.55)" : "rgba(245,158,11,0.5)";
+  const proUpsellBg   = isGlacier ? "rgba(2,132,199,0.05)"  : "rgba(245,158,11,0.04)";
+  const proUpsellHoverBg = isGlacier ? "rgba(2,132,199,0.1)" : "rgba(245,158,11,0.09)";
   const [isLoading,   setIsLoading]   = useState(false);
   const [localError,  setLocalError]  = useState<string | null>(null);
 
   const [formData, setFormData] = useState<CreateRoomInput & { maxJudges: number; maxSpectators: number }>({
     topic: "", description: "", debateMode: "alternate",
-    maxParticipants: 10, maxJudges: 3, maxSpectators: 50,
+    maxParticipants: 10, maxJudges: 0, maxSpectators: 0,
     votingEnabled: false, votingTopics: [],
     votingDuration: 30, prepDuration: 30, turnDuration: 60,
     totalRounds: 2, transcriptionMode: "whisper" as const,
@@ -98,7 +134,12 @@ export function CreateRoom() {
     if (formData.votingEnabled && !(formData.votingTopics || []).length) { setLocalError("Add at least one voting topic"); return; }
     try {
       setIsLoading(true); setLocalError(null); setError(null);
-      const newRoom = await roomApi.createRoom(formData);
+      // Strip blank voting-topic entries so the backend never sees empty strings.
+      const payload = {
+        ...formData,
+        votingTopics: (formData.votingTopics || []).filter(t => t.trim().length > 0),
+      };
+      const newRoom = await roomApi.createRoom(payload);
       setRoom(newRoom);
       navigate(`/room/${newRoom.code}/lobby`);
     } catch (err) {
@@ -116,11 +157,11 @@ export function CreateRoom() {
 
 
       {/* ── MAIN ── */}
-      <main style={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", justifyContent: "center", padding: isMobile ? "1rem 0.75rem 2rem" : "1.5rem 1.25rem 2.5rem" }}>
-        <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+      <main style={{ flex: 1, minHeight: 0, overflow: isMobile ? "auto" : "hidden", display: "flex", justifyContent: "center", padding: isMobile ? "1rem 0.75rem" : "1rem 1.25rem" }}>
+        <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: isMobile ? 640 : 940, display: "flex", flexDirection: "column", gap: "0.75rem", minHeight: isMobile ? undefined : 0 }}>
 
           {/* ── PAGE HEADER ── */}
-          <div className="fade-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.25rem" }}>
+          <div className="fade-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
               <button type="button" onClick={() => navigate("/")} className="btn-ghost"
                 style={{ padding: "0.4rem 0.7rem", fontSize: "0.82rem" }}>←</button>
@@ -143,6 +184,19 @@ export function CreateRoom() {
             </div>
           </div>
 
+          {/* ── CARDS: 2-col on desktop, stacked on mobile ── */}
+          <div style={{
+            flex: isMobile ? undefined : 1,
+            minHeight: isMobile ? undefined : 0,
+            display: isMobile ? "flex" : "grid",
+            flexDirection: "column",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "0.875rem",
+          }}>
+
+          {/* LEFT col (desktop) / top (mobile): Motion + Mode */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", minHeight: isMobile ? undefined : 0 }}>
+
           {/* ── MOTION CARD ── */}
           <div className="glass fade-up" style={{ padding: isMobile ? "1rem" : "1.25rem 1.5rem" }}>
             <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.75rem" }}>
@@ -154,16 +208,26 @@ export function CreateRoom() {
               style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "0.5rem 0.875rem",
-                background: formData.votingEnabled ? "rgba(14,165,233,0.07)" : "rgba(245,243,255,0.6)",
+                background: formData.votingEnabled ? "rgba(14,165,233,0.07)" : "var(--surface2)",
                 border: `1px solid ${formData.votingEnabled ? "rgba(14,165,233,0.3)" : "var(--border)"}`,
-                borderRadius: "0.625rem", cursor: "pointer", marginBottom: "0.75rem",
-                transition: "all 0.2s",
+                borderRadius: "0.625rem", cursor: isPro ? "pointer" : "default", marginBottom: "0.75rem",
+                transition: "all 0.2s", opacity: isPro ? 1 : 0.7,
               }}
-              onClick={() => set("votingEnabled", !formData.votingEnabled)}
+              onClick={() => {
+                if (!isPro) { navigate("/pricing"); return; }
+                const next = !formData.votingEnabled;
+                setFormData(prev => ({
+                  ...prev,
+                  votingEnabled: next,
+                  // Clear leftover empty topic slots when voting is turned off.
+                  votingTopics: next ? prev.votingTopics : [],
+                }));
+              }}
             >
-              <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "var(--text)" }}>Let players vote on the topic</span>
-                {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.72rem", marginLeft: "0.5rem" }}>— players choose in the lobby</span>}
+                {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>— players choose in the lobby</span>}
+                {!isPro && <ProLock onClick={() => navigate("/pricing")} isGlacier={isGlacier} />}
               </div>
               <div style={{ width: 38, height: 20, borderRadius: 9999, background: formData.votingEnabled ? "var(--cyan)" : "var(--border2)", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
                 <div style={{ position: "absolute", top: 2, left: formData.votingEnabled ? 19 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
@@ -219,21 +283,23 @@ export function CreateRoom() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
               {[
-                { value: "alternate", icon: "🔄", label: "Alternate", desc: "Structured turns — FOR then AGAINST, each round." },
-                { value: "buzzer",    icon: "🔔", label: "Buzzer",    desc: "Open floor — first to buzz grabs the mic." },
+                { value: "alternate", icon: "🔄", label: "Alternate", desc: "Structured turns — FOR then AGAINST, each round.", proOnly: false },
+                { value: "buzzer",    icon: "🔔", label: "Buzzer",    desc: "Open floor — first to buzz grabs the mic.",       proOnly: true  },
               ].map((mode) => {
-                const active = formData.debateMode === mode.value;
+                const active  = formData.debateMode === mode.value;
+                const locked  = mode.proOnly && !isPro;
                 return (
                   <div
                     key={mode.value}
-                    onClick={() => set("debateMode", mode.value as "alternate" | "buzzer")}
+                    onClick={() => locked ? navigate("/pricing") : set("debateMode", mode.value as "alternate" | "buzzer")}
                     style={{
                       padding: isMobile ? "0.75rem" : "0.875rem 1rem",
                       borderRadius: "0.875rem",
-                      border: `2px solid ${active ? "var(--blue)" : "var(--border)"}`,
-                      background: active ? "rgba(79,70,229,0.07)" : "rgba(255,255,255,0.55)",
-                      cursor: "pointer", transition: "all 0.2s",
+                      border: `2px solid ${active ? "var(--blue)" : locked ? (isGlacier ? "rgba(2,132,199,0.3)" : "rgba(245,158,11,0.3)") : "var(--border)"}`,
+                      background: active ? "rgba(79,70,229,0.07)" : locked ? (isGlacier ? "rgba(2,132,199,0.04)" : "rgba(245,158,11,0.03)") : "var(--surface2)",
+                      cursor: locked ? "pointer" : "pointer", transition: "all 0.2s",
                       boxShadow: active ? "0 4px 16px rgba(79,70,229,0.14)" : "none",
+                      opacity: locked ? 0.75 : 1,
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginBottom: "0.3rem" }}>
@@ -241,7 +307,12 @@ export function CreateRoom() {
                       <span style={{ fontWeight: 800, fontSize: "0.85rem", color: active ? "var(--blue)" : "var(--text)" }}>
                         {mode.label}
                       </span>
-                      {active && (
+                      {locked && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem", fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.08em", padding: "0.15rem 0.45rem", borderRadius: "9999px", background: proLockBg, border: `1px solid ${proLockBorder}`, color: proColor }}>
+                          👑 PRO
+                        </span>
+                      )}
+                      {active && !locked && (
                         <span style={{ marginLeft: "auto", fontSize: "0.58rem", fontWeight: 800, color: "var(--blue)", background: "rgba(79,70,229,0.12)", padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
                           SELECTED
                         </span>
@@ -254,6 +325,9 @@ export function CreateRoom() {
             </div>
           </div>
 
+          </div>{/* end LEFT col */}
+
+          {/* RIGHT col (desktop) / bottom (mobile): Settings */}
           {/* ── SETTINGS CARD ── */}
           <div className="glass fade-up" style={{ padding: isMobile ? "1rem" : "1.25rem 1.5rem" }}>
             <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.875rem" }}>
@@ -286,13 +360,37 @@ export function CreateRoom() {
               <Stepper label="Max Debaters" hint="speakers in the debate"
                 value={formData.maxParticipants} min={2} max={20} step={1}
                 onChange={v => set("maxParticipants", v)} />
-              <Stepper label="Max Judges" hint="human scorers allowed"
-                value={(formData as any).maxJudges} min={0} max={20} step={1}
-                onChange={v => setFormData(prev => ({ ...prev, maxJudges: v }))} />
-              <Stepper label="Max Spectators" hint="listen-only observers"
-                value={(formData as any).maxSpectators} min={0} max={100} step={5}
-                onChange={v => setFormData(prev => ({ ...prev, maxSpectators: v }))} />
+
+              {/* Judges — Pro only, hidden for free users */}
+              {isPro && (
+                <Stepper label="Max Judges" hint="human scorers allowed"
+                  value={(formData as any).maxJudges} min={0} max={20} step={1}
+                  onChange={v => setFormData(prev => ({ ...prev, maxJudges: v }))} />
+              )}
+
+              {/* Spectators — Pro only, hidden for free users */}
+              {isPro && (
+                <Stepper label="Max Spectators" hint="listen-only observers"
+                  value={(formData as any).maxSpectators} min={0} max={100} step={5}
+                  onChange={v => setFormData(prev => ({ ...prev, maxSpectators: v }))} />
+              )}
             </div>
+
+            {/* Pro upsell hint — shown only for free users */}
+            {!isPro && (
+              <div
+                onClick={() => navigate("/pricing")}
+                style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", borderRadius: "0.625rem", cursor: "pointer", background: proUpsellBg, marginBottom: "0.75rem", transition: "background 0.2s" }}
+                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = proUpsellHoverBg}
+                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = proUpsellBg}
+              >
+                <span style={{ fontSize: "0.8rem" }}>👑</span>
+                <span style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>
+                  <span style={{ color: proDark, fontWeight: 800 }}>Pro</span> unlocks Human Judges, Spectators, Buzzer mode & topic voting
+                </span>
+                <span style={{ marginLeft: "auto", fontSize: "0.65rem", fontWeight: 700, color: proDark, flexShrink: 0 }}>See plans →</span>
+              </div>
+            )}
 
             {/* Summary strip */}
             <div style={{ marginTop: "0.25rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
@@ -309,18 +407,24 @@ export function CreateRoom() {
                 <span style={{ fontWeight: 800, color: "var(--for)", fontFamily: "'JetBrains Mono', monospace" }}>{formData.maxParticipants}</span>
                 {" "}debaters
               </span>
-              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                <span style={{ fontWeight: 800, color: "#a78bfa", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxJudges}</span>
-                {" "}judges
-              </span>
-              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                <span style={{ fontWeight: 800, color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxSpectators}</span>
-                {" "}spectators
-              </span>
+              {isPro && (
+                <>
+                  <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
+                  <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                    <span style={{ fontWeight: 800, color: "#a78bfa", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxJudges}</span>
+                    {" "}judges
+                  </span>
+                  <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
+                  <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                    <span style={{ fontWeight: 800, color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxSpectators}</span>
+                    {" "}spectators
+                  </span>
+                </>
+              )}
             </div>
           </div>
+
+          </div>{/* end 2-col grid */}
 
         </form>
       </main>

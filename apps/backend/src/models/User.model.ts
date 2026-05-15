@@ -11,6 +11,12 @@ export interface IUser extends Document {
     debatesLost: number;
     totalDebates: number;
   };
+  // ── Razorpay / subscription fields ───────────────────────────────────────
+  razorpayCustomerId?: string; // Razorpay cust_xxx — created on first checkout
+  subscriptionId?: string;     // Razorpay sub_xxx
+  subscriptionStatus?: string; // active | authenticated | pending | halted | cancelled | completed
+  isPro: boolean;              // fast gate checked by feature guards
+  currentPeriodEnd?: Date;     // next billing date (shown in account UI)
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -44,6 +50,12 @@ const userSchema = new Schema<IUser>(
       debatesLost: { type: Number, default: 0 },
       totalDebates: { type: Number, default: 0 },
     },
+    // Razorpay fields — all optional so existing documents aren't affected
+    razorpayCustomerId: { type: String, default: null },
+    subscriptionId:     { type: String, default: null },
+    subscriptionStatus: { type: String, default: null },
+    isPro:              { type: Boolean, default: false },
+    currentPeriodEnd:   { type: Date,   default: null },
   },
   { timestamps: true }
 );

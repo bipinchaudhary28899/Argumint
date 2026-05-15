@@ -6,6 +6,8 @@ import app, {
   attachAuthRoutes,
   attachRoomRoutes,
   attachDebateRoutes,
+  attachPaymentRoutes,
+  attachAdminRoutes,
 } from "./app.js";
 import { connectMongo } from "./db/mongo.js";
 import { connectRedis, getRedisClient } from "./db/redis.js";
@@ -25,6 +27,8 @@ const start = async () => {
   await attachAuthRoutes(app, redisClient);
   await attachRoomRoutes(app, redisClient);
   await attachDebateRoutes(app, redisClient);
+  await attachPaymentRoutes(app, redisClient);
+  await attachAdminRoutes(app);
 
   // Create HTTP server for Socket.io
   const httpServer = http.createServer(app);

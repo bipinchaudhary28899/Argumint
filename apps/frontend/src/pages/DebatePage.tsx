@@ -66,6 +66,12 @@ export function DebatePage() {
   const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const isMobile           = useIsMobile();
 
+  // Preview routes are restricted to the admin account only.
+  const PREVIEW_EMAIL   = "bkumar28899@gmail.com";
+  const isAdminUser     = user?.email === PREVIEW_EMAIL;
+  const isPreview       = isAdminUser && (debateId === "preview" || debateId === "preview-buzzer");
+  const isPreviewBuzzer = isAdminUser && debateId === "preview-buzzer";
+
   const [debate, setDebate]           = useState<Debate | null>(null);
   const [error, setError]             = useState<string | null>(null);
   const [now, setNow]                 = useState(() => Date.now());
@@ -74,17 +80,31 @@ export function DebatePage() {
 
   // ── Judge / spectator state ────────────────────────────────────────────────
   // Role is written to sessionStorage by RoomLobby when the user joins.
-  const myRoomRole = sessionStorage.getItem("argumint_room_role") ?? "participant";
-  const [showJudgePanel, setShowJudgePanel] = useState(false);
-  const [judgeSecsLeft, setJudgeSecsLeft]   = useState(90);
-  const [judgeScores, setJudgeScores]       = useState<Record<string, number>>({}); // userId → score 0-100
-  const [judgeSubmitted, setJudgeSubmitted] = useState(false);
+  // In preview mode a local override lets you toggle between roles.
+  const [previewRole, setPreviewRole] = useState<"participant" | "judge" | "spectator">("participant");
+  const myRoomRole = isPreview
+    ? previewRole
+    : (sessionStorage.getItem("argumint_room_role") ?? "participant");
+  const [showJudgePanel, setShowJudgePanel]           = useState(false);
+  const [judgeScores, setJudgeScores]                 = useState<Record<string, number>>({}); // userId → score 0-100
+  const [judgeSubmitted, setJudgeSubmitted]           = useState(false);
+  const [scoringWindowEndsAt, setScoringWindowEndsAt] = useState<number | null>(null);
 
   // ── Buzzer mode state ────────────────────────────────────────────────────
   const [buzzerState, setBuzzerState] = useState<BuzzerState | null>(null);
   const [buzzerWarning, setBuzzerWarning] = useState(false);
   const [grabError, setGrabError]     = useState<string | null>(null);
   const grabErrTimerRef               = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Buzzer timing state ──────────────────────────────────────────────────
+  const [preparingEndsAt, setPreparingEndsAt] = useState<number | null>(null);
+  const [holderUrgentAll, setHolderUrgentAll] = useState(false);
+
+  // ── Room presence (judges / spectators) ───────────────────────────────────
+  // Populated from debate:get-state response and kept live via room:participant-* events.
+  const [roomPresence, setRoomPresence] = useState<
+    { userId: string; username: string; role: string; status: string }[]
+  >([]);
 
   // ── Recording ─────────────────────────────────────────────────────────────
   const recorder   = useRecorder(isAndroidChrome);
@@ -97,6 +117,121 @@ export function DebatePage() {
   useEffect(() => {
     captionsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [sr.transcript, sr.interim]);
+
+  // ── Preview / fake-data mode — ALTERNATE ─────────────────────────────────
+  // Route: /room/PREVIEW/debate/preview
+  useEffect(() => {
+    if (debateId !== "preview" || !user) return;
+    const mockEndsAt = new Date(Date.now() + 72 * 1000);
+    const mockDebate: Debate = {
+      _id:          "preview",
+      roomId:       "preview-room",
+      roomCode:     "PREVIEW",
+      creatorId:    user.id,
+      topic:        "Artificial Intelligence will do more good than harm for humanity",
+      mode:         "alternate",
+      totalRounds:  3,
+      turnDuration: 90,
+      prepDuration: 60,
+      status:       "in_progress",
+      turnOrder: [
+        { userId: user.id,   username: user.username, side: "for"     },
+        { userId: "mock-p2", username: "Challenger",  side: "against" },
+      ],
+      currentTurn: {
+        roundNumber:     3,
+        speakerId:       "mock-p2",
+        speakerUsername: "Challenger",
+        side:            "against",
+        endsAt:          mockEndsAt,
+      },
+      rounds: [
+        {
+          roundNumber:     1,
+          speakerId:       user.id,
+          speakerUsername: user.username,
+          side:            "for",
+          argument:        "AI has already saved countless lives through early cancer detection, drug discovery, and predictive maintenance of critical infrastructure. The evidence is overwhelming — the benefits far outweigh the risks when we apply responsible governance frameworks.",
+          submittedAt:     new Date(Date.now() - 4 * 60 * 1000),
+          durationSeconds: 85,
+        },
+        {
+          roundNumber:     2,
+          speakerId:       "mock-p2",
+          speakerUsername: "Challenger",
+          side:            "against",
+          argument:        "The displacement of millions of workers is not a theoretical risk — it's already happening. AI-driven automation has decimated entire industries without adequate social safety nets. We must acknowledge the very real human cost before we celebrate the gains.",
+          submittedAt:     new Date(Date.now() - 2 * 60 * 1000),
+          durationSeconds: 78,
+        },
+      ],
+      result:      null,
+      buzzerState: null,
+    } as unknown as Debate;
+    setDebate(mockDebate);
+    setShowTranscript(true);
+  }, [debateId, user]);
+
+  // ── Preview / fake-data mode — BUZZER ────────────────────────────────────
+  // Route: /room/PREVIEW/debate/preview-buzzer
+  // Shows "Challenger" currently holding the mic with ~40 s left, plus two
+  // previous turns in the transcript so all the buzzer UI is visible.
+  useEffect(() => {
+    if (debateId !== "preview-buzzer" || !user) return;
+    const holderStarted = new Date(Date.now() - 50 * 1000); // 50 s ago
+    const mockBuzzerState: BuzzerState = {
+      currentHolder:    "mock-p2",
+      holderStartedAt:  holderStarted,
+      grabWindowOpen:   false,
+      grabWindowEndsAt: null,
+      cooldowns:        [],
+      speakHistory:     ["mock-p2", user.id],
+      lastSpeaker:      user.id,
+      bonusXPAwarded:   [],
+    } as unknown as BuzzerState;
+    const mockDebate: Debate = {
+      _id:          "preview-buzzer",
+      roomId:       "preview-room",
+      roomCode:     "PREVIEW",
+      creatorId:    user.id,
+      topic:        "Social media does more harm than good to society",
+      mode:         "buzzer",
+      totalRounds:  0,
+      turnDuration: 90,
+      prepDuration: 60,
+      status:       "in_progress",
+      turnOrder: [
+        { userId: user.id,   username: user.username, side: "for"     },
+        { userId: "mock-p2", username: "Challenger",  side: "against" },
+      ],
+      currentTurn:  null,
+      rounds: [
+        {
+          roundNumber:     1,
+          speakerId:       user.id,
+          speakerUsername: user.username,
+          side:            "for",
+          argument:        "Studies consistently show that platforms designed to maximise engagement exploit psychological vulnerabilities — particularly in adolescents. The correlation between heavy social media use and anxiety is now backed by multiple longitudinal studies.",
+          submittedAt:     new Date(Date.now() - 3 * 60 * 1000),
+          durationSeconds: 62,
+        },
+        {
+          roundNumber:     2,
+          speakerId:       "mock-p2",
+          speakerUsername: "Challenger",
+          side:            "against",
+          argument:        "Social media toppled dictatorships during the Arab Spring and gave marginalised communities a voice they never had before. Blaming the platform ignores agency — the harm is systemic, not inherent to the medium.",
+          submittedAt:     new Date(Date.now() - 90 * 1000),
+          durationSeconds: 55,
+        },
+      ],
+      result:      null,
+      buzzerState: mockBuzzerState,
+    } as unknown as Debate;
+    setDebate(mockDebate);
+    setBuzzerState(mockBuzzerState);
+    setShowTranscript(true);
+  }, [debateId, user]);
 
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
@@ -121,6 +256,19 @@ export function DebatePage() {
     },
   });
 
+  // isHost derived from debate.creatorId — no sessionStorage needed.
+  const isHost = !!user && !!debate?.creatorId && debate.creatorId === user.id;
+
+  // An observer is anyone not in the turn order (judges and spectators).
+  // We derive this from the debate itself so it works even after a page refresh.
+  // IMPORTANT: declare before isMyTurn / isHolder which reference isObserver.
+  const isInTurnOrder = !!user && (debate?.turnOrder.some((t) => t.userId === user.id) ?? false);
+  // In preview, role picker overrides the observer flag directly.
+  const isObserver    = isPreview
+    ? previewRole !== "participant"
+    : (!!debate && !isInTurnOrder && !isHost);
+  const isJudge       = isObserver && myRoomRole === "judge";
+
   const isBuzzer         = debate?.mode === "buzzer";
   const speakerUserId    = debate?.currentTurn?.speakerId ?? null;
   // Observers (judges/spectators) are never the active speaker
@@ -128,15 +276,6 @@ export function DebatePage() {
   const isHolder         = isBuzzer && !!user && buzzerState?.currentHolder === user.id && !isObserver;
   const activeSpeakerUserId = isBuzzer ? (buzzerState?.currentHolder ?? null) : speakerUserId;
   const isActiveSpeaker  = isBuzzer ? isHolder : isMyTurn;
-
-  // isHost derived from debate.creatorId — no sessionStorage needed.
-  const isHost = !!user && !!debate?.creatorId && debate.creatorId === user.id;
-
-  // An observer is anyone not in the turn order (judges and spectators).
-  // We derive this from the debate itself so it works even after a page refresh.
-  const isInTurnOrder = !!user && (debate?.turnOrder.some((t) => t.userId === user.id) ?? false);
-  const isObserver    = !!debate && !isInTurnOrder && !isHost;
-  const isJudge       = isObserver && myRoomRole === "judge";
 
   // ── Buzzer derived values ─────────────────────────────────────────────────
   const nowDate         = new Date(now);
@@ -188,12 +327,14 @@ export function DebatePage() {
 
   // ── Initial state load ────────────────────────────────────────────────────
   useEffect(() => {
+    if (isPreview) return;
     if (!socket || !isConnected || !debateId) return;
     socket.emit("debate:get-state", { debateId }, (res: any) => {
       if (!res?.success) { setError(res?.error || "Failed to load debate"); return; }
       const d = res.debate as Debate;
       setDebate(d);
       if (d.mode === "buzzer" && d.buzzerState) setBuzzerState(d.buzzerState as BuzzerState);
+      if (res.roomParticipants) setRoomPresence(res.roomParticipants);
     });
   }, [socket, isConnected, debateId]);
 
@@ -216,13 +357,21 @@ export function DebatePage() {
     const onTurnEnded   = () => {};
     const onDebateEnded = (data: any) => {
       setDebate((prev) => prev ? { ...prev, status: "ended" as const, currentTurn: null, rounds: data.rounds ?? prev.rounds } : prev);
-      // Judges see the scoring panel before navigating to results.
-      // Everyone else navigates straight away.
-      if (isJudge) {
-        setShowJudgePanel(true);
-      } else if (code && debateId) {
-        navigate(`/room/${code}/result/${debateId}`);
+      // Don't navigate yet — wait for debate:scoring-window-opened which tells
+      // everyone whether there are judges and when the window closes.
+    };
+    const onScoringWindowOpened = (data: any) => {
+      if (!data.hasJudges) {
+        // No judges in the room — navigate immediately (no one to wait for).
+        if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
+        return;
       }
+      setScoringWindowEndsAt(new Date(data.locksAt).getTime());
+      if (isJudge) setShowJudgePanel(true);
+    };
+    const onJudgeScoresLocked = () => {
+      setScoringWindowEndsAt(null);
+      if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
     };
 
     const onBuzzerWarning = () => {
@@ -241,6 +390,11 @@ export function DebatePage() {
       );
     };
     const onHolderChanged = (data: any) => {
+      // When someone grabs the mic, clear any prep/urgent state
+      if (data.holder) {
+        setHolderUrgentAll(false);
+        setPreparingEndsAt(null);
+      }
       setBuzzerState((prev) => {
         if (!prev) return prev;
         return {
@@ -254,6 +408,8 @@ export function DebatePage() {
       });
     };
     const onWindowOpen   = (data: any) => {
+      // Prep phase is over — window is now open
+      setPreparingEndsAt(null);
       setBuzzerState((prev) => prev ? {
         ...prev,
         grabWindowOpen: true,
@@ -267,51 +423,67 @@ export function DebatePage() {
     const onSpeakerTimeout = (data: any) => {
       if (data.debateId === debateId) void handleBuzzerRelease();
     };
+    // 5-second "Get Ready" prep phase after a speaker releases the mic
+    const onPreparing = (data: any) => {
+      setPreparingEndsAt(new Date(data.endsAt).getTime());
+    };
+    // Server fires this 10 s before holder auto-timeout so non-holders can
+    // see the standby grab button early (whoever clicks first will grab it).
+    const onHolderUrgent = () => {
+      setHolderUrgentAll(true);
+    };
 
-    socket.on("debate:turn-started",     onTurnStarted);
+    // Room presence — keep judges/spectators panel live
+    const onParticipantJoined = (data: any) => {
+      if (data.participants) setRoomPresence(data.participants);
+    };
+    const onParticipantLeft = (data: any) => {
+      if (data.participants) setRoomPresence(data.participants);
+    };
+
+    socket.on("debate:turn-started",       onTurnStarted);
     socket.on("debate:argument-submitted", onArgumentSubmitted);
-    socket.on("debate:turn-ended",       onTurnEnded);
-    socket.on("debate:ended",            onDebateEnded);
-    socket.on("buzzer:warning",          onBuzzerWarning);
-    socket.on("buzzer:open",             onBuzzerOpen);
-    socket.on("buzzer:holder-changed",   onHolderChanged);
-    socket.on("buzzer:window-open",      onWindowOpen);
-    socket.on("buzzer:window-closed",    onWindowClosed);
-    socket.on("buzzer:speaker-timeout",  onSpeakerTimeout);
+    socket.on("debate:turn-ended",         onTurnEnded);
+    socket.on("debate:ended",                  onDebateEnded);
+    socket.on("debate:scoring-window-opened",  onScoringWindowOpened);
+    socket.on("debate:judge-scores-locked",    onJudgeScoresLocked);
+    socket.on("buzzer:warning",                onBuzzerWarning);
+    socket.on("buzzer:open",               onBuzzerOpen);
+    socket.on("buzzer:holder-changed",     onHolderChanged);
+    socket.on("buzzer:window-open",        onWindowOpen);
+    socket.on("buzzer:window-closed",      onWindowClosed);
+    socket.on("buzzer:speaker-timeout",    onSpeakerTimeout);
+    socket.on("buzzer:preparing",          onPreparing);
+    socket.on("buzzer:holder-urgent",      onHolderUrgent);
+    socket.on("room:participant-joined",   onParticipantJoined);
+    socket.on("room:participant-left",     onParticipantLeft);
 
     return () => {
-      socket.off("debate:turn-started",      onTurnStarted);
+      socket.off("debate:turn-started",       onTurnStarted);
       socket.off("debate:argument-submitted", onArgumentSubmitted);
-      socket.off("debate:turn-ended",        onTurnEnded);
-      socket.off("debate:ended",             onDebateEnded);
-      socket.off("buzzer:warning",           onBuzzerWarning);
-      socket.off("buzzer:open",              onBuzzerOpen);
-      socket.off("buzzer:holder-changed",    onHolderChanged);
-      socket.off("buzzer:window-open",       onWindowOpen);
-      socket.off("buzzer:window-closed",     onWindowClosed);
-      socket.off("buzzer:speaker-timeout",   onSpeakerTimeout);
+      socket.off("debate:turn-ended",         onTurnEnded);
+      socket.off("debate:ended",                  onDebateEnded);
+      socket.off("debate:scoring-window-opened",  onScoringWindowOpened);
+      socket.off("debate:judge-scores-locked",    onJudgeScoresLocked);
+      socket.off("buzzer:warning",                onBuzzerWarning);
+      socket.off("buzzer:open",               onBuzzerOpen);
+      socket.off("buzzer:holder-changed",     onHolderChanged);
+      socket.off("buzzer:window-open",        onWindowOpen);
+      socket.off("buzzer:window-closed",      onWindowClosed);
+      socket.off("buzzer:speaker-timeout",    onSpeakerTimeout);
+      socket.off("buzzer:preparing",          onPreparing);
+      socket.off("buzzer:holder-urgent",      onHolderUrgent);
+      socket.off("room:participant-joined",   onParticipantJoined);
+      socket.off("room:participant-left",     onParticipantLeft);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, code, navigate, debateId]);
 
-  // ── Judge panel countdown timer ───────────────────────────────────────────
-  useEffect(() => {
-    if (!showJudgePanel) return;
-    const id = setInterval(() => {
-      setJudgeSecsLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(id);
-          // Auto-lock and navigate when timer hits 0
-          socket?.emit("debate:lock-judge-scores", { debateId });
-          if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showJudgePanel]);
+  // ── Scoring-window countdown (driven by the existing `now` ticker) ─────────
+  // scoringSecsLeft counts down from 60 for both judges and non-judges.
+  const scoringSecsLeft = scoringWindowEndsAt != null
+    ? Math.max(0, Math.ceil((scoringWindowEndsAt - now) / 1000))
+    : null;
 
   // ── Start/stop recording when active speaker status changes ───────────────
   // Observers (judges / spectators) never record — they only receive audio.
@@ -409,8 +581,9 @@ export function DebatePage() {
     socket?.emit("debate:submit-judge-scores", { debateId, scores }, (res: any) => {
       if (res?.success) {
         setJudgeSubmitted(true);
+        // Lock scores — this triggers debate:judge-scores-locked on the server
+        // which navigates ALL clients (judges + spectators + debaters) at once.
         socket?.emit("debate:lock-judge-scores", { debateId });
-        if (code && debateId) navigate(`/room/${code}/result/${debateId}`);
       } else {
         setError(res?.error || "Failed to submit scores");
       }
@@ -462,6 +635,61 @@ export function DebatePage() {
   const windowRingPct    = grabWindowSecsLeft != null ? grabWindowSecsLeft / 5 : 0;
   const windowRingOffset = windowCircumference * (1 - windowRingPct);
 
+  // "Get Ready" prep phase countdown (5 s before the grab window opens)
+  const preparingSecsLeft = preparingEndsAt != null
+    ? Math.max(0, Math.ceil((preparingEndsAt - now) / 1000))
+    : null;
+
+  // ── Preview-buzzer: simulate holder urgent warning at ≤10 s ─────────────
+  useEffect(() => {
+    if (!isPreviewBuzzer || !buzzerState?.currentHolder || holderSecsLeft === null) return;
+    if (holderSecsLeft === 10) setHolderUrgentAll(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewBuzzer, holderSecsLeft]);
+
+  // ── Preview-buzzer: simulate holder timeout → 5-second prep phase ────────
+  // When the mock holder's clock hits 0 the server would normally emit
+  // buzzer:preparing. We replicate that here without a real socket.
+  useEffect(() => {
+    if (!isPreviewBuzzer || holderSecsLeft !== 0 || !buzzerState?.currentHolder) return;
+    const released = buzzerState.currentHolder; // "mock-p2"
+    // Clear holder immediately, enter prep phase
+    setBuzzerState((prev) => prev ? {
+      ...prev,
+      currentHolder:   null,
+      holderStartedAt: null,
+      grabWindowOpen:  false,
+      grabWindowEndsAt: null,
+      lastSpeaker:     released,
+    } : prev);
+    setHolderUrgentAll(false);
+    setPreparingEndsAt(Date.now() + 5_000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewBuzzer, holderSecsLeft]);
+
+  // ── Preview-buzzer: prep phase ends → open grab window ───────────────────
+  useEffect(() => {
+    if (!isPreviewBuzzer || preparingSecsLeft !== 0 || preparingEndsAt === null) return;
+    setPreparingEndsAt(null);
+    setBuzzerState((prev) => prev ? {
+      ...prev,
+      grabWindowOpen:   true,
+      grabWindowEndsAt: new Date(Date.now() + 5_000),
+    } : prev);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewBuzzer, preparingSecsLeft, preparingEndsAt]);
+
+  // ── Preview-buzzer: close grab window after it expires ────────────────────
+  useEffect(() => {
+    if (!isPreviewBuzzer || !buzzerState?.grabWindowOpen || grabWindowSecsLeft !== 0) return;
+    setBuzzerState((prev) => prev ? {
+      ...prev,
+      grabWindowOpen:   false,
+      grabWindowEndsAt: null,
+    } : prev);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPreviewBuzzer, buzzerState?.grabWindowOpen, grabWindowSecsLeft]);
+
   if (error && !debate) {
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
@@ -480,476 +708,728 @@ export function DebatePage() {
     );
   }
 
+
   const turn     = debate.currentTurn;
   const finished = debate.status === "ended";
 
+  // Derived participant lists
+  const forParticipants     = debate.turnOrder.filter((p) => p.side === "for");
+  const againstParticipants = debate.turnOrder.filter((p) => p.side === "against");
+
+  // Room presence split by role
+  const judgeMembers     = roomPresence.filter((p) => p.role === "judge");
+  const spectatorMembers = roomPresence.filter((p) => p.role === "spectator");
+
+  // ── Center ring constants ─────────────────────────────────────────────────
+  const RING_R    = 90;
+  const RING_CIRC = 2 * Math.PI * RING_R;   // ≈ 565.5 SVG units
+
+  // The ring diameter rendered in px
+  const ringSize  = isMobile ? 156 : 184;
+
+  // Which arc progress to show (0 = empty, 1 = full)
+  const stageRingPct: number = (() => {
+    if (isBuzzer) {
+      if (buzzerState?.currentHolder && holderSecsLeft !== null)
+        return holderSecsLeft / (debate.turnDuration ?? 60);
+      if (preparingSecsLeft !== null && preparingSecsLeft > 0)
+        return preparingSecsLeft / 5;
+      if (buzzerState?.grabWindowOpen && grabWindowSecsLeft !== null)
+        return grabWindowSecsLeft / 5;
+      return 0;
+    }
+    return secondsLeft !== null ? secondsLeft / (debate.turnDuration ?? 180) : 1;
+  })();
+  const stageRingOffset = RING_CIRC * (1 - stageRingPct);
+
+  const stageRingColor: string = (() => {
+    if (isBuzzer) {
+      if (buzzerState?.currentHolder)
+        return holderIsUrgent ? "var(--against)" : (holderSide === "for" ? "var(--for)" : "var(--against)");
+      if (preparingSecsLeft !== null && preparingSecsLeft > 0) return "var(--gold)";
+      if (buzzerState?.grabWindowOpen) return "var(--cyan)";
+      return "rgba(255,255,255,0.12)";
+    }
+    if (!turn) return "rgba(255,255,255,0.12)";
+    return isUrgent ? "var(--against)" : (turn.side === "for" ? "var(--for)" : "var(--against)");
+  })();
+
+  // ── Compact side-panel participant card ───────────────────────────────────
+  const SideCard = ({ p }: { p: { userId: string; username: string; side: "for" | "against" } }) => {
+    const isActive   = p.userId === activeSpeakerUserId;
+    const isYou      = p.userId === user?.id;
+    const side       = p.side;
+    const accentRgb  = side === "for" ? "var(--for-rgb)" : "var(--against-rgb)";
+    const accentVar  = side === "for" ? "var(--for)" : "var(--against)";
+    const speakCount = isBuzzer
+      ? (buzzerState?.speakHistory.filter((id) => id === p.userId).length ?? 0)
+      : debate.rounds.filter((r) => r.speakerId === p.userId).length;
+    const userCd = isBuzzer ? buzzerState?.cooldowns.find((c) => c.userId === p.userId) : null;
+    const cdSec  = userCd && new Date(userCd.unlocksAt) > nowDate
+      ? Math.ceil((new Date(userCd.unlocksAt).getTime() - now) / 1000) : 0;
+
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem",
+        padding: "0.4rem 0.25rem", borderRadius: "0.5rem",
+        background: isActive ? `rgba(${accentRgb},0.1)` : "transparent",
+        transition: "background 0.3s",
+      }}>
+        <div
+          className={isActive ? (side === "for" ? "avatar-speaking-for" : "avatar-speaking-against") : ""}
+          style={{
+            width: 36, height: 36, borderRadius: "50%", flexShrink: 0, position: "relative",
+            background: `linear-gradient(135deg,rgba(${accentRgb},0.15),rgba(${accentRgb},0.3))`,
+            border: `2px solid ${isActive ? accentVar : "var(--border)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "0.82rem", fontWeight: 900, color: accentVar, transition: "border-color 0.3s",
+          }}
+        >
+          {p.username.charAt(0).toUpperCase()}
+          {isYou && (
+            <span style={{
+              position: "absolute", bottom: -3, right: -3,
+              fontSize: "0.48rem", background: "var(--gold)", color: "#fff",
+              borderRadius: "50%", width: 13, height: 13,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 900, border: "1.5px solid var(--bg)",
+            }}>★</span>
+          )}
+        </div>
+        <div style={{
+          fontSize: "0.62rem", fontWeight: isActive ? 800 : 600,
+          color: isActive ? "var(--text)" : "var(--muted)",
+          maxWidth: 76, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          textAlign: "center", transition: "color 0.2s",
+        }}>{p.username}</div>
+        <div style={{ fontSize: "0.55rem", color: isActive ? accentVar : "var(--muted)", textAlign: "center" }}>
+          {isActive ? <span style={{ fontWeight: 700 }}>Speaking</span>
+            : cdSec > 0 ? <span style={{ color: "var(--against)" }}>CD {cdSec}s</span>
+            : <span>{speakCount > 0 ? `${speakCount}×` : "—"}</span>}
+        </div>
+
+        {/* Inline judge score — visible to judges throughout the debate */}
+        {isJudge && (
+          <div style={{ marginTop: "0.18rem", display: "flex", alignItems: "center", gap: "0.15rem" }}>
+            <button
+              onClick={() => setJudgeScores(prev => ({ ...prev, [p.userId]: Math.max(0, (prev[p.userId] ?? 50) - 5) }))}
+              disabled={judgeSubmitted}
+              style={{ width: 16, height: 16, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", fontSize: "0.6rem", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}
+            >−</button>
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace", fontSize: "0.6rem", fontWeight: 900,
+              minWidth: 20, textAlign: "center",
+              color: (judgeScores[p.userId] ?? 50) >= 70 ? "var(--for)" : (judgeScores[p.userId] ?? 50) >= 40 ? "var(--cyan)" : "var(--against)",
+            }}>{judgeScores[p.userId] ?? 50}</span>
+            <button
+              onClick={() => setJudgeScores(prev => ({ ...prev, [p.userId]: Math.min(100, (prev[p.userId] ?? 50) + 5) }))}
+              disabled={judgeSubmitted}
+              style={{ width: 16, height: 16, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--muted)", fontSize: "0.6rem", lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, flexShrink: 0 }}
+            >+</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Observer chip (judge or spectator pill) ───────────────────────────────
+  const ObserverChip = ({
+    member, isJudgeMember = false,
+  }: {
+    member: { userId: string; username: string; role: string };
+    isJudgeMember?: boolean;
+  }) => (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "0.25rem",
+      padding: "0.15rem 0.4rem 0.15rem 0.2rem", borderRadius: "2rem",
+      background: isJudgeMember ? "rgba(167,139,250,0.12)" : "rgba(107,114,128,0.08)",
+      border: `1px solid ${isJudgeMember ? "rgba(167,139,250,0.25)" : "var(--border)"}`,
+      flexShrink: 0,
+    }}>
+      <div style={{
+        width: 20, height: 20, borderRadius: "50%",
+        background: isJudgeMember ? "rgba(167,139,250,0.22)" : "var(--surface2)",
+        border: `1px solid ${isJudgeMember ? "#a78bfa" : "var(--border)"}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: "0.55rem", fontWeight: 800,
+        color: isJudgeMember ? "#a78bfa" : "var(--muted)", flexShrink: 0,
+      }}>
+        {member.username.charAt(0).toUpperCase()}
+      </div>
+      <span style={{
+        fontSize: "0.58rem", fontWeight: 600,
+        color: isJudgeMember ? "#a78bfa" : "var(--muted)",
+        maxWidth: 52, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      }}>{member.username}</span>
+    </div>
+  );
+
+  // Preview mock observers (shown when isPreview and no real presence data)
+  const mockJudges: { userId: string; username: string; role: string }[] =
+    isPreview && judgeMembers.length === 0
+      ? [{ userId: "mj1", username: "Justice", role: "judge" }, { userId: "mj2", username: "Arbiter", role: "judge" }]
+      : judgeMembers;
+  const mockSpectators: { userId: string; username: string; role: string }[] =
+    isPreview && spectatorMembers.length === 0
+      ? [{ userId: "ms1", username: "Viewer1", role: "spectator" }, { userId: "ms2", username: "Viewer2", role: "spectator" }, { userId: "ms3", username: "Crowd3", role: "spectator" }]
+      : spectatorMembers;
+  const showObservers = mockJudges.length > 0 || mockSpectators.length > 0;
+
   return (
     <InAppBrowserGate>
-      <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
-      <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
+      {!isPreview && <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />}
 
-        {/* Prep warning flash (buzzer mode) */}
-        {buzzerWarning && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 100, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(244,63,94,0.08)", animation: "flashPulse 0.5s ease-in-out 3" }}>
-            <div style={{ padding: "1rem 2.5rem", borderRadius: "1rem", background: "rgba(244,63,94,0.15)", border: "2px solid rgba(244,63,94,0.5)", boxShadow: "0 0 40px rgba(244,63,94,0.3)" }}>
-              <span style={{ fontSize: "1.5rem", fontWeight: 900, color: "var(--against)", letterSpacing: "0.08em" }}>🎙 GET READY TO GRAB!</span>
+      {/* Buzzer warning flash overlay */}
+      {buzzerWarning && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(244,63,94,0.08)", animation: "flashPulse 0.5s ease-in-out 3" }}>
+          <div style={{ padding: "0.875rem 2rem", borderRadius: "0.875rem", background: "rgba(244,63,94,0.15)", border: "2px solid rgba(244,63,94,0.5)", boxShadow: "0 0 40px rgba(244,63,94,0.3)" }}>
+            <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "var(--against)", letterSpacing: "0.08em" }}>🎙 GET READY TO GRAB!</span>
+          </div>
+        </div>
+      )}
+
+      {/* Fixed error banners */}
+      {recorder.micError && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 49, background: "rgba(244,63,94,0.95)", color: "#fff", textAlign: "center", padding: "0.4rem 1rem", fontSize: "0.78rem", fontWeight: 700 }}>
+          ⚠ {recorder.micError}
+        </div>
+      )}
+      {audioBlocked && (
+        <div onClick={resumeAudio} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 49, background: "rgba(217,119,6,0.95)", backdropFilter: "blur(8px)", color: "#fff", textAlign: "center", padding: "0.4rem 1rem", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}>
+          🔇 Tap here to hear other speakers
+        </div>
+      )}
+
+      <div className="bg-grid" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
+
+        {/* ── PREVIEW BANNER ── */}
+        {isPreview && (
+          <div style={{ flexShrink: 0, padding: "0.35rem 0.75rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.25)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "0.7rem", flexShrink: 0 }}>🧪</span>
+            <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--gold)", letterSpacing: "0.06em", flexShrink: 0 }}>PREVIEW</span>
+            {/* Role picker */}
+            <div style={{ display: "flex", gap: "0.25rem", marginLeft: "0.25rem" }}>
+              {([ ["participant", "⚔️", "Debater"], ["judge", "⚖️", "Judge"], ["spectator", "👁️", "Spectator"] ] as [typeof previewRole, string, string][]).map(([role, icon, label]) => (
+                <button
+                  key={role}
+                  onClick={() => {
+                    setPreviewRole(role);
+                    // Show judge scoring panel immediately when switching to judge
+                    if (role === "judge") {
+                      setShowJudgePanel(true);
+                      setScoringWindowEndsAt(Date.now() + 60_000);
+                    } else {
+                      setShowJudgePanel(false);
+                      setScoringWindowEndsAt(null);
+                    }
+                  }}
+                  style={{
+                    padding: "0.18rem 0.45rem", fontSize: "0.62rem", fontWeight: previewRole === role ? 800 : 600,
+                    borderRadius: "0.375rem", border: `1px solid ${previewRole === role ? "rgba(245,158,11,0.6)" : "var(--border)"}`,
+                    background: previewRole === role ? "rgba(245,158,11,0.14)" : "transparent",
+                    color: previewRole === role ? "var(--gold)" : "var(--muted)", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: "0.2rem",
+                  }}
+                >{icon} {label}</button>
+              ))}
+            </div>
+            {!isMobile && <span style={{ fontSize: "0.62rem", color: "var(--muted)", flex: 1 }}>No mic or network needed.</span>}
+            <div style={{ flex: isMobile ? 1 : undefined }} />
+            <button onClick={() => navigate("/")} className="btn-ghost" style={{ padding: "0.2rem 0.55rem", fontSize: "0.68rem", flexShrink: 0 }}>← Home</button>
+          </div>
+        )}
+
+        {/* ── MOTION STRIP ── */}
+        <div className="glass" style={{
+          flexShrink: 0, margin: "0.4rem 0.625rem 0", borderRadius: "0.75rem",
+          padding: isMobile ? "0.5rem 0.875rem" : "0.375rem 0.875rem",
+          display: "flex", flexDirection: isMobile ? "column" : "row",
+          alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? "0.3rem" : "0.5rem",
+        }}>
+          {/* Top row (mobile) / single row (desktop): label + badges */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", width: isMobile ? "100%" : undefined, flexShrink: 0 }}>
+            <span style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", flexShrink: 0 }}>Motion</span>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flex: isMobile ? 1 : undefined }}>
+              {!isBuzzer && turn && !finished && (
+                <span className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.58rem" }}>R{turn.roundNumber}/{debate.totalRounds}</span>
+              )}
+              {isBuzzer && !finished && (
+                <span className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.58rem" }}>{debate.rounds.length} turns</span>
+              )}
+              {mySide && !isObserver && (
+                <span className={`badge ${mySide === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.58rem" }}>{mySide === "for" ? "FOR" : "AGN"}</span>
+              )}
+              {isObserver && (
+                <span className="badge badge-muted" style={{ fontSize: "0.58rem", background: isJudge ? "rgba(167,139,250,0.15)" : undefined, color: isJudge ? "#a78bfa" : undefined }}>
+                  {isJudge ? "⚖️ JUDGE" : "👁 SPECTATOR"}
+                </span>
+              )}
+              {isBuzzer && isHost && !finished && (
+                <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.15rem 0.4rem", fontSize: "0.62rem" }}>⏹ End</button>
+              )}
+              <span className="badge badge-muted" style={{ fontSize: "0.58rem", textTransform: "capitalize" }}>{debate.mode} · {debate.turnDuration}s</span>
+              <div className={(isConnected || isPreview) ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
             </div>
           </div>
-        )}
+          {/* Topic text — full wrap on mobile, truncated on desktop */}
+          <span style={{
+            fontWeight: 700, color: "var(--text)",
+            fontSize: isMobile ? "0.92rem" : "0.82rem",
+            lineHeight: 1.3,
+            ...(isMobile ? {} : { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }),
+          }}>{debate.topic}</span>
+        </div>
 
-        {/* Mic error banner */}
-        {recorder.micError && (
-          <div style={{ position: "fixed", top: 50, left: 0, right: 0, zIndex: 49, background: "rgba(244,63,94,0.95)", color: "#fff", textAlign: "center", padding: "0.6rem 1rem", fontSize: "0.82rem", fontWeight: 700 }}>
-            ⚠ {recorder.micError}
-          </div>
-        )}
+        {/* ── MAIN ARENA ── */}
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "0.4rem", padding: "0.4rem 0.625rem 0.625rem" }}>
 
-        {/* Audio blocked banner */}
-        {audioBlocked && (
-          <div onClick={resumeAudio} style={{ position: "fixed", top: 50, left: 0, right: 0, zIndex: 49, background: "rgba(217,119,6,0.95)", backdropFilter: "blur(8px)", color: "#fff", textAlign: "center", padding: "0.6rem 1rem", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}>
-            🔇 Tap here to hear other speakers
-          </div>
-        )}
+          {/* ── ROW 1: side panels + center stage ── */}
+          <div style={{
+            flex: "1 1 0", minHeight: 0,
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "106px 1fr 106px",
+            gap: "0.4rem",
+          }}>
 
-        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
-          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, gap: "0.875rem" }}>
-
-            {/* Motion strip */}
-            <div className="glass fade-up" style={{ flexShrink: 0, padding: "0.625rem 1rem", display: "flex", alignItems: isMobile ? "flex-start" : "center", flexDirection: isMobile ? "column" : "row", gap: "0.5rem", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", width: "100%" }}>
-                <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", flexShrink: 0 }}>Motion</div>
-                <div style={{ fontWeight: 700, color: "var(--text)", fontSize: isMobile ? "0.85rem" : "0.95rem", flex: 1 }}>{debate.topic}</div>
-                {/* Status bar (was in nav) */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                  {!isBuzzer && turn && !finished && (
-                    <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem" }}>
-                      R{turn.roundNumber}/{debate.totalRounds}
-                    </div>
-                  )}
-                  {isBuzzer && !finished && !isMobile && (
-                    <div className="badge badge-muted" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem" }}>
-                      {debate.rounds.length} turn{debate.rounds.length !== 1 ? "s" : ""} · Buzzer
-                    </div>
-                  )}
-                  {mySide && !isObserver && (
-                    <span className={`badge ${mySide === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.68rem" }}>
-                      {mySide === "for" ? "FOR" : "AGN"}
-                    </span>
-                  )}
-                  {isObserver && (
-                    <span className="badge badge-muted" style={{ fontSize: "0.68rem", background: isJudge ? "rgba(167,139,250,0.15)" : undefined, color: isJudge ? "#a78bfa" : undefined }}>
-                      {isJudge ? "JUDGE" : "SPECTATOR"}
-                    </span>
-                  )}
-                  {isBuzzer && isHost && !finished && (
-                    <button onClick={handleHostEnd} className="btn-danger" style={{ padding: "0.25rem 0.6rem", fontSize: "0.72rem" }}>
-                      ⏹ {isMobile ? "End" : "End Debate"}
-                    </button>
-                  )}
-                  <div className={isConnected ? "pulse-dot pulse-dot-green" : "pulse-dot pulse-dot-red"} />
-                </div>
+            {/* FOR panel (desktop) */}
+            {!isMobile && (
+              <div className="glass" style={{
+                borderRadius: "0.75rem", padding: "0.5rem 0.3rem",
+                display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden",
+                background: "rgba(var(--for-rgb),0.04)", border: "1px solid rgba(var(--for-rgb),0.18)",
+              }}>
+                <div style={{ fontSize: "0.52rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--for)", textAlign: "center", marginBottom: "0.25rem" }}>FOR</div>
+                {forParticipants.map((p) => <SideCard key={p.userId} p={p} />)}
               </div>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <span className="badge badge-muted" style={{ fontSize: "0.7rem", textTransform: "capitalize" }}>Mode: {debate.mode}</span>
-                <span className="badge badge-muted" style={{ fontSize: "0.7rem" }}>Slot: {debate.turnDuration}s</span>
-              </div>
-            </div>
+            )}
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 280px", gap: "0.875rem", paddingBottom: "0.875rem" }}>
-              {/* Main arena */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+            {/* ── CENTER STAGE ── */}
+            <div className="glass" style={{
+              borderRadius: "0.875rem", overflow: "hidden",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              padding: isMobile ? "0.75rem 0.5rem" : "0.875rem",
+              gap: "0.375rem",
+              background: isBuzzer
+                ? (buzzerState?.currentHolder
+                    ? (holderSide === "for" ? "rgba(var(--for-rgb),0.04)" : "rgba(var(--against-rgb),0.04)")
+                    : "rgba(var(--blue-rgb),0.03)")
+                : (turn
+                    ? (turn.side === "for" ? "rgba(var(--for-rgb),0.04)" : "rgba(var(--against-rgb),0.04)")
+                    : "transparent"),
+              border: `1px solid ${isBuzzer
+                ? (buzzerState?.currentHolder
+                    ? (holderSide === "for" ? "rgba(var(--for-rgb),0.22)" : "rgba(var(--against-rgb),0.22)")
+                    : "rgba(var(--blue-rgb),0.1)")
+                : (turn
+                    ? (turn.side === "for" ? "rgba(var(--for-rgb),0.22)" : "rgba(var(--against-rgb),0.22)")
+                    : "var(--border)")}`,
+              transition: "background 0.3s, border-color 0.3s",
+            }}>
 
-                {/* ── BUZZER MODE ARENA ── */}
-                {isBuzzer && !finished && (
-                  <div className={`fade-up ${isHolder ? (mySide === "for" ? "active-speaker-for" : "active-speaker-against") : (holderSide === "for" ? "glow-for" : holderSide === "against" ? "glow-against" : "")}`}
-                    style={{ borderRadius: "1rem", padding: isMobile ? "1rem" : "1.75rem 2rem", background: buzzerState?.currentHolder ? (holderSide === "for" ? "rgba(16,185,129,0.08)" : "rgba(244,63,94,0.08)") : "rgba(79,142,247,0.05)", border: `1px solid ${buzzerState?.currentHolder ? (holderSide === "for" ? "rgba(16,185,129,0.3)" : "rgba(244,63,94,0.3)") : "rgba(79,142,247,0.2)"}`, transition: "background 0.3s, border-color 0.3s" }}>
+              {showJudgePanel && isJudge ? (
 
-                    {buzzerState?.currentHolder ? (
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? "0.875rem" : "1.5rem", flexWrap: "wrap" }}>
-                        {/* Speak countdown ring */}
-                        <div style={{ position: "relative", width: isMobile ? 80 : 110, height: isMobile ? 80 : 110, flexShrink: 0 }}>
-                          <svg viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-                            <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" strokeWidth="6" />
-                            <circle cx="60" cy="60" r="54" fill="none" stroke={holderIsUrgent ? "var(--against)" : (holderSide === "for" ? "var(--for)" : "var(--against)")} strokeWidth="6" strokeLinecap="round" strokeDasharray={buzzerCircumference} strokeDashoffset={buzzerRingOffset} style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }} />
-                          </svg>
-                          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.6rem", fontWeight: 800, lineHeight: 1, color: holderIsUrgent ? "var(--against)" : (holderSide === "for" ? "var(--for)" : "var(--against)"), textShadow: holderIsUrgent ? "0 0 16px rgba(244,63,94,0.6)" : "none" }}>{holderSecsLeft ?? "–"}</span>
-                            <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>sec</span>
-                          </div>
-                        </div>
-
-                        {/* Speaker info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: holderSide === "for" ? "var(--for)" : "var(--against)", marginBottom: "0.3rem" }}>
-                            {isHolder ? "🎙 You have the mic" : "🎙 Now speaking"}
-                          </div>
-                          <div style={{ fontSize: "1.75rem", fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                            {holderUsername ?? "…"}{isHolder && <span style={{ fontSize: "0.9rem", color: "var(--cyan)", marginLeft: "0.5rem" }}>← you</span>}
-                          </div>
-                          <div style={{ marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                            {holderSide && <span className={`badge ${holderSide === "for" ? "badge-for" : "badge-against"}`}>{holderSide === "for" ? "FOR" : "AGAINST"}</span>}
-                            {isHolder ? (
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                                <div className="pulse-dot pulse-dot-red" />
-                                <span style={{ fontSize: "0.75rem", color: "var(--against)", fontWeight: 700 }}>Recording</span>
-                              </div>
-                            ) : (
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                                <div className="pulse-dot pulse-dot-cyan" />
-                                <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Listening live</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {isHolder && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", flexShrink: 0 }}>
-                            <button onClick={handleBuzzerRelease} disabled={isUploading} className="btn-danger" style={{ padding: "0.75rem 1.5rem", fontSize: "0.9rem" }}>
-                              {isUploading ? "Transcribing…" : "🎙 Release Mic"}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "1.25rem" }}>
-                        <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.5rem" }}>
-                            {buzzerState?.grabWindowOpen ? "⚡ RE-GRAB WINDOW" : "Mic is free"}
-                          </div>
-                          <div style={{ fontSize: "2.5rem", fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em" }}>
-                            {buzzerState?.grabWindowOpen ? "First to grab wins!" : "Waiting…"}
-                          </div>
-                          {isOnCooldown && <div style={{ marginTop: "0.5rem", color: "var(--muted)", fontSize: "0.85rem" }}>Cooling down — <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--text)", fontWeight: 700 }}>{cooldownSecsLeft}s</span></div>}
-                          {isExcludedFromWindow && <div style={{ marginTop: "0.5rem", color: "var(--muted)", fontSize: "0.85rem" }}>You just spoke — let others grab</div>}
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
-                          {buzzerState?.grabWindowOpen && grabWindowSecsLeft != null && (
-                            <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0 }}>
-                              <svg viewBox="0 0 64 64" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-                                <circle cx="32" cy="32" r="28" fill="none" stroke="var(--border)" strokeWidth="4" />
-                                <circle cx="32" cy="32" r="28" fill="none" stroke="var(--cyan)" strokeWidth="4" strokeLinecap="round" strokeDasharray={windowCircumference} strokeDashoffset={windowRingOffset} style={{ transition: "stroke-dashoffset 0.25s linear" }} />
-                              </svg>
-                              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.1rem", fontWeight: 800, color: "var(--cyan)" }}>{grabWindowSecsLeft}</span>
-                              </div>
-                            </div>
-                          )}
-                          <button onClick={handleGrab} disabled={!canGrab} className={canGrab ? "btn-primary" : "btn-ghost"}
-                            style={{ fontSize: "1.25rem", padding: "1rem 3rem", opacity: canGrab ? 1 : 0.45, cursor: canGrab ? "pointer" : "not-allowed", transition: "all 0.15s", ...(canGrab ? { boxShadow: "0 0 24px rgba(79,142,247,0.4)" } : {}) }}>
-                            🎙 {isOnCooldown ? `Wait ${cooldownSecsLeft}s` : isExcludedFromWindow ? "Excluded" : "Grab Mic"}
-                          </button>
-                        </div>
-
-                        {grabError && (
-                          <div style={{ padding: "0.5rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.5rem", color: "var(--against)", fontSize: "0.85rem" }}>⚠ {grabError}</div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Mic status strip (holder only) */}
-                    {isHolder && (
-                      noLiveCaptions
-                        ? <MicActiveStrip elapsed={recorder.elapsed} isUploading={isUploading} />
-                        : (
-                          <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", borderRadius: "0.625rem", background: "rgba(224,242,254,0.75)", border: "1px solid rgba(14,165,233,0.25)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-                              <div className="pulse-dot pulse-dot-cyan" />
-                              <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>Live captions</span>
-                            </div>
-                            <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
-                              <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                                {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
-                                {sr.interim && <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{sr.transcript ? " " : ""}{sr.interim}</span>}
-                              </p>
-                              <div ref={captionsEndRef} />
-                            </div>
-                          </div>
-                        )
-                    )}
-                  </div>
-                )}
-
-                {/* ── ALTERNATE MODE ARENA ── */}
-                {!isBuzzer && turn && !finished && (
-                  <div className={`fade-up ${isMyTurn ? (mySide === "for" ? "active-speaker-for" : "active-speaker-against") : (turn.side === "for" ? "glow-for" : "glow-against")}`}
-                    style={{ borderRadius: "1rem", padding: isMobile ? "1rem" : "1.75rem 2rem", background: turn.side === "for" ? "rgba(16,185,129,0.08)" : "rgba(244,63,94,0.08)", border: `1px solid ${turn.side === "for" ? "rgba(16,185,129,0.3)" : "rgba(244,63,94,0.3)"}` }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? "0.875rem" : "1.5rem", flexWrap: "wrap" }}>
-                      {/* Countdown ring */}
-                      <div style={{ position: "relative", width: isMobile ? 80 : 110, height: isMobile ? 80 : 110, flexShrink: 0 }}>
-                        <svg viewBox="0 0 120 120" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-                          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" strokeWidth="6" />
-                          <circle cx="60" cy="60" r="54" fill="none" stroke={isUrgent ? "var(--against)" : (turn.side === "for" ? "var(--for)" : "var(--against)")} strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={ringOffset} style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }} />
-                        </svg>
-                        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.6rem", fontWeight: 800, lineHeight: 1, color: isUrgent ? "var(--against)" : (turn.side === "for" ? "var(--for)" : "var(--against)"), textShadow: isUrgent ? "0 0 16px rgba(244,63,94,0.6)" : (turn.side === "for" ? "0 0 16px rgba(16,185,129,0.5)" : "0 0 16px rgba(244,63,94,0.5)") }}>{secondsLeft ?? "–"}</span>
-                          <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>sec</span>
-                        </div>
-                      </div>
-
-                      {/* Speaker info */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: turn.side === "for" ? "var(--for)" : "var(--against)", marginBottom: "0.3rem" }}>
-                          {isMyTurn ? "Your turn — speak now" : "Now speaking"}
-                        </div>
-                        <div style={{ fontSize: "1.75rem", fontWeight: 900, color: "var(--text)", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
-                          {turn.speakerUsername}{isMyTurn && <span style={{ fontSize: "0.9rem", color: "var(--cyan)", marginLeft: "0.5rem" }}>← you</span>}
-                        </div>
-                        <div style={{ marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          <span className={`badge ${turn.side === "for" ? "badge-for" : "badge-against"}`}>{turn.side === "for" ? "FOR" : "AGAINST"}</span>
-                          {isMyTurn ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                              <div className="pulse-dot pulse-dot-red" />
-                              <span style={{ fontSize: "0.75rem", color: "var(--against)", fontWeight: 700 }}>Recording</span>
-                            </div>
-                          ) : (
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                              <div className="pulse-dot pulse-dot-cyan" />
-                              <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Listening live</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {isMyTurn && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", flexShrink: 0 }}>
-                          <button onClick={() => handleSubmit()} disabled={isUploading} className="btn-primary" style={{ padding: "0.75rem 1.5rem", fontSize: "0.9rem" }}>
-                            {isUploading ? "Transcribing…" : "Done → Submit"}
-                          </button>
-                        </div>
-                      )}
+                /* ── JUDGE SCORING PANEL ── */
+                <div style={{ width: "100%", overflowY: "auto", maxHeight: "100%", padding: "0 0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.625rem", flexWrap: "wrap", gap: "0.4rem" }}>
+                    <div>
+                      <div style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#a78bfa" }}>Judge Scoring</div>
+                      <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "var(--text)" }}>Score the Debaters</div>
                     </div>
-
-                    {/* Mic status strip */}
-                    {isMyTurn && (
-                      noLiveCaptions
-                        ? <MicActiveStrip elapsed={recorder.elapsed} isUploading={isUploading} />
-                        : (
-                          <div style={{ marginTop: "1rem", padding: "0.875rem 1rem", borderRadius: "0.625rem", background: "rgba(224,242,254,0.75)", border: "1px solid rgba(14,165,233,0.25)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-                              <div className="pulse-dot pulse-dot-cyan" />
-                              <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>Live captions</span>
-                            </div>
-                            <div style={{ maxHeight: "8rem", overflowY: "auto", wordBreak: "break-word" }}>
-                              <p style={{ color: "var(--text)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                                {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
-                                {sr.interim && <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{sr.transcript ? " " : ""}{sr.interim}</span>}
-                              </p>
-                              <div ref={captionsEndRef} />
-                            </div>
-                          </div>
-                        )
-                    )}
-                  </div>
-                )}
-
-                {/* Observer banner (judges / spectators) */}
-                {isObserver && !finished && !showJudgePanel && (
-                  <div className="glass fade-up" style={{ padding: "1.5rem 2rem", textAlign: "center", border: `1px solid ${isJudge ? "rgba(167,139,250,0.3)" : "var(--border)"}`, background: isJudge ? "rgba(167,139,250,0.06)" : "rgba(107,114,128,0.06)" }}>
-                    <div style={{ fontSize: "1.75rem", marginBottom: "0.5rem" }}>{isJudge ? "⚖️" : "👁️"}</div>
-                    <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "var(--text)", marginBottom: "0.35rem" }}>
-                      You are observing as {isJudge ? "Judge" : "Spectator"}
-                    </div>
-                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>
-                      {isJudge
-                        ? "Listen carefully — you'll score the debaters when the debate ends."
-                        : "Sit back and enjoy the debate live."}
-                    </p>
-                  </div>
-                )}
-
-                {/* ── JUDGE SCORING PANEL ── */}
-                {showJudgePanel && isJudge && debate && (
-                  <div className="glass fade-up" style={{ padding: "2rem", border: "1px solid rgba(167,139,250,0.4)", background: "rgba(167,139,250,0.06)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
-                      <div>
-                        <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#a78bfa", marginBottom: "0.3rem" }}>Judge Scoring</div>
-                        <h2 style={{ fontSize: "1.4rem", fontWeight: 900, color: "var(--text)", margin: 0 }}>Score the Debaters</h2>
-                      </div>
-                      {!judgeSubmitted && (
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.875rem", borderRadius: "0.625rem", background: judgeSecsLeft <= 10 ? "rgba(244,63,94,0.12)" : "rgba(167,139,250,0.1)", border: `1px solid ${judgeSecsLeft <= 10 ? "rgba(244,63,94,0.3)" : "rgba(167,139,250,0.2)"}` }}>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.1rem", fontWeight: 800, color: judgeSecsLeft <= 10 ? "var(--against)" : "#a78bfa" }}>{judgeSecsLeft}s</span>
-                          <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>to submit</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
-                      Rate each debater 0–100 overall. Your scores will be averaged with the AI judge's evaluation.
-                    </p>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
-                      {debate.turnOrder.map((p) => {
-                        const score = judgeScores[p.userId] ?? 50;
-                        return (
-                          <div key={p.userId} style={{ padding: "1rem 1.25rem", borderRadius: "0.75rem", background: "rgba(249,247,255,0.5)", border: "1px solid var(--border)" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
-                              <div className={`avatar ${p.side === "for" ? "avatar-for" : "avatar-against"}`} style={{ width: "2rem", height: "2rem", fontSize: "0.8rem" }}>
-                                {p.username.charAt(0).toUpperCase()}
-                              </div>
-                              <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem" }}>{p.username}</div>
-                                <span className={`badge ${p.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.62rem" }}>{p.side === "for" ? "FOR" : "AGAINST"}</span>
-                              </div>
-                              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.5rem", fontWeight: 900, color: score >= 70 ? "var(--for)" : score >= 40 ? "var(--cyan)" : "var(--against)", minWidth: 48, textAlign: "right" }}>
-                                {score}
-                              </div>
-                            </div>
-                            <input
-                              type="range"
-                              min={0} max={100} step={1}
-                              value={score}
-                              disabled={judgeSubmitted}
-                              onChange={(e) => setJudgeScores((prev) => ({ ...prev, [p.userId]: Number(e.target.value) }))}
-                              style={{ width: "100%", accentColor: "#a78bfa" }}
-                            />
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "var(--muted)", marginTop: "0.2rem" }}>
-                              <span>0 — Weak</span>
-                              <span>50 — Average</span>
-                              <span>Excellent — 100</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {!judgeSubmitted ? (
-                      <button onClick={handleJudgeSubmit} className="btn-primary" style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800, background: "linear-gradient(135deg,#7c3aed,#a78bfa)" }}>
-                        ⚖️ Submit Scores →
-                      </button>
-                    ) : (
-                      <div style={{ padding: "1rem", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "0.75rem", textAlign: "center", color: "var(--for)", fontWeight: 700 }}>
-                        ✓ Scores submitted — navigating to results…
+                    {!judgeSubmitted && scoringSecsLeft !== null && (
+                      <div style={{ padding: "0.25rem 0.5rem", borderRadius: "0.4rem", background: scoringSecsLeft <= 10 ? "rgba(var(--against-rgb),0.12)" : "rgba(167,139,250,0.1)", border: `1px solid ${scoringSecsLeft <= 10 ? "rgba(var(--against-rgb),0.3)" : "rgba(167,139,250,0.2)"}` }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.88rem", fontWeight: 800, color: scoringSecsLeft <= 10 ? "var(--against)" : "#a78bfa" }}>{scoringSecsLeft}s</span>
                       </div>
                     )}
                   </div>
-                )}
-
-                {/* Finished (non-judge) */}
-                {finished && !showJudgePanel && (
-                  <div className="glass fade-up glow-gold" style={{ padding: "2.5rem", textAlign: "center", border: "1px solid rgba(245,158,11,0.3)" }}>
-                    <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--gold)", marginBottom: "0.5rem" }}>Debate Complete</div>
-                    <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "var(--text)", margin: "0 0 0.5rem", letterSpacing: "-0.02em" }} className="text-glow-gold">All turns finished</h2>
-                    <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>Navigating to results…</p>
-                  </div>
-                )}
-
-                {error && (
-                  <div style={{ padding: "0.875rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.75rem", color: "#f43f5e", fontSize: "0.875rem" }}>⚠ {error}</div>
-                )}
-
-                {/* Transcript feed */}
-                <div className="glass fade-up" style={{ padding: "1.5rem 1.75rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: showTranscript ? "1rem" : 0, cursor: "pointer" }} onClick={() => setShowTranscript((v) => !v)}>
-                    <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>
-                      Transcript — {debate.rounds.length} argument{debate.rounds.length !== 1 ? "s" : ""}
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                    <span style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{showTranscript ? "▲" : "▼"}</span>
-                  </div>
-                  {showTranscript && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {debate.rounds.length === 0 && (
-                        <p style={{ color: "var(--muted)", fontSize: "0.875rem", textAlign: "center", padding: "0.5rem" }}>Arguments appear here as speakers finish their turn.</p>
-                      )}
-                      {debate.rounds.map((r: Round, i: number) => (
-                        <div key={i} style={{ padding: "0.875rem 1rem", borderRadius: "0.625rem", background: r.side === "for" ? "rgba(16,185,129,0.06)" : "rgba(244,63,94,0.06)", border: `1px solid ${r.side === "for" ? "rgba(16,185,129,0.2)" : "rgba(244,63,94,0.2)"}` }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", color: "var(--muted)" }}>#{r.roundNumber}</span>
-                            <span style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.85rem" }}>{r.speakerUsername}</span>
-                            <span className={`badge ${r.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.62rem", marginLeft: "auto" }}>{r.side === "for" ? "FOR" : "AGAINST"}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.625rem" }}>
+                    {debate.turnOrder.map((p) => {
+                      const score = judgeScores[p.userId] ?? 50;
+                      return (
+                        <div key={p.userId} style={{ padding: "0.5rem 0.625rem", borderRadius: "0.5rem", background: "var(--surface2)", border: "1px solid var(--border)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.35rem" }}>
+                            <div className={`avatar ${p.side === "for" ? "avatar-for" : "avatar-against"}`} style={{ width: "1.4rem", height: "1.4rem", fontSize: "0.62rem" }}>{p.username.charAt(0).toUpperCase()}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.78rem" }}>{p.username}</div>
+                              <span className={`badge ${p.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.52rem" }}>{p.side === "for" ? "FOR" : "AGAINST"}</span>
+                            </div>
+                            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1rem", fontWeight: 900, color: score >= 70 ? "var(--for)" : score >= 40 ? "var(--cyan)" : "var(--against)" }}>{score}</div>
                           </div>
-                          <p style={{ color: r.argument ? "var(--text)" : "var(--muted)", fontSize: "0.875rem", margin: 0, lineHeight: 1.55, fontStyle: r.argument ? "normal" : "italic" }}>{r.argument || "(no transcript captured)"}</p>
+                          <input type="range" min={0} max={100} step={5} value={score} disabled={judgeSubmitted}
+                            onChange={(e) => setJudgeScores((prev) => ({ ...prev, [p.userId]: Number(e.target.value) }))}
+                            style={{ width: "100%", accentColor: "#a78bfa" }} />
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
+                  </div>
+                  {!judgeSubmitted ? (
+                    <button onClick={handleJudgeSubmit} className="btn-primary" style={{ width: "100%", padding: "0.55rem", fontSize: "0.82rem", fontWeight: 800, background: "linear-gradient(135deg,#7c3aed,#a78bfa)" }}>⚖️ Lock Scores →</button>
+                  ) : (
+                    <div style={{ padding: "0.5rem", background: "rgba(var(--for-rgb),0.1)", border: "1px solid rgba(var(--for-rgb),0.3)", borderRadius: "0.5rem", textAlign: "center", color: "var(--for)", fontWeight: 700, fontSize: "0.78rem" }}>✓ Scores locked — waiting for results…</div>
                   )}
                 </div>
-              </div>
 
-              {/* Sidebar */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+              ) : scoringSecsLeft !== null && !isJudge ? (
 
-                {/* Buzzer: participant panel */}
-                {isBuzzer ? (
-                  <div className="glass fade-up" style={{ padding: "1.5rem" }}>
-                    <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "1rem" }}>Participants</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                      {debate.turnOrder.map((p) => {
-                        const isActive   = buzzerState?.currentHolder === p.userId;
-                        const isYou      = p.userId === user?.id;
-                        const userCd     = buzzerState?.cooldowns.find((c) => c.userId === p.userId);
-                        const cdSec      = userCd && new Date(userCd.unlocksAt) > nowDate ? Math.ceil((new Date(userCd.unlocksAt).getTime() - now) / 1000) : 0;
-                        const speakCount = buzzerState?.speakHistory.filter((id) => id === p.userId).length ?? 0;
-                        return (
-                          <div key={p.userId} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", borderRadius: "0.5rem", background: isActive ? (p.side === "for" ? "rgba(16,185,129,0.12)" : "rgba(244,63,94,0.12)") : "rgba(249,247,255,0.5)", border: `1px solid ${isActive ? (p.side === "for" ? "rgba(16,185,129,0.4)" : "rgba(244,63,94,0.4)") : "var(--border)"}`, transition: "all 0.2s" }}>
-                            <div className={`avatar ${p.side === "for" ? "avatar-for" : "avatar-against"}`} style={{ width: "1.6rem", height: "1.6rem", fontSize: "0.7rem" }}>
-                              {p.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div style={{ flex: 1, overflow: "hidden" }}>
-                              <div style={{ fontWeight: isActive ? 800 : 600, color: isActive ? "var(--text)" : "var(--subtle)", fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {p.username}{isYou ? " ★" : ""}
-                              </div>
-                              <div style={{ fontSize: "0.65rem", color: "var(--muted)", display: "flex", gap: "0.4rem" }}>
-                                <span>{speakCount} turn{speakCount !== 1 ? "s" : ""}</span>
-                                {cdSec > 0 && <span style={{ color: "var(--against)" }}>· CD {cdSec}s</span>}
-                              </div>
-                            </div>
-                            {isActive && <div className="pulse-dot pulse-dot-red" />}
-                          </div>
-                        );
-                      })}
-                    </div>
+                /* ── NON-JUDGE SCORING WAIT SCREEN ── */
+                <div style={{ textAlign: "center", padding: "0.5rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}>
+                  {/* Pulsing gavel icon */}
+                  <div style={{ fontSize: "2rem", animation: "pulse 1.8s ease-in-out infinite" }}>⚖️</div>
+                  <div style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#a78bfa" }}>Scoring in Progress</div>
+                  <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "var(--text)" }}>Judges are locking<br />their scores</div>
+                  <p style={{ color: "var(--muted)", fontSize: "0.68rem", margin: 0, lineHeight: 1.5 }}>
+                    Results will appear once<br />judges finalise their verdict
+                  </p>
+                  {/* Countdown ring */}
+                  <div style={{ position: "relative", width: 56, height: 56, marginTop: "0.25rem" }}>
+                    <svg viewBox="0 0 56 56" style={{ transform: "rotate(-90deg)", width: "100%", height: "100%" }}>
+                      <circle cx="28" cy="28" r="22" fill="none" stroke="rgba(167,139,250,0.12)" strokeWidth="5" />
+                      <circle cx="28" cy="28" r="22" fill="none"
+                        stroke="#a78bfa" strokeWidth="5" strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 22}
+                        strokeDashoffset={2 * Math.PI * 22 * (1 - scoringSecsLeft / 60)}
+                        style={{ transition: "stroke-dashoffset 0.9s linear" }} />
+                    </svg>
+                    <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace", fontSize: "0.78rem", fontWeight: 900, color: scoringSecsLeft <= 10 ? "var(--against)" : "#a78bfa" }}>
+                      {scoringSecsLeft}
+                    </span>
                   </div>
-                ) : (
-                  /* Alternate mode: speaker queue */
-                  <div className="glass fade-up" style={{ padding: "1.5rem" }}>
-                    <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "1rem" }}>Speaker Queue</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                      {debate.turnOrder.map((p, i) => {
-                        const isActive = turn && p.userId === turn.speakerId;
-                        const isYou    = p.userId === user?.id;
-                        return (
-                          <div key={p.userId} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", borderRadius: "0.5rem", background: isActive ? (p.side === "for" ? "rgba(16,185,129,0.12)" : "rgba(244,63,94,0.12)") : "rgba(249,247,255,0.5)", border: `1px solid ${isActive ? (p.side === "for" ? "rgba(16,185,129,0.4)" : "rgba(244,63,94,0.4)") : "var(--border)"}`, transition: "all 0.2s" }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", color: "var(--muted)", width: 18, flexShrink: 0, textAlign: "right" }}>{i + 1}.</span>
-                            <div className={`avatar ${p.side === "for" ? "avatar-for" : "avatar-against"}`} style={{ width: "1.6rem", height: "1.6rem", fontSize: "0.7rem" }}>
-                              {p.username.charAt(0).toUpperCase()}
+                </div>
+
+              ) : finished ? (
+
+                /* ── FINISHED ── */
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: "2rem" }}>🏆</div>
+                  <div style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold)", margin: "0.25rem 0 0.1rem" }}>Debate Complete</div>
+                  <p style={{ color: "var(--muted)", fontSize: "0.72rem", margin: 0 }}>Navigating to results…</p>
+                </div>
+
+              ) : isObserver && !showJudgePanel ? (
+
+                /* ── OBSERVER BANNER ── */
+                <div style={{ textAlign: "center", padding: "0.5rem" }}>
+                  <div style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>{isJudge ? "⚖️" : "👁️"}</div>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "var(--text)", marginBottom: "0.15rem" }}>
+                    {isJudge ? "Judging" : "Spectating"}
+                  </div>
+                  <p style={{ color: "var(--muted)", fontSize: "0.7rem", margin: 0 }}>
+                    {isJudge ? "Use the +/− buttons beside each debater to score as you watch" : "Watching live"}
+                  </p>
+                </div>
+
+              ) : (
+
+                /* ── RING STAGE ── */
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.375rem", width: "100%" }}>
+
+                  {/* The ring with embedded center content */}
+                  <div style={{ position: "relative", width: ringSize, height: ringSize, flexShrink: 0 }}>
+                    <svg viewBox="0 0 200 200" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+                      <circle cx="100" cy="100" r={RING_R} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="12" />
+                      <circle cx="100" cy="100" r={RING_R} fill="none"
+                        stroke={stageRingColor} strokeWidth="12" strokeLinecap="round"
+                        strokeDasharray={RING_CIRC} strokeDashoffset={stageRingOffset}
+                        style={{ transition: "stroke-dashoffset 0.25s linear, stroke 0.3s" }} />
+                    </svg>
+
+                    {/* Center content */}
+                    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.15rem" }}>
+                      {isBuzzer ? (
+                        buzzerState?.currentHolder ? (
+                          <>
+                            <div style={{
+                              width: 44, height: 44, borderRadius: "50%",
+                              background: holderSide === "for"
+                                ? "linear-gradient(135deg,rgba(var(--for-rgb),0.2),rgba(var(--for-rgb),0.38))"
+                                : "linear-gradient(135deg,rgba(var(--against-rgb),0.2),rgba(var(--against-rgb),0.38))",
+                              border: `2.5px solid ${holderIsUrgent ? "var(--against)" : (holderSide === "for" ? "var(--for)" : "var(--against)")}`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: "1.1rem", fontWeight: 900,
+                              color: holderSide === "for" ? "var(--for)" : "var(--against)",
+                              transition: "border-color 0.3s",
+                            }}>
+                              {holderUsername?.charAt(0).toUpperCase() ?? "?"}
                             </div>
-                            <span style={{ fontWeight: isActive ? 800 : 600, color: isActive ? "var(--text)" : "var(--subtle)", fontSize: "0.85rem", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {p.username}{isYou ? " ★" : ""}
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.35rem", fontWeight: 800, lineHeight: 1, color: holderIsUrgent ? "var(--against)" : (holderSide === "for" ? "var(--for)" : "var(--against)"), transition: "color 0.3s" }}>
+                              {holderSecsLeft ?? "—"}
                             </span>
-                            {isActive && <div className="pulse-dot pulse-dot-cyan" />}
-                          </div>
-                        );
-                      })}
+                            <span style={{ fontSize: "0.46rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.1em" }}>SEC</span>
+                          </>
+                        ) : preparingSecsLeft !== null && preparingSecsLeft > 0 ? (
+                          <>
+                            <span style={{ fontSize: "1.1rem" }}>⏳</span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.35rem", fontWeight: 800, color: "var(--gold)", lineHeight: 1 }}>{preparingSecsLeft}</span>
+                            <span style={{ fontSize: "0.46rem", fontWeight: 700, color: "var(--gold)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Ready</span>
+                          </>
+                        ) : (
+                          /* Mic grab button lives inside the ring */
+                          <button
+                            onClick={handleGrab} disabled={!canGrab}
+                            className={canGrab ? "mic-grab-pulse" : ""}
+                            style={{
+                              width: 62, height: 62, borderRadius: "50%",
+                              border: "none", cursor: canGrab ? "pointer" : "not-allowed",
+                              background: canGrab
+                                ? "linear-gradient(135deg,var(--blue),var(--violet))"
+                                : "var(--surface2)",
+                              color: canGrab ? "#fff" : "var(--muted)",
+                              fontSize: "1.5rem",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              opacity: canGrab ? 1 : 0.4, transition: "all 0.2s",
+                              boxShadow: canGrab ? "0 4px 22px rgba(var(--blue-rgb),0.45)" : "none",
+                            }}
+                          >🎙</button>
+                        )
+                      ) : (
+                        /* Alternate mode */
+                        turn ? (
+                          <>
+                            <div style={{
+                              width: 44, height: 44, borderRadius: "50%",
+                              background: turn.side === "for"
+                                ? "linear-gradient(135deg,rgba(var(--for-rgb),0.2),rgba(var(--for-rgb),0.38))"
+                                : "linear-gradient(135deg,rgba(var(--against-rgb),0.2),rgba(var(--against-rgb),0.38))",
+                              border: `2.5px solid ${isUrgent ? "var(--against)" : (turn.side === "for" ? "var(--for)" : "var(--against)")}`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: "1.1rem", fontWeight: 900,
+                              color: turn.side === "for" ? "var(--for)" : "var(--against)",
+                            }}>
+                              {turn.speakerUsername.charAt(0).toUpperCase()}
+                            </div>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.35rem", fontWeight: 800, lineHeight: 1, color: isUrgent ? "var(--against)" : (turn.side === "for" ? "var(--for)" : "var(--against)") }}>
+                              {secondsLeft ?? "—"}
+                            </span>
+                            <span style={{ fontSize: "0.46rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.1em" }}>SEC</span>
+                          </>
+                        ) : (
+                          <div className="pulse-dot pulse-dot-cyan" style={{ width: 10, height: 10 }} />
+                        )
+                      )}
                     </div>
                   </div>
-                )}
 
-                {/* Progress */}
-                <div className="glass fade-up" style={{ padding: "1rem 1.25rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                    <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{isBuzzer ? "Turns taken" : "Progress"}</span>
-                    <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text)" }}>
-                      {isBuzzer ? debate.rounds.length : `${debate.rounds.length}/${debate.turnOrder.length * debate.totalRounds}`}
-                    </span>
+                  {/* Status text below ring */}
+                  <div style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.15rem", minHeight: "2rem" }}>
+                    {isBuzzer ? (
+                      buzzerState?.currentHolder ? (
+                        <>
+                          <div style={{ fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: holderSide === "for" ? "var(--for)" : "var(--against)" }}>
+                            {isHolder ? "🎙 Your turn" : "🎙 Now speaking"}
+                          </div>
+                          <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "var(--text)" }}>
+                            {holderUsername}{isHolder && <span style={{ fontSize: "0.65rem", color: "var(--cyan)", marginLeft: "0.3rem" }}>you</span>}
+                          </div>
+                          {holderSide && <span className={`badge ${holderSide === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.55rem" }}>{holderSide === "for" ? "FOR" : "AGAINST"}</span>}
+                        </>
+                      ) : preparingSecsLeft !== null && preparingSecsLeft > 0 ? (
+                        <>
+                          <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--gold)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Get Ready</div>
+                          <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Mic opens in {preparingSecsLeft}s</div>
+                        </>
+                      ) : buzzerState?.grabWindowOpen ? (
+                        <>
+                          <div style={{ fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>⚡ Grab Window</div>
+                          {grabWindowSecsLeft != null && <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.85rem", fontWeight: 800, color: "var(--cyan)" }}>{grabWindowSecsLeft}s</div>}
+                          {isOnCooldown && <div style={{ fontSize: "0.62rem", color: "var(--against)" }}>Cooldown: {cooldownSecsLeft}s</div>}
+                          {isExcludedFromWindow && <div style={{ fontSize: "0.62rem", color: "var(--muted)" }}>You just spoke</div>}
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Waiting</div>
+                          {isOnCooldown && <div style={{ fontSize: "0.62rem", color: "var(--against)" }}>Cooldown: {cooldownSecsLeft}s</div>}
+                        </>
+                      )
+                    ) : (
+                      turn ? (
+                        <>
+                          <div style={{ fontSize: "0.58rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: turn.side === "for" ? "var(--for)" : "var(--against)" }}>
+                            {isMyTurn ? "Your turn" : "Now speaking"}
+                          </div>
+                          <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "var(--text)" }}>
+                            {turn.speakerUsername}{isMyTurn && <span style={{ fontSize: "0.65rem", color: "var(--cyan)", marginLeft: "0.3rem" }}>you</span>}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: "0.68rem", color: "var(--muted)" }}>Waiting for next turn…</div>
+                      )
+                    )}
+                    {(error || grabError) && (
+                      <div style={{ fontSize: "0.65rem", color: "var(--against)", marginTop: "0.1rem" }}>⚠ {error || grabError}</div>
+                    )}
                   </div>
-                  {!isBuzzer && (
-                    <>
-                      <div className="score-bar-track">
-                        <div className="score-bar-fill" style={{ width: `${debate.turnOrder.length * debate.totalRounds > 0 ? (debate.rounds.length / (debate.turnOrder.length * debate.totalRounds)) * 100 : 0}%` }} />
+
+                  {/* Action buttons */}
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                    {isHolder && (
+                      <button onClick={handleBuzzerRelease} disabled={isUploading} className="btn-danger" style={{ padding: "0.4rem 0.875rem", fontSize: "0.78rem" }}>
+                        {isUploading ? "Transcribing…" : "🎙 Release"}
+                      </button>
+                    )}
+                    {isBuzzer && !isHolder && !isObserver && (holderIsUrgent || holderUrgentAll) && buzzerState?.currentHolder && (
+                      <button onClick={handleGrab} disabled={!canGrab} className={canGrab ? "mic-grab-pulse" : ""} style={{
+                        padding: "0.3rem 0.65rem", fontSize: "0.68rem", borderRadius: "2rem",
+                        border: "none", cursor: canGrab ? "pointer" : "not-allowed",
+                        background: canGrab ? "linear-gradient(135deg,var(--blue),var(--violet))" : "var(--surface2)",
+                        color: canGrab ? "#fff" : "var(--muted)", fontWeight: 700,
+                        opacity: canGrab ? 1 : 0.5,
+                      }}>
+                        🎙 Standby · {holderSecsLeft}s
+                      </button>
+                    )}
+                    {isMyTurn && (
+                      <button onClick={() => handleSubmit()} disabled={isUploading} className="btn-primary" style={{ padding: "0.4rem 0.875rem", fontSize: "0.78rem" }}>
+                        {isUploading ? "Transcribing…" : "Done → Submit"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Mic active / live captions strip */}
+                  {(isHolder || isMyTurn) && (
+                    noLiveCaptions ? (
+                      <MicActiveStrip elapsed={recorder.elapsed} isUploading={isUploading} />
+                    ) : (
+                      <div style={{ width: "100%", maxWidth: 340, padding: "0.45rem 0.625rem", borderRadius: "0.5rem", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "0.2rem" }}>
+                          <div className="pulse-dot pulse-dot-cyan" />
+                          <span style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--cyan)" }}>Live captions</span>
+                        </div>
+                        <p style={{ color: "var(--text)", fontSize: "0.75rem", margin: 0, lineHeight: 1.4 }}>
+                          {sr.transcript || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Listening…</span>}
+                          {sr.interim && <span style={{ color: "var(--muted)", fontStyle: "italic" }}> {sr.interim}</span>}
+                        </p>
+                        <div ref={captionsEndRef} />
                       </div>
-                      <p style={{ color: "var(--muted)", fontSize: "0.72rem", marginTop: "0.4rem" }}>
-                        {debate.totalRounds} round{debate.totalRounds !== 1 ? "s" : ""} · {debate.turnOrder.length} speakers
-                      </p>
-                    </>
+                    )
                   )}
-                  {isBuzzer && <p style={{ color: "var(--muted)", fontSize: "0.72rem", marginTop: "0.3rem" }}>Free-for-all · Host ends debate</p>}
+
+                </div>
+              )}
+            </div>
+
+            {/* AGAINST panel (desktop) */}
+            {!isMobile && (
+              <div className="glass" style={{
+                borderRadius: "0.75rem", padding: "0.5rem 0.3rem",
+                display: "flex", flexDirection: "column", gap: "0.1rem", overflow: "hidden",
+                background: "rgba(var(--against-rgb),0.04)", border: "1px solid rgba(var(--against-rgb),0.18)",
+              }}>
+                <div style={{ fontSize: "0.52rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--against)", textAlign: "center", marginBottom: "0.25rem" }}>AGAINST</div>
+                {againstParticipants.map((p) => <SideCard key={p.userId} p={p} />)}
+              </div>
+            )}
+          </div>
+
+          {/* ── MOBILE: FOR + AGAINST mini row ── */}
+          {isMobile && (
+            <div style={{ flexShrink: 0, display: "flex", gap: "0.4rem" }}>
+              <div className="glass" style={{ flex: 1, borderRadius: "0.5rem", padding: "0.35rem 0.5rem", display: "flex", gap: "0.3rem", alignItems: "center", background: "rgba(var(--for-rgb),0.04)", border: "1px solid rgba(var(--for-rgb),0.15)" }}>
+                <span style={{ fontSize: "0.48rem", fontWeight: 800, color: "var(--for)", letterSpacing: "0.1em", flexShrink: 0, writingMode: "vertical-rl", transform: "rotate(180deg)" }}>FOR</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+                  {forParticipants.map((p) => {
+                    const isActive = p.userId === activeSpeakerUserId;
+                    return (
+                      <div key={p.userId} className={isActive ? "avatar-speaking-for" : ""} style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(var(--for-rgb),0.2)", border: `1.5px solid ${isActive ? "var(--for)" : "var(--border)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", fontWeight: 900, color: "var(--for)" }}>
+                        {p.username.charAt(0).toUpperCase()}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+              <div className="glass" style={{ flex: 1, borderRadius: "0.5rem", padding: "0.35rem 0.5rem", display: "flex", gap: "0.3rem", alignItems: "center", justifyContent: "flex-end", background: "rgba(var(--against-rgb),0.04)", border: "1px solid rgba(var(--against-rgb),0.15)" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", justifyContent: "flex-end" }}>
+                  {againstParticipants.map((p) => {
+                    const isActive = p.userId === activeSpeakerUserId;
+                    return (
+                      <div key={p.userId} className={isActive ? "avatar-speaking-against" : ""} style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(var(--against-rgb),0.2)", border: `1.5px solid ${isActive ? "var(--against)" : "var(--border)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.6rem", fontWeight: 900, color: "var(--against)" }}>
+                        {p.username.charAt(0).toUpperCase()}
+                      </div>
+                    );
+                  })}
+                </div>
+                <span style={{ fontSize: "0.48rem", fontWeight: 800, color: "var(--against)", letterSpacing: "0.1em", flexShrink: 0, writingMode: "vertical-rl" }}>AGN</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── OBSERVERS STRIP (judges + spectators) ── */}
+          {showObservers && (
+            <div className="glass" style={{
+              flexShrink: 0, borderRadius: "0.625rem", padding: "0.3rem 0.75rem",
+              display: "flex", alignItems: "center", gap: "0.5rem", overflow: "hidden",
+              background: "rgba(107,114,128,0.03)", border: "1px solid var(--border)",
+            }}>
+              {/* Judges */}
+              {mockJudges.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
+                  <span style={{ fontSize: "0.5rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#a78bfa", flexShrink: 0 }}>⚖️ Judges</span>
+                  <div style={{ display: "flex", gap: "0.25rem" }}>
+                    {mockJudges.map((m) => <ObserverChip key={m.userId} member={m} isJudgeMember />)}
+                  </div>
+                </div>
+              )}
+              {mockJudges.length > 0 && mockSpectators.length > 0 && (
+                <div style={{ width: 1, height: 20, background: "var(--border)", flexShrink: 0 }} />
+              )}
+              {/* Spectators */}
+              {mockSpectators.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flex: 1, minWidth: 0, overflow: "hidden" }}>
+                  <span style={{ fontSize: "0.5rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", flexShrink: 0 }}>👁 Spectators</span>
+                  <div style={{ display: "flex", gap: "0.25rem", overflow: "hidden" }}>
+                    {mockSpectators.map((m) => <ObserverChip key={m.userId} member={m} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TRANSCRIPT ── */}
+          <div className="glass" style={{
+            flex: "0 1 160px", minHeight: 80, overflow: "hidden",
+            display: "flex", flexDirection: "column",
+            borderRadius: "0.875rem", padding: "0.5rem 0.75rem",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.4rem", flexShrink: 0 }}>
+              <span style={{ fontSize: "0.52rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>Transcript</span>
+              <span style={{ fontSize: "0.58rem", color: "var(--muted)" }}>{debate.rounds.length} arg{debate.rounds.length !== 1 ? "s" : ""}</span>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+              {!isBuzzer && (
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.58rem", color: "var(--muted)" }}>
+                  {debate.rounds.length}/{debate.turnOrder.length * debate.totalRounds}
+                </span>
+              )}
+            </div>
+            {!isBuzzer && (
+              <div className="score-bar-track" style={{ flexShrink: 0, marginBottom: "0.4rem" }}>
+                <div className="score-bar-fill" style={{ width: `${debate.turnOrder.length * debate.totalRounds > 0 ? (debate.rounds.length / (debate.turnOrder.length * debate.totalRounds)) * 100 : 0}%` }} />
+              </div>
+            )}
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+              {debate.rounds.length === 0 ? (
+                <p style={{ color: "var(--muted)", fontSize: "0.72rem", textAlign: "center", margin: "0.5rem 0", fontStyle: "italic" }}>
+                  Arguments appear here as speakers finish.
+                </p>
+              ) : (
+                debate.rounds.map((r: Round, i: number) => (
+                  <div key={i} style={{
+                    padding: "0.4rem 0.5rem", borderRadius: "0.4rem", flexShrink: 0,
+                    background: r.side === "for" ? "rgba(var(--for-rgb),0.06)" : "rgba(var(--against-rgb),0.06)",
+                    border: `1px solid ${r.side === "for" ? "rgba(var(--for-rgb),0.16)" : "rgba(var(--against-rgb),0.16)"}`,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginBottom: "0.2rem" }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.56rem", color: "var(--muted)" }}>#{r.roundNumber}</span>
+                      <span style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.7rem" }}>{r.speakerUsername}</span>
+                      <span className={`badge ${r.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.5rem", marginLeft: "auto" }}>{r.side === "for" ? "FOR" : "AGN"}</span>
+                    </div>
+                    <p style={{ color: r.argument ? "var(--text)" : "var(--muted)", fontSize: "0.72rem", margin: 0, lineHeight: 1.4, fontStyle: r.argument ? "normal" : "italic" }}>
+                      {r.argument || "(no transcript captured)"}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-        </main>
+
+        </div>
       </div>
     </InAppBrowserGate>
   );

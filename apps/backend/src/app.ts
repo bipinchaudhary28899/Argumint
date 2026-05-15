@@ -75,4 +75,22 @@ export async function attachDebateRoutes(
   app.use("/debates", debateRoutes);
 }
 
+export async function attachPaymentRoutes(
+  app: express.Application,
+  redisClient: Redis | null
+) {
+  const { createPaymentRoutes } = await import("./payments/payments.routes.js");
+  // NOTE: The webhook route uses express.raw() internally, so it must be
+  // registered BEFORE the global express.json() middleware would re-parse
+  // the body. Because we scope express.raw() to just that one route inside
+  // createPaymentRoutes, the ordering here is fine.
+  const paymentRoutes = createPaymentRoutes(redisClient);
+  app.use("/payments", paymentRoutes);
+}
+
+export async function attachAdminRoutes(app: express.Application) {
+  const { createAdminRoutes } = await import("./routes/admin.routes.js");
+  app.use("/admin", createAdminRoutes());
+}
+
 export default app;

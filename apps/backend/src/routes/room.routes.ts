@@ -7,6 +7,7 @@ import {
   UpdateRoomSettingsSchema,
 } from "@argumint/shared";
 import { RoomService } from "../services/room.service.js";
+import { User } from "../models/User.model.js";
 
 export function createRoomRoutes(redisClient: Redis | null) {
   const router = express.Router();
@@ -28,9 +29,29 @@ export function createRoomRoutes(redisClient: Redis | null) {
         });
       }
 
+      // ── Pro feature enforcement ───────────────────────────────────────────
+      // Verify Pro status server-side so the frontend gate can't be bypassed.
+      const hostUser = await User.findById(req.userId!).lean();
+      const hostIsPro = hostUser?.isPro ?? false;
+
+      if (!hostIsPro) {
+        if ((parsed.data as any).maxJudges > 0) {
+          return res.status(403).json({ error: "Judges require a Pro subscription" });
+        }
+        if ((parsed.data as any).maxSpectators > 0) {
+          return res.status(403).json({ error: "Spectators require a Pro subscription" });
+        }
+        if (parsed.data.debateMode === "buzzer") {
+          return res.status(403).json({ error: "Buzzer mode requires a Pro subscription" });
+        }
+        if (parsed.data.votingEnabled) {
+          return res.status(403).json({ error: "Topic voting requires a Pro subscription" });
+        }
+      }
+
       const room = await RoomService.createRoom(
         req.userId!,
-        req.username!, // ← was: req.email!.split("@")[0]
+        req.username!,
         parsed.data
       );
 

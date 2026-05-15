@@ -52,10 +52,13 @@ apiClient.interceptors.response.use(
 // .message ("Network Error") and absent .response are preserved intact.
 const handleError = (error: AxiosError): never => {
   if (error.response?.data && typeof error.response.data === "object") {
-    const data = error.response.data as { error?: string };
-    const wrapped = Object.assign(new Error(data.error || "An error occurred"), {
-      response: error.response,
-    });
+    const data = error.response.data as { error?: string; message?: string };
+    // Prefer the detailed `message` field (zod validation reason) over the
+    // generic `error` label ("Invalid input"), so the UI shows something useful.
+    const wrapped = Object.assign(
+      new Error(data.message || data.error || "An error occurred"),
+      { response: error.response },
+    );
     throw wrapped;
   }
   throw error; // network error — preserve original AxiosError

@@ -319,11 +319,11 @@ export function RoomLobby() {
       <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
       <div
         className="bg-grid"
-        style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflowX: "hidden" }}
+        style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}
         onClick={() => roleMenuFor && setRoleMenuFor(null)}
       >
-        <main style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
-          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, gap: "0.875rem" }}>
+        <main style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
+          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, gap: "0.875rem" }}>
 
             {/* Room code hero */}
             <div className="glass fade-up" style={{ flexShrink: 0, padding: isMobile ? "0.75rem 1rem" : "0.875rem 1.5rem" }}>
@@ -352,9 +352,9 @@ export function RoomLobby() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: "0.875rem", paddingBottom: "0.875rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: "0.875rem", paddingBottom: "0.875rem", flex: 1, minHeight: 0 }}>
               {/* Left column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", minHeight: 0 }}>
 
                 {/* Topic */}
                 <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
@@ -381,15 +381,15 @@ export function RoomLobby() {
                 )}
 
                 {/* Players */}
-                <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem" }}>
+                <div className="glass fade-up" style={{ padding: "1rem 1.5rem", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem", flexShrink: 0 }}>
                     <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>
                       Players — {participants.length}
                     </span>
                     <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1, minHeight: 0, overflowY: "auto" }}>
                     {participants.map((p) => {
                       const isYou   = p.userId === user?.id;
                       const ready   = p.status === "ready";
@@ -406,7 +406,7 @@ export function RoomLobby() {
                             position: "relative",
                             display: "flex", alignItems: "center", gap: "0.875rem",
                             padding: "0.75rem 1rem", borderRadius: "0.625rem",
-                            background: isYou ? "rgba(224,242,254,0.6)" : "rgba(249,247,255,0.4)",
+                            background: isYou ? "rgba(14,165,233,0.07)" : "var(--surface2)",
                             border: `1px solid ${ready && isDebating ? "rgba(16,185,129,0.5)" : isYou ? "rgba(34,211,238,0.2)" : "var(--border)"}`,
                             boxShadow: ready && isDebating ? "0 2px 8px rgba(16,185,129,0.12)" : "none",
                             opacity: offline ? 0.45 : 1,
@@ -573,7 +573,7 @@ export function RoomLobby() {
                       ) : (
                         <button onClick={handleUnready} className="btn-danger" style={{ width: "100%", marginBottom: "0.75rem" }}>✕ Not Ready</button>
                       )}
-                      <div style={{ padding: "0.75rem 1rem", background: "rgba(224,242,254,0.55)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "0.625rem" }}>
+                      <div style={{ padding: "0.75rem 1rem", background: "rgba(14,165,233,0.07)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "0.625rem" }}>
                         <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
                           {debatingReady && debatingParticipants.length >= 2 ? "All ready — waiting for host…" : "Ready up to start the debate"}
                         </p>

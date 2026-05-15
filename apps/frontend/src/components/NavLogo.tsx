@@ -4,14 +4,20 @@
  *
  * Use as a drop-in replacement for the "ARGUMINT" text span/button in
  * every nav. Pass onClick for pages where the logo navigates home.
+ *
+ * Logo priority: glacier > pro > default
  */
-export function NavLogo({ onClick }: { onClick?: () => void }) {
+export function NavLogo({ onClick, isPro, isGlacier }: { onClick?: () => void; isPro?: boolean; isGlacier?: boolean }) {
+  const src = isGlacier
+    ? "/logo/glacier_logo.png"
+    : isPro
+      ? "/logo/pro_logo.png"
+      : "/logo/logo.png";
+
   const inner = (
-    <div style={{
-      backgroundColor:"transparent"
-    }}>
+    <div style={{ backgroundColor: "transparent" }}>
       <img
-        src="/logo/logo.png"
+        src={src}
         alt="Argumint"
         style={{ width: 70, height: 70, borderRadius: "0.25rem", objectFit: "contain", display: "block" }}
       />

@@ -192,6 +192,53 @@ export function initializeSocketIO(
   };
 
   /**
+   * Open the 60-second judge scoring window after a debate ends.
+   * Checks if the room has active judges. Broadcasts:
+   *   debate:scoring-window-opened { debateId, locksAt, hasJudges, windowSecs }
+   * After 60 s auto-locks scores and broadcasts:
+   *   debate:judge-scores-locked { debateId, autoLocked: true }
+   */
+  const SCORING_WINDOW_SEC = 60;
+  const openScoringWindow = async (debateId: string, roomId: string) => {
+    try {
+      const room = await Room.findById(roomId).lean();
+      const activeJudges = ((room as any)?.participants ?? []).filter(
+        (p: any) => p.role === "judge" && p.status !== "disconnected",
+      );
+      const hasJudges = activeJudges.length > 0;
+      const locksAt   = new Date(Date.now() + SCORING_WINDOW_SEC * 1_000);
+
+      io.to(`room:${roomId}`).emit("debate:scoring-window-opened", {
+        debateId,
+        locksAt:    locksAt.toISOString(),
+        hasJudges,
+        windowSecs: SCORING_WINDOW_SEC,
+      });
+
+      if (!hasJudges) return; // no one to wait for — clients navigate immediately
+
+      // Server-side safety net: auto-lock when window expires.
+      const lockTimer = setTimeout(async () => {
+        activeTimers.delete(`${debateId}:scoring`);
+        try {
+          const d = await Debate.findById(debateId);
+          if (d && !d.judgeScoresLockedAt) {
+            d.judgeScoresLockedAt = new Date();
+            await d.save();
+          }
+        } catch { /* best-effort */ }
+        io.to(`room:${roomId}`).emit("debate:judge-scores-locked", {
+          debateId,
+          autoLocked: true,
+        });
+      }, SCORING_WINDOW_SEC * 1_000);
+      activeTimers.set(`${debateId}:scoring`, lockTimer);
+    } catch (err) {
+      console.error("[ScoringWindow] Error:", err);
+    }
+  };
+
+  /**
    * Broadcast the *current* turn (whatever's currently set on the debate)
    * and schedule its auto-end. Accepts an already-fetched debate to avoid
    * a redundant DB round-trip after startFirstTurn.
@@ -243,6 +290,8 @@ export function initializeSocketIO(
       // Kick off the AI judge fire-and-forget. Clients show a "judging…"
       // state on the result page until we broadcast debate:result-ready.
       runJudgeAsync(debateId, debate.roomId);
+      // Open the 60-second judge-scoring window.
+      void openScoringWindow(debateId, debate.roomId);
       return;
     }
 
@@ -675,7 +724,14 @@ export function initializeSocketIO(
         socket.data.roomId = debate.roomId;
         socket.data.roomCode = debate.roomCode;
 
-        callback({ success: true, debate: debate.toObject() });
+        // Include active room participants so the debate page can render
+        // the judges/spectators panel without a separate round-trip.
+        const room = await Room.findById(debate.roomId).lean();
+        const roomParticipants = (room?.participants ?? []).filter(
+          (p: any) => p.status !== "disconnected",
+        );
+
+        callback({ success: true, debate: debate.toObject(), roomParticipants });
       } catch (error: any) {
         console.error("[Socket] Get debate state error:", error);
         callback({
@@ -773,11 +829,10 @@ export function initializeSocketIO(
         durationSeconds: elapsedSec,
       });
 
-      // Cancel per-speaker auto-timeout timer (if not already fired).
-      const speakerTimer = activeTimers.get(`${debateId}:speaker`);
-      if (speakerTimer) {
-        clearTimeout(speakerTimer);
-        activeTimers.delete(`${debateId}:speaker`);
+      // Cancel per-speaker timers (auto-timeout + 10-second urgent warning).
+      for (const key of [`${debateId}:speaker`, `${debateId}:urgent`]) {
+        const t = activeTimers.get(key);
+        if (t) { clearTimeout(t); activeTimers.delete(key); }
       }
 
       // Dynamic anti-starvation cooldown:
@@ -797,52 +852,76 @@ export function initializeSocketIO(
       bs.currentHolder = null;
       bs.holderStartedAt = null;
 
-      // Open 5-second re-grab window (excludes lastSpeaker).
-      const windowEndsAt = new Date(now.getTime() + 5_000);
-      bs.grabWindowOpen = true;
-      bs.grabWindowEndsAt = windowEndsAt;
+      // ── "Get Ready" prep phase ────────────────────────────────────────────
+      // Grab window is NOT open yet — everyone has 5 seconds to prepare.
       debate.markModified("buzzerState");
       await debate.save();
 
       const lastRound = debate.rounds[debate.rounds.length - 1];
+      const prepEndsAt = new Date(now.getTime() + 5_000);
+
       io.to(`room:${debate.roomId}`).emit("debate:argument-submitted", {
         debateId,
         round: lastRound,
         rounds: debate.rounds,
       });
 
+      // Holder is gone; window not open yet.
       io.to(`room:${debate.roomId}`).emit("buzzer:holder-changed", {
         holder: null,
         username: null,
-        grabWindowOpen: true,
-        grabWindowEndsAt: windowEndsAt,
+        grabWindowOpen: false,
+        grabWindowEndsAt: null,
         excludedUserId: speakerId,
       });
 
-      io.to(`room:${debate.roomId}`).emit("buzzer:window-open", {
-        endsAt: windowEndsAt,
+      // Countdown broadcast so clients can show a "Get Ready" UI.
+      io.to(`room:${debate.roomId}`).emit("buzzer:preparing", {
+        endsAt: prepEndsAt,
         excludedUserId: speakerId,
       });
 
-      // Auto-close grab window after 5 seconds if nobody grabbed.
-      const winTimer = setTimeout(async () => {
-        activeTimers.delete(`${debateId}:window`);
+      // After 5 s prep: open the actual 5-second grab window.
+      const prepTimer = setTimeout(async () => {
+        activeTimers.delete(`${debateId}:preparing`);
         const d = await Debate.findById(debateId);
-        if (!d?.buzzerState || !d.buzzerState.grabWindowOpen) return;
-        d.buzzerState.grabWindowOpen = false;
-        d.buzzerState.grabWindowEndsAt = null;
+        if (!d?.buzzerState || d.buzzerState.grabWindowOpen || d.status !== "in_progress") return;
+        const windowEndsAt = new Date(Date.now() + 5_000);
+        d.buzzerState.grabWindowOpen = true;
+        d.buzzerState.grabWindowEndsAt = windowEndsAt;
         d.markModified("buzzerState");
         await d.save();
-        io.to(`room:${d.roomId}`).emit("buzzer:window-closed", { debateId });
+
         io.to(`room:${d.roomId}`).emit("buzzer:holder-changed", {
           holder: null,
           username: null,
-          grabWindowOpen: false,
-          grabWindowEndsAt: null,
-          excludedUserId: null,
+          grabWindowOpen: true,
+          grabWindowEndsAt: windowEndsAt,
+          excludedUserId: speakerId,
         });
+        io.to(`room:${d.roomId}`).emit("buzzer:window-open", {
+          endsAt: windowEndsAt,
+          excludedUserId: speakerId,
+        });
+
+        // Auto-close grab window after 5 s if nobody grabbed.
+        const winTimer = setTimeout(async () => {
+          activeTimers.delete(`${debateId}:window`);
+          const d2 = await Debate.findById(debateId);
+          if (!d2?.buzzerState || !d2.buzzerState.grabWindowOpen) return;
+          d2.buzzerState.grabWindowOpen = false;
+          d2.buzzerState.grabWindowEndsAt = null;
+          d2.markModified("buzzerState");
+          await d2.save();
+          io.to(`room:${d2.roomId}`).emit("buzzer:window-closed", { debateId });
+          io.to(`room:${d2.roomId}`).emit("buzzer:holder-changed", {
+            holder: null, username: null,
+            grabWindowOpen: false, grabWindowEndsAt: null, excludedUserId: null,
+          });
+        }, 5_000);
+        activeTimers.set(`${debateId}:window`, winTimer);
       }, 5_000);
-      activeTimers.set(`${debateId}:window`, winTimer);
+      activeTimers.set(`${debateId}:preparing`, prepTimer);
     };
 
     /**
@@ -871,6 +950,11 @@ export function initializeSocketIO(
         // Mic is held and no re-grab window is open → reject.
         if (bs.currentHolder !== null && !bs.grabWindowOpen) {
           return callback?.({ success: false, error: "Mic is busy" });
+        }
+
+        // Prep phase is active — grab window not open yet, reject early clickers.
+        if (activeTimers.has(`${debateId}:preparing`)) {
+          return callback?.({ success: false, error: "Get ready — mic opens shortly" });
         }
 
         // During re-grab window: last speaker cannot immediately re-grab.
@@ -928,6 +1012,19 @@ export function initializeSocketIO(
           }
         }, speakerMs);
         activeTimers.set(`${debateId}:speaker`, speakerTimer);
+
+        // 10-second urgent warning — fires 10 s before auto-timeout so all
+        // non-holders can see the standby grab button early.
+        if (speakerMs > 10_000) {
+          const urgentTimer = setTimeout(() => {
+            activeTimers.delete(`${debateId}:urgent`);
+            io.to(`room:${debate.roomId}`).emit("buzzer:holder-urgent", {
+              debateId,
+              secsLeft: 10,
+            });
+          }, speakerMs - 10_000);
+          activeTimers.set(`${debateId}:urgent`, urgentTimer);
+        }
 
         io.to(`room:${debate.roomId}`).emit("buzzer:holder-changed", {
           holder: userId,
@@ -996,7 +1093,7 @@ export function initializeSocketIO(
         }
 
         // Clear all buzzer timers for this debate.
-        for (const key of [`${debateId}:warning`, `${debateId}:speaker`, `${debateId}:window`, debateId]) {
+        for (const key of [`${debateId}:warning`, `${debateId}:speaker`, `${debateId}:window`, `${debateId}:preparing`, `${debateId}:urgent`, `${debateId}:scoring`, debateId]) {
           const t = activeTimers.get(key);
           if (t) { clearTimeout(t); activeTimers.delete(key); }
         }
@@ -1015,6 +1112,7 @@ export function initializeSocketIO(
         });
 
         runJudgeAsync(debateId, debate.roomId);
+        void openScoringWindow(debateId, debate.roomId);
         callback?.({ success: true });
       } catch (err: any) {
         console.error("[Buzzer] Host-end error:", err);
@@ -1217,6 +1315,9 @@ export function initializeSocketIO(
         if (!debate.judgeScoresLockedAt) {
           debate.judgeScoresLockedAt = new Date();
           await debate.save();
+          // Cancel the server-side auto-lock timer — a judge locked early.
+          const scoringTimer = activeTimers.get(`${debateId}:scoring`);
+          if (scoringTimer) { clearTimeout(scoringTimer); activeTimers.delete(`${debateId}:scoring`); }
           io.to(`room:${debate.roomId}`).emit("debate:judge-scores-locked", { debateId });
         }
         callback?.({ success: true });

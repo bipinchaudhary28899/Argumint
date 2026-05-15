@@ -10,6 +10,12 @@ export interface UserDocument {
     debatesLost: number;
     totalDebates: number;
   };
+  // Razorpay fields
+  razorpayCustomerId?: string | null;
+  subscriptionId?: string | null;
+  subscriptionStatus?: string | null;
+  isPro?: boolean;
+  currentPeriodEnd?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +30,9 @@ export interface PublicUserInfo {
     debatesLost: number;
     totalDebates: number;
   };
+  isPro: boolean;
+  subscriptionStatus?: string | null;
+  currentPeriodEnd?: Date | null;
   createdAt: Date;
 }
 
@@ -37,6 +46,9 @@ export function toPublicUser(user: {
     debatesLost: number;
     totalDebates: number;
   };
+  isPro?: boolean;
+  subscriptionStatus?: string | null;
+  currentPeriodEnd?: Date | null;
   createdAt: Date;
 }): PublicUserInfo {
   return {
@@ -45,6 +57,9 @@ export function toPublicUser(user: {
     email: user.email,
     xp: user.xp ?? 0,
     stats: user.stats,
+    isPro: user.isPro ?? false,
+    subscriptionStatus: user.subscriptionStatus ?? null,
+    currentPeriodEnd: user.currentPeriodEnd ?? null,
     createdAt: user.createdAt,
   };
 }
