@@ -8,6 +8,7 @@ import { Room } from "../models/Room.model.js";
 import { User } from "../models/User.model.js";
 import { getLevelInfo } from "@argumint/shared";
 import { computeAndSaveCredibility } from "../services/credibility.service.js";
+import { Types } from "mongoose";
 import Redis from "ioredis";
 
 /**
@@ -205,11 +206,11 @@ export function initializeSocketIO(
               try {
                 const judgeScores = referenceOrder.map((uid: string) => {
                   const entry = js.scores.find((s: any) => s.userId === uid);
-                  return { participantId: entry?.userId ?? uid, score: entry?.score ?? 0 };
+                  return { participantId: new Types.ObjectId(entry?.userId ?? uid), score: entry?.score ?? 0 };
                 });
                 await computeAndSaveCredibility(
-                  js.judgeId,
-                  debateId,
+                  new Types.ObjectId(js.judgeId),
+                  new Types.ObjectId(debateId),
                   judgeScores,
                   referenceScores,
                   allJudgeScoreSets
