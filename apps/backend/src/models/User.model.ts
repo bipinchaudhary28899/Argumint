@@ -11,6 +11,13 @@ export interface IUser extends Document {
     debatesLost: number;
     totalDebates: number;
   };
+  // ── Judge credibility ─────────────────────────────────────────────────────
+  judgeStats: {
+    totalSessions: number;           // how many debates this user has judged
+    credibilityScore: number;        // rolling 0–1 score (new judges start at 0.75)
+    credibilityBand: "strong" | "moderate" | "flagged"; // derived band
+    lastJudgedAt: Date | null;
+  };
   // ── Razorpay / subscription fields ───────────────────────────────────────
   razorpayCustomerId?: string; // Razorpay cust_xxx — created on first checkout
   subscriptionId?: string;     // Razorpay sub_xxx
@@ -49,6 +56,13 @@ const userSchema = new Schema<IUser>(
       debatesWon: { type: Number, default: 0 },
       debatesLost: { type: Number, default: 0 },
       totalDebates: { type: Number, default: 0 },
+    },
+    // ── Judge credibility ─────────────────────────────────────────────────────
+    judgeStats: {
+      totalSessions:    { type: Number, default: 0 },
+      credibilityScore: { type: Number, default: 0 },
+      credibilityBand:  { type: String, default: "moderate", enum: ["strong", "moderate", "flagged"] },
+      lastJudgedAt:     { type: Date,   default: null },
     },
     // Razorpay fields — all optional so existing documents aren't affected
     razorpayCustomerId: { type: String, default: null },

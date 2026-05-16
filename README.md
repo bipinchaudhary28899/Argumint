@@ -198,6 +198,82 @@ Create Room → Lobby → [Optional Voting] → Prep Screen → Debate → Resul
 
 ---
 
+## Judge Credibility System
+
+Every user in Argumint has **two independent scoring zones**:
+
+| Zone | What it tracks | Where it appears |
+|---|---|---|
+| **Debater XP / Level** | Points earned from arguing in debates | Player card on the Home page |
+| **Judge Credibility** | Reliability score as a human judge | Judge card on the Home page |
+
+These zones are completely separate — being a great debater has no effect on your judge credibility, and vice versa.
+
+### How Judge Credibility Works
+
+When a Pro room has human judges, each judge submits scores for the debate participants. After the debate ends, the system computes a **session score** for each judge using six pillars, then updates the judge's rolling credibility score.
+
+#### The 6 Pillars
+
+| # | Pillar | Weight | Description |
+|---|---|---|---|
+| P1 | **Rank Agreement** | 30% | How well the judge's ranking of participants matches the AI's ranking (Spearman correlation) |
+| P2 | **Gap Preservation** | 20% | Whether the relative score gaps between participants match the AI's gaps |
+| P3 | **Consensus Similarity** | 15% | Agreement with the median score across all human judges in the same debate |
+| P4 | **Outlier Coherence** | 10% | Consistency over time — judges who are perpetually outliers score lower here (requires ≥3 past sessions) |
+| P5 | **Bias Detection** | 15% | Detects systematic favouritism toward certain participants across history (requires ≥5 past sessions) |
+| P6 | **Integrity Score** | 10% | Penalises lazy scoring — all participants given identical scores gets 0 here |
+
+Pillars P4 and P5 require historical data to compute. For new judges they are excluded from the weighted average, so early sessions are scored on P1–P3 + P6 only.
+
+#### Rolling Update (EMA)
+
+Credibility is updated using an **exponential moving average** with an adaptive decay window of 20 sessions:
+
+```
+λ = 2 / (min(N, 20) + 1)
+new_credibility = λ × session_score + (1 − λ) × prev_credibility
+```
+
+New judges start at **0.75** (moderate band) so they get a fair chance before enough history accumulates.
+
+#### Bias Cap (P5 Hard Cap)
+
+If P5 detects strong systematic bias, it caps the entire credibility score — regardless of other pillar scores:
+
+| Bias severity | Multiplier applied |
+|---|---|
+| Clean (CV < 0.30) | ×1.00 (no cap) |
+| Moderate (CV 0.30–0.60) | ×0.75 |
+| Severe (CV ≥ 0.60) | ×0.50 |
+
+#### Credibility Bands
+
+| Score range | Band | Meaning |
+|---|---|---|
+| ≥ 0.75 | **Strong** | Scores consistently in line with AI and peer judges |
+| 0.45 – 0.74 | **Moderate** | Reasonable agreement, some divergence |
+| < 0.45 | **Flagged** | Significant divergence or detected bias |
+
+### Data Stored
+
+Each judged debate creates a `JudgeSession` document containing the raw scores submitted, all six pillar scores (where computable), the composite session score, and the judge's credibility after that session was factored in.
+
+### API
+
+`GET /auth/judge-history` (auth required) — returns the authenticated user's `judgeStats` summary and full session history with pillar breakdowns.
+
+### Key Files
+
+| File | Purpose |
+|---|---|
+| `apps/backend/src/models/JudgeSession.model.ts` | One record per (judge × debate) — stores raw scores and pillar breakdown |
+| `apps/backend/src/services/credibility.service.ts` | 6-pillar computation, rolling EMA update, bias cap |
+| `apps/backend/src/models/User.model.ts` | `judgeStats` subdocument on User |
+| `apps/frontend/src/pages/Home.tsx` | Judge credibility card displayed alongside the debater XP card |
+
+---
+
 ## License
 
 MIT

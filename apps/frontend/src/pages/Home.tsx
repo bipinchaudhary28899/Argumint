@@ -112,9 +112,10 @@ export function Home() {
     return !localStorage.getItem(`proWelcome_${userId}`);
   });
 
-  const xp        = (user as any)?.xp ?? 0;
-  const lvlInfo   = getLevelInfo(xp);
-  const userStats = (user as any)?.stats ?? { debatesWon: 0, debatesLost: 0, totalDebates: 0 };
+  const xp          = (user as any)?.xp ?? 0;
+  const lvlInfo     = getLevelInfo(xp);
+  const userStats   = (user as any)?.stats ?? { debatesWon: 0, debatesLost: 0, totalDebates: 0 };
+  const judgeStats  = (user as any)?.judgeStats ?? { totalSessions: 0, credibilityScore: 0.75, credibilityBand: "moderate", lastJudgedAt: null };
 
   useEffect(() => {
     // Fetch once on first visit; skip on subsequent mounts (cache is warm).
@@ -256,6 +257,71 @@ export function Home() {
         <StatBox label="Total" value={userStats.totalDebates} />
         <div style={{ width: 1, background: "var(--border)" }} />
         <StatBox label="Win %" value={winRate(userStats.debatesWon, userStats.totalDebates)} color="var(--cyan)" />
+      </div>
+    </div>
+  );
+
+  // ─── Judge Credibility Card ───────────────────────────────────────────────
+  const credPct   = Math.round((judgeStats.credibilityScore ?? 0.75) * 100);
+  const credBand  = judgeStats.credibilityBand ?? "moderate";
+  const credColor = credBand === "strong"   ? "#22c55e"
+                  : credBand === "moderate" ? "var(--blue)"
+                  :                           "#ef4444";
+  const credBg    = credBand === "strong"   ? "rgba(34,197,94,0.1)"
+                  : credBand === "moderate" ? "rgba(79,70,229,0.08)"
+                  :                           "rgba(239,68,68,0.08)";
+  const credBorder = credBand === "strong"  ? "rgba(34,197,94,0.3)"
+                  : credBand === "moderate" ? "rgba(79,70,229,0.25)"
+                  :                           "rgba(239,68,68,0.3)";
+  const credIcon   = credBand === "strong"  ? "⚖️"
+                  : credBand === "moderate" ? "📋"
+                  :                           "⚠️";
+
+  const JudgeCard = judgeStats.totalSessions > 0 ? (
+    <div className="glass fade-up" style={{ padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+          <span style={{ fontSize: "0.95rem" }}>⚖️</span>
+          <span style={{ fontSize: "0.62rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>Judge Credibility</span>
+        </div>
+        <span style={{ fontSize: "0.6rem", fontWeight: 800, padding: "0.12rem 0.5rem", borderRadius: "9999px", background: credBg, border: `1px solid ${credBorder}`, color: credColor, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          {credIcon} {credBand}
+        </span>
+      </div>
+
+      {/* Score arc / bar */}
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+          <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Credibility Score</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.75rem", fontWeight: 900, color: credColor }}>{credPct}%</span>
+        </div>
+        <div style={{ height: 8, borderRadius: "9999px", background: isDark ? "rgba(255,255,255,0.1)" : "var(--border2)", overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: "9999px", width: `${credPct}%`, background: `linear-gradient(90deg,${credColor},${credColor}cc)`, transition: "width 1.1s cubic-bezier(.4,0,.2,1)" }} />
+        </div>
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: "0.5rem", padding: "0.625rem 0.5rem", borderRadius: "0.625rem", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.025)", border: "1px solid var(--border)" }}>
+        <StatBox label="Sessions"   value={judgeStats.totalSessions} />
+        <div style={{ width: 1, background: "var(--border)" }} />
+        <StatBox label="Score"      value={`${credPct}%`}           color={credColor} />
+        <div style={{ width: 1, background: "var(--border)" }} />
+        <StatBox label="Band"       value={credBand.charAt(0).toUpperCase() + credBand.slice(1)} color={credColor} />
+      </div>
+
+      {judgeStats.lastJudgedAt && (
+        <div style={{ fontSize: "0.58rem", color: "var(--muted)", textAlign: "right" }}>
+          Last judged: {new Date(judgeStats.lastJudgedAt).toLocaleDateString()}
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="glass fade-up" style={{ padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "0.75rem", opacity: 0.72 }}>
+      <span style={{ fontSize: "1.25rem", flexShrink: 0 }}>⚖️</span>
+      <div>
+        <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "var(--text)", marginBottom: "0.15rem" }}>Judge Credibility</div>
+        <div style={{ fontSize: "0.62rem", color: "var(--muted)", lineHeight: 1.4 }}>Join a room as a judge to start building your credibility score.</div>
       </div>
     </div>
   );
@@ -559,6 +625,7 @@ export function Home() {
           {activeTab === "profile" && (
             <div style={{ height: "100%", overflowY: "auto", padding: "0.875rem 1rem" }}>
               {MobilePlayerCard}
+              <div style={{ marginTop: "0.75rem" }}>{JudgeCard}</div>
               <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
                 {/* Dev tools */}
                 {isDev && (
@@ -934,6 +1001,7 @@ export function Home() {
           {!isMobile && (
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {PlayerCard}
+              {JudgeCard}
               {LeaderboardPanel}
             </div>
           )}

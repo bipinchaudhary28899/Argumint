@@ -1,5 +1,12 @@
 import { PublicUser } from "./auth.types";
 
+export interface JudgeStats {
+  totalSessions: number;
+  credibilityScore: number;           // rolling 0–1 (new judges start at 0.75)
+  credibilityBand: "strong" | "moderate" | "flagged";
+  lastJudgedAt: Date | null;
+}
+
 export interface UserDocument {
   _id: string;
   username: string;       // min 3, max 30 chars (enforced at validation layer)
@@ -10,6 +17,7 @@ export interface UserDocument {
     debatesLost: number;
     totalDebates: number;
   };
+  judgeStats?: JudgeStats;
   // Razorpay fields
   razorpayCustomerId?: string | null;
   subscriptionId?: string | null;
@@ -30,6 +38,7 @@ export interface PublicUserInfo {
     debatesLost: number;
     totalDebates: number;
   };
+  judgeStats: JudgeStats;
   isPro: boolean;
   subscriptionStatus?: string | null;
   currentPeriodEnd?: Date | null;
@@ -46,6 +55,7 @@ export function toPublicUser(user: {
     debatesLost: number;
     totalDebates: number;
   };
+  judgeStats?: JudgeStats | null;
   isPro?: boolean;
   subscriptionStatus?: string | null;
   currentPeriodEnd?: Date | null;
@@ -57,6 +67,12 @@ export function toPublicUser(user: {
     email: user.email,
     xp: user.xp ?? 0,
     stats: user.stats,
+    judgeStats: user.judgeStats ?? {
+      totalSessions: 0,
+      credibilityScore: 0,
+      credibilityBand: "moderate",
+      lastJudgedAt: null,
+    },
     isPro: user.isPro ?? false,
     subscriptionStatus: user.subscriptionStatus ?? null,
     currentPeriodEnd: user.currentPeriodEnd ?? null,

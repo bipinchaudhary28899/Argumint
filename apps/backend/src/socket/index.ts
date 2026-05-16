@@ -7,6 +7,7 @@ import { type IDebate, Debate } from "../models/Debate.model.js";
 import { Room } from "../models/Room.model.js";
 import { User } from "../models/User.model.js";
 import { getLevelInfo } from "@argumint/shared";
+import { computeAndSaveCredibility } from "../services/credibility.service.js";
 import Redis from "ioredis";
 
 /**
@@ -180,11 +181,51 @@ export function initializeSocketIO(
 
         // Fetch the latest judgeScores in case judges submitted during AI judging
         const freshDebate = await Debate.findById(debateId).select("judgeScores");
+        const judgeScoresArr = freshDebate?.judgeScores ?? [];
+
+        // ── Update judge credibility for each human judge ─────────────────────
+        if (judgeScoresArr.length > 0) {
+          // Build reference scores from AI result (same participant order for all judges)
+          const referenceOrder = result.scores.map((s: any) => s.userId);
+          const referenceScores = referenceOrder.map((uid: string) => {
+            const s = result.scores.find((r: any) => r.userId === uid);
+            return s?.total ?? 0;
+          });
+
+          // Build all-judge score sets (for P3 consensus)
+          const allJudgeScoreSets: number[][] = judgeScoresArr.map((js: any) =>
+            referenceOrder.map((uid: string) => {
+              const entry = js.scores.find((s: any) => s.userId === uid);
+              return entry?.score ?? 0;
+            })
+          );
+
+          await Promise.allSettled(
+            judgeScoresArr.map(async (js: any) => {
+              try {
+                const judgeScores = referenceOrder.map((uid: string) => {
+                  const entry = js.scores.find((s: any) => s.userId === uid);
+                  return { participantId: entry?.userId ?? uid, score: entry?.score ?? 0 };
+                });
+                await computeAndSaveCredibility(
+                  js.judgeId,
+                  debateId,
+                  judgeScores,
+                  referenceScores,
+                  allJudgeScoreSets
+                );
+              } catch (credErr) {
+                console.error(`[Credibility] Failed for judge ${js.judgeId}:`, credErr);
+              }
+            })
+          );
+        }
+
         io.to(`room:${roomId}`).emit("debate:result-ready", {
           debateId,
           result,
           xpAwards,
-          judgeScores: freshDebate?.judgeScores ?? [],
+          judgeScores: judgeScoresArr,
         });
       } catch (err: any) {
         console.error("[Judge] Failed:", err?.message);

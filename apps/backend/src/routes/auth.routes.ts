@@ -86,6 +86,49 @@ export function createAuthRoutes(
   });
 
   /**
+   * GET /auth/judge-history
+   * Judging history for the authenticated user — one entry per debate judged.
+   * Returns pillar breakdown, session score, and credibility trajectory.
+   */
+  router.get("/judge-history", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { getJudgeHistory } = await import("../services/credibility.service.js");
+      const { User }            = await import("../models/User.model.js");
+      const userId = (req as any).user?.userId as string;
+
+      const { Types } = await import("mongoose");
+      const judgeId   = new Types.ObjectId(userId);
+
+      const [sessions, user] = await Promise.all([
+        getJudgeHistory(judgeId, 30, 0),
+        User.findById(userId).select("judgeStats").lean(),
+      ]);
+
+      res.json({
+        judgeStats: (user as any)?.judgeStats ?? {
+          totalSessions:    0,
+          credibilityScore: 0.75,
+          credibilityBand:  "moderate",
+          lastJudgedAt:     null,
+        },
+        sessions: sessions.map((s: any) => ({
+          id:               s._id.toString(),
+          debateId:         s.debateId?._id?.toString() ?? s.debateId?.toString(),
+          topic:            s.debateId?.topic ?? null,
+          debateCreatedAt:  s.debateId?.createdAt ?? null,
+          sessionScore:     s.sessionScore,
+          credibilityAfter: s.credibilityAfter,
+          pillar:           s.pillar,
+          createdAt:        s.createdAt,
+        })),
+      });
+    } catch (err) {
+      console.error("[judge-history]", err);
+      res.json({ judgeStats: null, sessions: [] });
+    }
+  });
+
+  /**
    * GET /auth/leaderboard - Top 10 users by XP (auth required)
    */
   router.get("/leaderboard", authMiddleware, async (_req: Request, res: Response) => {
