@@ -21,8 +21,8 @@
  */
 
 import { Types } from "mongoose";
-import { User }         from "../models/User.model";
-import { JudgeSession } from "../models/JudgeSession.model";
+import { User }         from "../models/User.model.js";
+import { JudgeSession } from "../models/JudgeSession.model.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const PILLAR_WEIGHTS = {
