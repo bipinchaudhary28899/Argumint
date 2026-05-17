@@ -87,6 +87,12 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
 let _statsCache: { activeRooms: number; liveDebates: number; totalDebates: number } | null = null;
 let _leaderboardCache: LeaderboardEntry[] | null = null;
 
+/** Exported only for unit tests — do not call in production code. */
+export function _resetCacheForTests() {
+  _statsCache = null;
+  _leaderboardCache = null;
+}
+
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function Home() {
@@ -128,7 +134,7 @@ export function Home() {
       _leaderboardCache = lb;
       setStats(s);
       setLeaderboard(lb);
-    });
+    }).catch(() => { /* network errors are non-fatal — UI degrades gracefully */ });
     return () => { alive = false; };
   }, []);
 

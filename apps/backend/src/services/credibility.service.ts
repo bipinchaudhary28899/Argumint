@@ -67,10 +67,10 @@ export interface CredibilityResult {
   band:            "strong" | "moderate" | "flagged";
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers (exported for unit testing) ──────────────────────────────────────
 
 /** Pearson correlation between two equal-length arrays */
-function pearson(a: number[], b: number[]): number {
+export function pearson(a: number[], b: number[]): number {
   const n = a.length;
   if (n < 2) return 0;
   const meanA = a.reduce((s, x) => s + x, 0) / n;
@@ -87,27 +87,27 @@ function pearson(a: number[], b: number[]): number {
 }
 
 /** Convert raw scores to dense rank (1 = highest) */
-function toRanks(scores: number[]): number[] {
+export function toRanks(scores: number[]): number[] {
   const sorted = [...scores].sort((a, b) => b - a);
   return scores.map(s => sorted.indexOf(s) + 1);
 }
 
 /** Spearman rank correlation (0–1 normalised) */
-function spearman(a: number[], b: number[]): number {
+export function spearman(a: number[], b: number[]): number {
   const ra = toRanks(a);
   const rb = toRanks(b);
   return (pearson(ra, rb) + 1) / 2; // normalise −1…+1 → 0…1
 }
 
 /** Credibility band from numeric score */
-function toBand(score: number): "strong" | "moderate" | "flagged" {
+export function toBand(score: number): "strong" | "moderate" | "flagged" {
   if (score >= 0.75) return "strong";
   if (score >= 0.45) return "moderate";
   return "flagged";
 }
 
 /** EMA lambda for N total sessions */
-function lambda(n: number): number {
+export function lambda(n: number): number {
   return 2 / (Math.min(n, EMA_WINDOW) + 1);
 }
 
@@ -118,7 +118,7 @@ function lambda(n: number): number {
  * How well does the judge's ranking of participants match the AI/consensus ranking?
  * `judgeScores` and `referenceScores` are parallel arrays (same participants, same order).
  */
-function computeP1(judgeScores: number[], referenceScores: number[]): number {
+export function computeP1(judgeScores: number[], referenceScores: number[]): number {
   return spearman(judgeScores, referenceScores);
 }
 
@@ -127,7 +127,7 @@ function computeP1(judgeScores: number[], referenceScores: number[]): number {
  * Do the score *gaps* between participants match the reference gaps?
  * Computes correlation of gap vectors.
  */
-function computeP2(judgeScores: number[], referenceScores: number[]): number {
+export function computeP2(judgeScores: number[], referenceScores: number[]): number {
   if (judgeScores.length < 2) return 1; // trivially true with 1 participant
   const judgeGaps = judgeScores.slice(1).map((s, i) => Math.abs(s - judgeScores[i]));
   const refGaps   = referenceScores.slice(1).map((s, i) => Math.abs(s - referenceScores[i]));
@@ -138,7 +138,7 @@ function computeP2(judgeScores: number[], referenceScores: number[]): number {
  * P3 — Consensus Similarity (0–1)
  * Agreement with the median score of all human judges in this debate.
  */
-function computeP3(judgeScores: number[], allJudgeScoreSets: number[][]): number {
+export function computeP3(judgeScores: number[], allJudgeScoreSets: number[][]): number {
   if (allJudgeScoreSets.length === 0) return 1;
   const n = judgeScores.length;
   const median = judgeScores.map((_, i) => {
@@ -221,7 +221,7 @@ async function computeP5(
  * Penalises judges who submit identical scores for all participants (lazy scoring)
  * or who finish abnormally fast (timestamp check outside this function).
  */
-function computeP6(judgeScores: number[]): number {
+export function computeP6(judgeScores: number[]): number {
   if (judgeScores.length < 2) return 1;
   const unique = new Set(judgeScores).size;
   // All identical → 0, all unique → 1
