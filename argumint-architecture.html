@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Argumint - Architectural Diagram</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.95;
+        }
+        
+        .diagram-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        
+        .diagram-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .legend {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .legend-color {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            border-radius: 3px;
+            vertical-align: middle;
+        }
+        
+        .color-frontend {
+            background-color: #e8f4f8;
+            border: 2px solid #3498db;
+        }
+        
+        .color-backend {
+            background-color: #f0e8f8;
+            border: 2px solid #9b59b6;
+        }
+        
+        .color-db {
+            background-color: #fff4e8;
+            border: 2px solid #f39c12;
+        }
+        
+        .color-external {
+            background-color: #ffe8e8;
+            border: 2px solid #e74c3c;
+        }
+        
+        .features-section {
+            margin-top: 30px;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .feature-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-box h4 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+        
+        .feature-box p {
+            font-size: 0.9em;
+            color: #555;
+            line-height: 1.5;
+        }
+        
+        .tech-stack {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .tech-stack h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .tech-column {
+            display: inline-block;
+            margin-right: 40px;
+            margin-bottom: 20px;
+        }
+        
+        .tech-column h5 {
+            color: #764ba2;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+        }
+        
+        .tech-column ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        .tech-column li {
+            padding: 5px 0;
+            color: #555;
+            font-size: 0.9em;
+        }
+        
+        .tech-column li:before {
+            content: "▸ ";
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .flow-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .flow-section h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #764ba2;
+        }
+        
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        
+        .step-content {
+            flex-grow: 1;
+        }
+        
+        .step-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 3px;
+        }
+        
+        .step-description {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Argumint</h1>
+            <p class="subtitle">Real-Time Debate Arena - Architectural Diagram</p>
+        </header>
+
+        <!-- System Architecture -->
+        <div class="diagram-card">
+            <div class="diagram-title">System Architecture</div>
+            <div class="mermaid">
+                graph TB
+                    subgraph Frontend["🌐 Frontend (React 19 + Vite)"]
+                        SPA["Single Page App<br/>React Router v7<br/>TypeScript"]
+                        AuthCtx["AuthContext<br/>JWT in localStorage"]
+                        RoomCtx["RoomContext<br/>Live State"]
+                        Hooks["Hooks<br/>useSocket, useWebRTC<br/>useSpeechRecognition"]
+                        Components["Components<br/>UI Elements"]
+                        SPA --> AuthCtx
+                        SPA --> RoomCtx
+                        SPA --> Hooks
+                        SPA --> Components
+                    end
+                    
+                    subgraph Backend["🖥️ Backend (Node.js + Express)"]
+                        REST["REST API<br/>/auth /rooms<br/>/debates /payments"]
+                        SocketIO["Socket.IO Server<br/>Real-time Events<br/>room:* debate:*<br/>buzzer:* webrtc:*"]
+                        Auth["Auth Service<br/>JWT, bcrypt"]
+                        RoomSvc["Room Service<br/>Lobby, State"]
+                        DebateSvc["Debate Service<br/>Turn Management"]
+                        JudgeSvc["Judge Service<br/>AI Scoring"]
+                        CredSvc["Credibility Service<br/>6-Pillar System"]
+                        REST --> Auth
+                        REST --> RoomSvc
+                        SocketIO --> DebateSvc
+                        SocketIO --> JudgeSvc
+                        SocketIO --> CredSvc
+                    end
+                    
+                    subgraph Data["💾 Data Layer"]
+                        MongoDB["MongoDB<br/>Mongoose ODM<br/>User, Room, Debate<br/>JudgeSession"]
+                        Redis["Redis<br/>Session Cache<br/>Buzzer Locks<br/>Single Session"]
+                    end
+                    
+                    subgraph External["🔗 External Services"]
+                        OpenAI["OpenAI API<br/>GPT-4o-mini Judge<br/>Whisper Transcribe"]
+                        Razorpay["Razorpay<br/>Payments<br/>Subscriptions"]
+                        WebRTC["WebRTC<br/>P2P Audio Mesh<br/>SDP Signalling"]
+                    end
+                    
+                    subgraph Shared["📦 Shared Package<br/>Zod Schemas + TS Types"]
+                        SharedLib["@argumint/shared<br/>Domain Models<br/>API Contracts"]
+                    end
+                    
+                    Frontend -->|HTTPS REST| Backend
+                    Frontend -->|WSS Socket.IO| Backend
+                    Frontend -->|P2P WebRTC| WebRTC
+                    Backend --> MongoDB
+                    Backend --> Redis
+                    Backend -->|API Calls| OpenAI
+                    Backend -->|Webhooks| Razorpay
+                    Backend -->|SDP/ICE| WebRTC
+                    Backend --> SharedLib
+                    Frontend --> SharedLib
+                    
+                    style Frontend fill:#e8f4f8,stroke:#3498db,stroke-width:3px
+                    style Backend fill:#f0e8f8,stroke:#9b59b6,stroke-width:3px
+                    style Data fill:#fff4e8,stroke:#f39c12,stroke-width:3px
+                    style External fill:#ffe8e8,stroke:#e74c3c,stroke-width:3px
+                    style Shared fill:#e8f8e8,stroke:#27ae60,stroke-width:2px
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <span class="legend-color color-frontend"></span>
+                    <strong>Frontend:</strong> React Application Layer
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color color-backend"></span>
+                    <strong>Backend:</strong> Node.js/Express Services
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color color-db"></span>
+                    <strong>Data:</strong> Persistence & Caching
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color color-external"></span>
+                    <strong>External:</strong> Third-party APIs
+                </div>
+            </div>
+        </div>
+
+        <!-- Communication Layer -->
+        <div class="diagram-card">
+            <div class="diagram-title">Communication Channels</div>
+            <div class="mermaid">
+                graph LR
+                    Client["Browser<br/>Client"]
+                    
+                    subgraph Protocols["🔌 Transport Protocols"]
+                        REST["REST/HTTPS<br/>Request-Response<br/>Auth, History,<br/>Room Creation"]
+                        WSS["WebSocket/WSS<br/>Socket.IO<br/>Real-time Events<br/>Lobby, Debate,<br/>Buzzer, Scoring"]
+                        P2P["WebRTC<br/>P2P Direct<br/>Audio Stream<br/>SDP/ICE Signalling"]
+                    end
+                    
+                    Server["Backend<br/>Server"]
+                    
+                    Client -->|HTTPS| REST
+                    Client -->|WSS| WSS
+                    Client -->|P2P| P2P
+                    REST -->|Response| Server
+                    WSS --> Server
+                    P2P -->|Signalling via<br/>Socket.IO| Server
+                    
+                    style Client fill:#e8f4f8,stroke:#3498db,stroke-width:2px
+                    style Server fill:#f0e8f8,stroke:#9b59b6,stroke-width:2px
+                    style REST fill:#fff9e6,stroke:#f39c12
+                    style WSS fill:#fff9e6,stroke:#f39c12
+                    style P2P fill:#fff9e6,stroke:#f39c12
+            </div>
+        </div>
+
+        <!-- Debate Lifecycle -->
+        <div class="diagram-card">
+            <div class="diagram-title">Debate Lifecycle & Data Flow</div>
+            <div class="mermaid">
+                graph TD
+                    A["🎫 Create Room<br/>POST /rooms/create<br/>Motion, Mode, Rounds"]
+                    B["👥 Join & Ready Up<br/>POST /rooms/join<br/>room:join event"]
+                    C["🗳️ Optional Voting<br/>room:start-voting<br/>room:vote-topic<br/>room:end-voting"]
+                    D["▶️ Start Debate<br/>room:start-debate<br/>Assign FOR/AGAINST<br/>Build Turn Order"]
+                    E["🎤 Speak Phase<br/>Debate Mode Dependent"]
+                    E1["🔄 Alternate Mode<br/>debate:turn-started<br/>Ordered Turns<br/>Per-turn Countdown"]
+                    E2["🎙️ Buzzer Mode<br/>buzzer:grab/release<br/>First to Mic<br/>Re-grab Window"]
+                    E3["🗣️ Transcription<br/>Web Speech API<br/>+ Whisper Fallback<br/>debate:submit-argument"]
+                    F["🤖 AI Judging<br/>judge.service<br/>GPT-4o-mini<br/>4-Axis Scoring"]
+                    G["👨⚖️ Human Judges<br/>debate:scoring-window<br/>debate:submit-judge-scores<br/>6-Pillar Credibility"]
+                    H["📊 Results<br/>Leaderboard<br/>Per-axis Scores<br/>XP & Credibility"]
+                    
+                    A --> B
+                    B --> C
+                    C --> D
+                    D --> E
+                    E --> E1
+                    E --> E2
+                    E1 --> E3
+                    E2 --> E3
+                    E3 --> F
+                    F --> G
+                    G --> H
+                    
+                    style A fill:#e3f2fd,stroke:#1976d2
+                    style B fill:#e3f2fd,stroke:#1976d2
+                    style C fill:#fff3e0,stroke:#f57c00
+                    style D fill:#e8f5e9,stroke:#388e3c
+                    style E fill:#fce4ec,stroke:#c2185b
+                    style E1 fill:#f3e5f5,stroke:#7b1fa2
+                    style E2 fill:#f3e5f5,stroke:#7b1fa2
+                    style E3 fill:#f3e5f5,stroke:#7b1fa2
+                    style F fill:#ffe0b2,stroke:#e65100
+                    style G fill:#fce4ec,stroke:#c2185b
+                    style H fill:#e0f2f1,stroke:#00796b
+            </div>
+        </div>
+
+        <!-- Backend Services Architecture -->
+        <div class="diagram-card">
+            <div class="diagram-title">Backend Services Architecture</div>
+            <div class="mermaid">
+                graph TB
+                    subgraph Express["Express Server<br/>Request Handler"]
+                        Routes["Routes<br/>/auth /rooms<br/>/debates /payments"]
+                    end
+                    
+                    subgraph Services["🔧 Business Logic Services"]
+                        AuthSvc["Auth Service<br/>Register, Login<br/>JWT, Session"]
+                        RoomSvc["Room Service<br/>Create, Join<br/>Lobby Management<br/>State Sync"]
+                        DebateSvc["Debate Service<br/>Turn Management<br/>State Broadcasting"]
+                        JudgeSvc["Judge Service<br/>GPT-4o-mini<br/>Scoring Logic<br/>Cost Tracking"]
+                        CredSvc["Credibility Service<br/>6-Pillar Model<br/>Judge Scoring<br/>Rolling Score"]
+                        WhisperSvc["Whisper Service<br/>Audio Transcription<br/>Fallback Path"]
+                        PaymentSvc["Payment Service<br/>Razorpay<br/>Subscriptions<br/>Webhooks"]
+                    end
+                    
+                    subgraph Middleware["⚙️ Middleware"]
+                        Auth["Auth Middleware<br/>JWT Verify"]
+                        RateLimit["Rate Limiting<br/>Login Protection"]
+                        SocketAuth["Socket Auth<br/>Session Check"]
+                    end
+                    
+                    subgraph Persistence["💾 Persistence"]
+                        MongoDB["MongoDB<br/>User Model<br/>Room Model<br/>Debate Model<br/>JudgeSession"]
+                        Redis["Redis<br/>Session Store<br/>Buzzer Locks<br/>Cooldowns"]
+                    end
+                    
+                    Routes --> AuthSvc
+                    Routes --> RoomSvc
+                    Routes --> DebateSvc
+                    Routes --> JudgeSvc
+                    Routes --> PaymentSvc
+                    Routes --> Middleware
+                    
+                    AuthSvc --> MongoDB
+                    AuthSvc --> Redis
+                    RoomSvc --> MongoDB
+                    RoomSvc --> Redis
+                    DebateSvc --> MongoDB
+                    DebateSvc --> Redis
+                    JudgeSvc --> MongoDB
+                    CredSvc --> MongoDB
+                    WhisperSvc --> MongoDB
+                    PaymentSvc --> MongoDB
+                    
+                    style AuthSvc fill:#e3f2fd,stroke:#1976d2
+                    style RoomSvc fill:#e3f2fd,stroke:#1976d2
+                    style DebateSvc fill:#e3f2fd,stroke:#1976d2
+                    style JudgeSvc fill:#fff3e0,stroke:#f57c00
+                    style CredSvc fill:#fff3e0,stroke:#f57c00
+                    style WhisperSvc fill:#fff3e0,stroke:#f57c00
+                    style PaymentSvc fill:#fce4ec,stroke:#c2185b
+                    style MongoDB fill:#ffe0b2,stroke:#e65100
+                    style Redis fill:#ffe0b2,stroke:#e65100
+            </div>
+        </div>
+
+        <!-- Socket.IO Event Map -->
+        <div class="diagram-card">
+            <div class="diagram-title">Real-Time Events (Socket.IO Namespaces)</div>
+            <div class="mermaid">
+                graph TB
+                    Client["🖥️ Client<br/>Socket.IO"]
+                    
+                    subgraph Session["Session Events"]
+                        SE["• session:evicted<br/>(logged in elsewhere)"]
+                    end
+                    
+                    subgraph Room["Room Events"]
+                        RE["Client → Server:<br/>• room:join<br/>• room:leave<br/>• room:update-status<br/>• room:get-state<br/>• room:change-role<br/>• room:transfer-host<br/><br/>Server → Client:<br/>• room:participant-*<br/>• room:role-changed<br/>• room:host-transferred<br/>• room:deleted"]
+                    end
+                    
+                    subgraph Voting["Voting Events"]
+                        VE["Client → Server:<br/>• room:start-voting<br/>• room:vote-topic<br/>• room:end-voting<br/><br/>Server → Client:<br/>• room:voting-started<br/>• room:voting-update<br/>• room:voting-ended"]
+                    end
+                    
+                    subgraph Debate["Debate Events"]
+                        DE["Client → Server:<br/>• room:start-debate<br/>• debate:get-state<br/>• debate:submit-argument<br/>• debate:host-end<br/>• debate:*-judge-*<br/><br/>Server → Client:<br/>• debate:started<br/>• debate:turn-*<br/>• debate:argument-submitted<br/>• debate:result-*"]
+                    end
+                    
+                    subgraph Buzzer["Buzzer Events"]
+                        BE["Client → Server:<br/>• buzzer:grab<br/>• buzzer:release<br/><br/>Server → Client:<br/>• buzzer:holder-changed<br/>• buzzer:window-*<br/>• buzzer:warning<br/>• buzzer:holder-urgent"]
+                    end
+                    
+                    subgraph WebRTC["WebRTC Signalling"]
+                        WE["Client ↔ Server:<br/>• webrtc:offer<br/>• webrtc:answer<br/>• webrtc:ice-candidate<br/>• webrtc:get-peers<br/><br/>(Relayed P2P)"]
+                    end
+                    
+                    Client --> Session
+                    Client --> Room
+                    Client --> Voting
+                    Client --> Debate
+                    Client --> Buzzer
+                    Client --> WebRTC
+                    
+                    style Session fill:#ffe0b2,stroke:#e65100
+                    style Room fill:#e3f2fd,stroke:#1976d2
+                    style Voting fill:#fff3e0,stroke:#f57c00
+                    style Debate fill:#fce4ec,stroke:#c2185b
+                    style Buzzer fill:#f3e5f5,stroke:#7b1fa2
+                    style WebRTC fill:#e8f5e9,stroke:#388e3c
+            </div>
+        </div>
+
+        <!-- Key Features -->
+        <div class="diagram-card">
+            <div class="diagram-title">Key Features</div>
+            <div class="features-grid">
+                <div class="feature-box">
+                    <h4>🎯 Dual Debate Modes</h4>
+                    <p><strong>Alternate:</strong> Ordered turns with per-turn countdown. <strong>Buzzer:</strong> Free-for-all grab-the-mic with re-grab windows.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🔊 Live Audio over WebRTC</h4>
+                    <p>Direct peer-to-peer audio mesh between participants. Socket.IO only carries SDP offers/answers and ICE candidates for signalling.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🗣️ Smart Transcription</h4>
+                    <p>Web Speech API as primary path with OpenAI Whisper fallback for reliable argument capture.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🤖 AI Judge System</h4>
+                    <p>GPT-4o-mini scores arguments on 4 axes (clarity, evidence, rebuttal, organization) and determines winning side with feedback.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>👨⚖️ Human Judge Credibility</h4>
+                    <p>Pro rooms support human judges with 6-pillar credibility scoring (rank agreement, consensus, consistency, alignment, confidence, bias).</p>
+                </div>
+                <div class="feature-box">
+                    <h4>📈 XP & Levelling System</h4>
+                    <p>10-tier ladder from Novice to Grand Master. Separate XP tracking for debaters and judge credibility scores.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🔐 Cross-Device Auth</h4>
+                    <p>JWT in localStorage enables authentication across origins (Vercel frontend + Render backend) without third-party cookies.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>💳 Pro Subscriptions</h4>
+                    <p>Razorpay-backed recurring subscriptions unlock Pro features. Webhook-driven status sync.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🎫 Single Active Session</h4>
+                    <p>Redis enforces one session per user. Logging in elsewhere prompts before evicting stale session.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>📱 Mobile Responsive</h4>
+                    <p>All screens optimized for mobile viewports with in-app-browser gate for unsupported webviews.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>🏆 Leaderboards</h4>
+                    <p>Global leaderboard, per-user debate history, judge statistics, and detailed match analysis.</p>
+                </div>
+                <div class="feature-box">
+                    <h4>💰 Cost Tracking</h4>
+                    <p>Each debate records Whisper minutes, judge token counts, and computed USD cost for spend observability.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tech Stack -->
+        <div class="diagram-card">
+            <div class="diagram-title">Technology Stack</div>
+            <div class="tech-stack">
+                <h4>🛠️ Complete Technology Stack</h4>
+                
+                <div class="tech-column">
+                    <h5>Frontend</h5>
+                    <ul>
+                        <li>React 19</li>
+                        <li>Vite 7</li>
+                        <li>TypeScript</li>
+                        <li>React Router v7</li>
+                        <li>Tailwind CSS v4</li>
+                        <li>Socket.IO Client</li>
+                        <li>WebRTC</li>
+                        <li>Axios</li>
+                        <li>Zod Validation</li>
+                    </ul>
+                </div>
+                
+                <div class="tech-column">
+                    <h5>Backend</h5>
+                    <ul>
+                        <li>Node.js 20</li>
+                        <li>Express 4</li>
+                        <li>TypeScript (ESM)</li>
+                        <li>Socket.IO</li>
+                        <li>Mongoose</li>
+                        <li>ioredis</li>
+                        <li>JWT + bcrypt</li>
+                        <li>Zod Validation</li>
+                        <li>Vitest</li>
+                    </ul>
+                </div>
+                
+                <div class="tech-column">
+                    <h5>External Services</h5>
+                    <ul>
+                        <li>MongoDB</li>
+                        <li>Redis</li>
+                        <li>OpenAI (Judge)</li>
+                        <li>OpenAI (Whisper)</li>
+                        <li>Razorpay</li>
+                        <li>Vercel (Frontend)</li>
+                        <li>Render (Backend)</li>
+                    </ul>
+                </div>
+                
+                <div class="tech-column">
+                    <h5>Infrastructure</h5>
+                    <ul>
+                        <li>npm Workspaces</li>
+                        <li>Docker</li>
+                        <li>Vercel Deployment</li>
+                        <li>Render Deployment</li>
+                        <li>TypeScript Build</li>
+                        <li>Vitest Testing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Flow -->
+        <div class="diagram-card">
+            <div class="diagram-title">Data Flow: Complete Debate Lifecycle</div>
+            <div class="flow-section">
+                <h4>Step-by-Step Execution Path</h4>
+                
+                <div class="flow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">Create Room</div>
+                        <div class="step-description">Host calls POST /rooms/create with motion, mode, rounds, turn duration → Server generates 6-char room code → Room document created in MongoDB with status 'lobby' → Redis stores session</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">Join & Ready Up</div>
+                        <div class="step-description">Players POST /rooms/join with code → Each player connects Socket.IO → Emits room:join → Server broadcasts room:participant-* events to all clients → Players toggle ready with room:update-status</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">Optional Voting Phase</div>
+                        <div class="step-description">Host can run room:start-voting → Clients vote via room:vote-topic → Server aggregates votes → room:end-voting finalizes motion or defaults to original</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <div class="step-title">Start Debate</div>
+                        <div class="step-description">Host emits room:start-debate → Server randomly assigns FOR/AGAINST to each participant → Builds turn order → Creates Debate document in MongoDB → Broadcasts debate:started to move everyone to prep screen</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">5A</div>
+                    <div class="step-content">
+                        <div class="step-title">Alternate Mode: Turn-Based Speaking</div>
+                        <div class="step-description">Server broadcasts debate:turn-started with speaker ID and endsAt timestamp → Speaker's audio flows peer-to-peer via WebRTC → Live transcription via Web Speech API or fallback to POST /debates/transcribe (Whisper) → Player emits debate:submit-argument → Server broadcasts debate:turn-ended and advances turn</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">5B</div>
+                    <div class="step-content">
+                        <div class="step-title">Buzzer Mode: Grab-the-Mic</div>
+                        <div class="step-description">Mic is open. Player emits buzzer:grab → Server uses Redis lock to atomically assign floor → Broadcasts buzzer:holder-changed → On buzzer:release or timeout, opens re-grab window (buzzer:window-open) for few seconds → buzzer:warning keeps UI synced with countdown</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <div class="step-title">End Debate & Judge</div>
+                        <div class="step-description">When all turns finish or host emits debate:host-end → Server assembles full transcript → Calls judge.service → Sends transcript to OpenAI GPT-4o-mini → AI returns per-speaker scores (4 axes), winning side, feedback → Server broadcasts debate:result-ready with scores</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">7</div>
+                    <div class="step-content">
+                        <div class="step-title">Human Judges (Pro Rooms)</div>
+                        <div class="step-description">If room has human judges → Server broadcasts debate:scoring-window-opened → Judges submit scores via debate:submit-judge-scores → Judge emits debate:lock-judge-scores → credibility.service computes 6-pillar score per judge and updates rolling credibility</div>
+                    </div>
+                </div>
+                
+                <div class="flow-step">
+                    <div class="step-number">8</div>
+                    <div class="step-content">
+                        <div class="step-title">Results & XP</div>
+                        <div class="step-description">Results page shows leaderboard, per-axis breakdowns, winning side, XP awarded → User stats (wins/losses), xp, and judgeStats are persisted to MongoDB → Client updates local cache → Player can view match history via GET /auth/history</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Database Schema Overview -->
+        <div class="diagram-card">
+            <div class="diagram-title">Database Schema (MongoDB)</div>
+            <div class="mermaid">
+                graph TB
+                    subgraph User["User Collection"]
+                        U["• _id: ObjectId<br/>• email, username<br/>• passwordHash<br/>• stats: { wins, losses, xp }<br/>• judgeStats: { credibility }<br/>• createdAt"]
+                    end
+                    
+                    subgraph Room["Room Collection"]
+                        R["• _id: ObjectId<br/>• roomCode: String<br/>• hostId: ObjectId(User)<br/>• motion: String<br/>• mode: 'alternate'|'buzzer'<br/>• roundCount, turnDuration<br/>• participants: [ObjectId]<br/>• status: 'lobby'|'debating'|'ended'<br/>• isPro: Boolean<br/>• createdAt"]
+                    end
+                    
+                    subgraph Debate["Debate Collection"]
+                        D["• _id: ObjectId<br/>• roomId: ObjectId(Room)<br/>• participants: [{ userId, side, status }]<br/>• transcript: [{ speaker, text, timestamp }]<br/>• aiJudgeScore: { per-side scores, feedback }<br/>• cost: { whisperMinutes, tokenCount, usd }<br/>• createdAt, endedAt"]
+                    end
+                    
+                    subgraph JudgeSession["JudgeSession Collection"]
+                        J["• _id: ObjectId<br/>• debateId: ObjectId(Debate)<br/>• judgeId: ObjectId(User)<br/>• scores: [{ participant, axis scores }]<br/>• credibilityPillar: 6-pillar breakdown<br/>• credibilityScore: Float<br/>• createdAt"]
+                    end
+                    
+                    U ---|*| Room
+                    U ---|*| Debate
+                    U ---|*| JudgeSession
+                    Room ---|1| Debate
+                    Debate ---|*| JudgeSession
+                    
+                    style U fill:#e3f2fd,stroke:#1976d2
+                    style Room fill:#e3f2fd,stroke:#1976d2
+                    style Debate fill:#fff3e0,stroke:#f57c00
+                    style JudgeSession fill:#fce4ec,stroke:#c2185b
+            </div>
+        </div>
+
+        <!-- API Endpoints Summary -->
+        <div class="diagram-card">
+            <div class="diagram-title">REST API Endpoints Summary</div>
+            <div class="mermaid">
+                graph TB
+                    subgraph Auth["🔐 Authentication"]
+                        A1["POST /auth/register<br/>POST /auth/login<br/>POST /auth/logout<br/>GET /auth/me"]
+                    end
+                    
+                    subgraph User["👤 User Management"]
+                        U1["GET /auth/history<br/>GET /auth/judge-history<br/>GET /auth/leaderboard"]
+                    end
+                    
+                    subgraph Rooms["🎫 Room Management"]
+                        R1["POST /rooms/create<br/>GET /rooms/:code<br/>POST /rooms/join<br/>PUT /rooms/:code<br/>GET /rooms/stats"]
+                    end
+                    
+                    subgraph Debates["🎤 Debate Operations"]
+                        D1["GET /debates/...<br/>POST /debates/.../transcribe<br/>(Whisper fallback)"]
+                    end
+                    
+                    subgraph Payments["💳 Payments"]
+                        P1["POST /payments/create-subscription<br/>POST /payments/verify-payment<br/>POST /payments/cancel-subscription<br/>GET /payments/subscription-status<br/>POST /payments/webhook"]
+                    end
+                    
+                    subgraph Health["🏥 System"]
+                        H1["GET /health<br/>(Mongo/Redis status)<br/>GET /admin/users<br/>GET /admin/summary"]
+                    end
+                    
+                    style Auth fill:#e3f2fd,stroke:#1976d2
+                    style User fill:#e3f2fd,stroke:#1976d2
+                    style Rooms fill:#e3f2fd,stroke:#1976d2
+                    style Debates fill:#fff3e0,stroke:#f57c00
+                    style Payments fill:#fce4ec,stroke:#c2185b
+                    style Health fill:#e8f5e9,stroke:#388e3c
+            </div>
+        </div>
+
+        <!-- Scoring System -->
+        <div class="diagram-card">
+            <div class="diagram-title">Scoring Systems</div>
+            <div class="mermaid">
+                graph TB
+                    subgraph AI["🤖 AI Judge (GPT-4o-mini)"]
+                        AX["4 Scoring Axes<br/>━━━━━━━━━━━━━━<br/>• Clarity (0-25)<br/>  Was argument easy to follow?<br/><br/>• Evidence (0-25)<br/>  Claims backed with reasoning?<br/><br/>• Rebuttal (0-25)<br/>  Engaged with opponent's points?<br/><br/>• Organization (0-25)<br/>  Logically structured?<br/><br/>Total: 0-100 per speaker"]
+                    end
+                    
+                    subgraph Human["👨⚖️ Human Judge (6-Pillar)"]
+                        H1["P1: Rank Agreement (30%)<br/>Judge's ranking vs AI's<br/>Spearman correlation<br/><br/>P2: Gap Preservation (20%)<br/>Score gaps match AI's gaps?<br/><br/>P3: Consensus Similarity (15%)<br/>Agreement with median judges<br/><br/>P4: Outlier Detection (15%)<br/>How often judge is outlier?<br/><br/>P5: Consistency (10%)<br/>Same scores across sessions?<br/><br/>P6: Bias Detection (10%)<br/>Systematic scoring bias?"]
+                    end
+                    
+                    subgraph XP["⭐ Experience & Leveling"]
+                        X["10-Tier Ladder<br/>━━━━━━━━━━━━━━<br/>1. Novice (0 XP)<br/>2. Debater (150)<br/>3. Arguer (400)<br/>4. Advocate (750)<br/>5. Orator (1200)<br/>6. Rhetorician (1800)<br/>7. Sophist (2600)<br/>8. Dialectician (3600)<br/>9. Logician (5000)<br/>10. Grand Master (7000)<br/><br/>Earned per debate participated"]
+                    end
+                    
+                    style AI fill:#fff3e0,stroke:#f57c00
+                    style Human fill:#fce4ec,stroke:#c2185b
+                    style XP fill:#e8f5e9,stroke:#388e3c
+            </div>
+        </div>
+
+        <footer>
+            <p>Argumint Architecture Documentation • Last Updated: 2026</p>
+            <p>For detailed information, refer to the README.md file</p>
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+        mermaid.contentLoaded();
+    </script>
+</body>
+</html>
