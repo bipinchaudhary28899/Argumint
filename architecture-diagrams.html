@@ -1,0 +1,507 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Argumint — Architecture Diagrams</title>
+<style>
+  :root{
+    --ink:#0f172a; --sub:#64748b; --line:#cbd5e1; --bg:#f1f5f9; --card:#ffffff;
+    --brand:#7c3aed; --brand2:#a78bfa;
+    --user:#0ea5e9; --fe:#2563eb; --be:#7c3aed; --data:#059669; --ext:#ea580c; --cloud:#94a3b8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header.top{background:linear-gradient(120deg,#4c1d95,#7c3aed);color:#fff;padding:34px 40px}
+  header.top h1{margin:0;font-size:30px;letter-spacing:.5px}
+  header.top p{margin:6px 0 0;opacity:.85;font-size:15px}
+  main{max-width:1320px;margin:0 auto;padding:32px 20px 80px}
+  section.diagram{background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:22px 24px 28px;margin:26px 0;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+  .dh{display:flex;align-items:baseline;gap:14px;margin:0 0 4px;flex-wrap:wrap}
+  .dh .tag{background:var(--brand);color:#fff;font-size:12px;font-weight:700;
+    padding:4px 10px;border-radius:999px;letter-spacing:.4px}
+  .dh h2{margin:0;font-size:21px}
+  .dh .lvl{color:var(--sub);font-size:13px;font-weight:600}
+  section.diagram > p.desc{color:var(--sub);font-size:14px;margin:6px 0 14px}
+  svg{width:100%;height:auto;display:block}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:12.5px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend i{width:14px;height:14px;border-radius:4px;display:inline-block}
+  footer{max-width:1320px;margin:0 auto;padding:0 20px 60px;color:var(--sub);font-size:13px}
+</style>
+
+<header class="top">
+  <h1>Argumint — Software Architecture</h1>
+  <p>Real-Time Debate Arena · React + Vite · Node/Express · Socket.IO · MongoDB · Redis · OpenAI</p>
+</header>
+
+<main>
+
+<!-- ============ DIAGRAM 1 ============ -->
+<section class="diagram">
+  <div class="dh"><span class="tag">Diagram 1</span><h2>High-Level System Architecture</h2><span class="lvl">Executive / context level</span></div>
+  <p class="desc">End-to-end view: how users, the web app, the API, data stores, and external AI services connect — with the protocol on every path.</p>
+  <svg viewBox="0 0 1280 620" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+    <defs>
+      <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+      </marker>
+      <style>
+        .node{rx:14;stroke-width:1.5}
+        .t{font-size:16px;font-weight:700;fill:#0f172a}
+        .s{font-size:12px;fill:#64748b}
+        .lbl{font-size:12.5px;fill:#334155;font-weight:600}
+        .lblbg{fill:#ffffff;opacity:.92}
+        .edge{stroke:#475569;stroke-width:2;fill:none}
+        .dash{stroke-dasharray:6 5}
+        .title-app{font-size:13px;font-weight:800;fill:#7c3aed;letter-spacing:1px}
+      </style>
+    </defs>
+
+    <text x="40" y="30" class="title-app">ARGUMINT</text>
+    <text x="1240" y="30" text-anchor="end" class="s">High-Level System Architecture</text>
+
+    <!-- Cloud boundary (frontend host) -->
+    <rect x="232" y="120" width="220" height="220" rx="18" fill="#eff6ff" stroke="#bfdbfe" stroke-dasharray="6 5"/>
+    <text x="342" y="142" text-anchor="middle" class="s" fill="#2563eb">Vercel (CDN / Edge)</text>
+    <!-- Cloud boundary (backend host) -->
+    <rect x="520" y="120" width="240" height="360" rx="18" fill="#f5f3ff" stroke="#ddd6fe" stroke-dasharray="6 5"/>
+    <text x="640" y="142" text-anchor="middle" class="s" fill="#7c3aed">Render (Docker container)</text>
+    <!-- Managed data boundary -->
+    <rect x="830" y="120" width="220" height="240" rx="18" fill="#ecfdf5" stroke="#a7f3d0" stroke-dasharray="6 5"/>
+    <text x="940" y="142" text-anchor="middle" class="s" fill="#059669">Managed cloud data</text>
+
+    <!-- End Users -->
+    <rect x="40" y="200" width="150" height="100" class="node" fill="#e0f2fe" stroke="#0ea5e9"/>
+    <text x="115" y="238" text-anchor="middle" class="t">End Users</text>
+    <text x="115" y="260" text-anchor="middle" class="s">Debaters · Judges</text>
+    <text x="115" y="278" text-anchor="middle" class="s">Browser (mobile/desktop)</text>
+
+    <!-- Frontend -->
+    <rect x="262" y="170" width="160" height="120" class="node" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="342" y="210" text-anchor="middle" class="t">Frontend App</text>
+    <text x="342" y="232" text-anchor="middle" class="s">React 18 + Vite + TS</text>
+    <text x="342" y="250" text-anchor="middle" class="s">React Router · Axios</text>
+    <text x="342" y="268" text-anchor="middle" class="s">Socket.IO client</text>
+
+    <!-- Backend -->
+    <rect x="540" y="170" width="200" height="120" class="node" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="640" y="210" text-anchor="middle" class="t">Backend / API</text>
+    <text x="640" y="232" text-anchor="middle" class="s">Node + Express + TS</text>
+    <text x="640" y="250" text-anchor="middle" class="s">REST routes + Socket.IO</text>
+    <text x="640" y="268" text-anchor="middle" class="s">JWT auth · rate-limit</text>
+
+    <!-- Database -->
+    <rect x="850" y="170" width="180" height="80" class="node" fill="#d1fae5" stroke="#059669"/>
+    <text x="940" y="205" text-anchor="middle" class="t">Database</text>
+    <text x="940" y="226" text-anchor="middle" class="s">MongoDB Atlas (Mongoose)</text>
+
+    <!-- Cache -->
+    <rect x="850" y="270" width="180" height="76" class="node" fill="#d1fae5" stroke="#059669"/>
+    <text x="940" y="302" text-anchor="middle" class="t">Cache / Sessions</text>
+    <text x="940" y="324" text-anchor="middle" class="s">Redis (Upstash, ioredis)</text>
+
+    <!-- External -->
+    <rect x="540" y="380" width="200" height="80" class="node" fill="#ffedd5" stroke="#ea580c"/>
+    <text x="640" y="412" text-anchor="middle" class="t">OpenAI API</text>
+    <text x="640" y="434" text-anchor="middle" class="s">Whisper transcribe · GPT-4o-mini judge</text>
+
+    <!-- Browser speech (third-party-ish capability) -->
+    <rect x="40" y="360" width="150" height="76" class="node" fill="#fef9c3" stroke="#ca8a04"/>
+    <text x="115" y="392" text-anchor="middle" class="t" font-size="14">Web Speech API</text>
+    <text x="115" y="413" text-anchor="middle" class="s">In-browser STT</text>
+
+    <!-- Edges -->
+    <!-- users <-> frontend -->
+    <path class="edge" d="M190,250 H258" marker-end="url(#ar)"/>
+    <path class="edge" d="M258,272 H192" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="196" y="232" width="60" height="16" rx="3"/>
+    <text x="226" y="244" text-anchor="middle" class="lbl">HTTPS</text>
+
+    <!-- frontend <-> backend REST -->
+    <path class="edge" d="M422,210 H536" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="430" y="190" width="96" height="16" rx="3"/>
+    <text x="478" y="202" text-anchor="middle" class="lbl">HTTPS / REST (Axios)</text>
+    <!-- frontend <-> backend socket -->
+    <path class="edge dash" d="M422,255 H536" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="432" y="258" width="92" height="16" rx="3"/>
+    <text x="478" y="270" text-anchor="middle" class="lbl">WebSocket (Socket.IO)</text>
+
+    <!-- backend -> db -->
+    <path class="edge" d="M740,210 H846" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="748" y="190" width="96" height="16" rx="3"/>
+    <text x="796" y="202" text-anchor="middle" class="lbl">Mongoose / TLS</text>
+    <!-- backend -> cache -->
+    <path class="edge" d="M740,260 Q800,300 846,305" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="760" y="288" width="70" height="16" rx="3"/>
+    <text x="795" y="300" text-anchor="middle" class="lbl">Redis / TLS</text>
+    <!-- backend -> openai -->
+    <path class="edge" d="M640,290 V376" marker-end="url(#ar)"/>
+    <rect class="lblbg" x="612" y="325" width="120" height="16" rx="3"/>
+    <text x="672" y="337" text-anchor="middle" class="lbl">HTTPS (OpenAI API)</text>
+
+    <!-- users -> web speech -->
+    <path class="edge dash" d="M115,300 V356" marker-end="url(#ar)"/>
+    <text x="172" y="332" text-anchor="middle" class="lbl" font-size="11">local</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#0ea5e9"></i>End users</span>
+    <span><i style="background:#2563eb"></i>Frontend</span>
+    <span><i style="background:#7c3aed"></i>Backend / API</span>
+    <span><i style="background:#059669"></i>Data &amp; cache</span>
+    <span><i style="background:#ea580c"></i>External AI</span>
+    <span><i style="background:#ca8a04"></i>Browser capability</span>
+    <span>— solid = request/response &nbsp; ┄ dashed = realtime/local</span>
+  </div>
+</section>
+
+<!-- ============ DIAGRAM 2 ============ -->
+<section class="diagram">
+  <div class="dh"><span class="tag">Diagram 2</span><h2>Container &amp; Component View</h2><span class="lvl">Inside the codebase (monorepo)</span></div>
+  <p class="desc">The npm-workspace monorepo: frontend modules, backend layers (routes → services → models, plus the Socket.IO engine), and the shared types package used by both.</p>
+  <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+    <defs>
+      <marker id="ar2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+      </marker>
+      <style>
+        .b{rx:11;stroke-width:1.4}
+        .t2{font-size:14px;font-weight:700;fill:#0f172a}
+        .s2{font-size:11px;fill:#64748b}
+        .grp{font-size:13px;font-weight:800;letter-spacing:.6px}
+        .e2{stroke:#475569;stroke-width:1.8;fill:none}
+      </style>
+    </defs>
+    <text x="40" y="30" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="1">ARGUMINT</text>
+    <text x="1240" y="30" text-anchor="end" class="s2" font-size="12">Container &amp; Component View</text>
+
+    <!-- Frontend group -->
+    <rect x="40" y="60" width="330" height="600" rx="16" fill="#eff6ff" stroke="#bfdbfe"/>
+    <text x="60" y="88" class="grp" fill="#2563eb">FRONTEND  ·  apps/frontend</text>
+    <rect x="60" y="104" width="290" height="60" class="b" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="75" y="128" class="t2">pages/ (route screens)</text>
+    <text x="75" y="148" class="s2">Home · Lobby · DebatePage · Results · Auth</text>
+
+    <rect x="60" y="176" width="290" height="58" class="b" fill="#fff" stroke="#2563eb"/>
+    <text x="75" y="199" class="t2">contexts/</text>
+    <text x="75" y="219" class="s2">AuthContext · RoomContext</text>
+
+    <rect x="60" y="246" width="290" height="74" class="b" fill="#fff" stroke="#2563eb"/>
+    <text x="75" y="269" class="t2">hooks/</text>
+    <text x="75" y="289" class="s2">useSocket · useSpeechRecognition</text>
+    <text x="75" y="306" class="s2">useIsMobile</text>
+
+    <rect x="60" y="332" width="290" height="58" class="b" fill="#fff" stroke="#2563eb"/>
+    <text x="75" y="355" class="t2">components/</text>
+    <text x="75" y="375" class="s2">NavLogo · VotingPanel · shared UI</text>
+
+    <rect x="60" y="402" width="290" height="64" class="b" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="75" y="425" class="t2">services/api.ts (Axios)</text>
+    <text x="75" y="445" class="s2">Bearer token · REST client</text>
+
+    <rect x="60" y="478" width="290" height="64" class="b" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="75" y="501" class="t2">Socket.IO client</text>
+    <text x="75" y="521" class="s2">realtime room / debate events</text>
+
+    <!-- Backend group -->
+    <rect x="430" y="60" width="500" height="600" rx="16" fill="#f5f3ff" stroke="#ddd6fe"/>
+    <text x="450" y="88" class="grp" fill="#7c3aed">BACKEND  ·  apps/backend (Express)</text>
+
+    <rect x="450" y="104" width="460" height="56" class="b" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="465" y="127" class="t2">middleware/</text>
+    <text x="465" y="146" class="s2">auth (Bearer+cookie) · rate-limit · socket-auth</text>
+
+    <rect x="450" y="172" width="220" height="78" class="b" fill="#fff" stroke="#7c3aed"/>
+    <text x="465" y="195" class="t2">routes/ (REST)</text>
+    <text x="465" y="214" class="s2">auth · rooms · debates</text>
+    <text x="465" y="231" class="s2">transcribe</text>
+
+    <rect x="690" y="172" width="220" height="78" class="b" fill="#fff" stroke="#7c3aed"/>
+    <text x="705" y="195" class="t2">socket/index.ts</text>
+    <text x="705" y="214" class="s2">room · lobby · debate</text>
+    <text x="705" y="231" class="s2">buzzer · timers</text>
+
+    <rect x="450" y="266" width="460" height="120" class="b" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="465" y="289" class="t2">services/ (business logic)</text>
+    <text x="465" y="311" class="s2">auth.service · room.service · debate.service</text>
+    <text x="465" y="331" class="s2">judge.service · credibility.service</text>
+    <text x="465" y="351" class="s2">whisper.service · audio.service</text>
+    <text x="465" y="371" class="s2">single-session enforcement (Redis)</text>
+
+    <rect x="450" y="402" width="460" height="92" class="b" fill="#fff" stroke="#7c3aed"/>
+    <text x="465" y="425" class="t2">models/ (Mongoose schemas)</text>
+    <text x="465" y="447" class="s2">User (+ judgeStats) · Room · Debate</text>
+    <text x="465" y="467" class="s2">JudgeSession (pillar breakdown)</text>
+
+    <!-- Shared -->
+    <rect x="450" y="512" width="460" height="60" class="b" fill="#fef3c7" stroke="#d97706"/>
+    <text x="465" y="535" class="t2">packages/shared — @argumint/shared</text>
+    <text x="465" y="555" class="s2">TypeScript types + Zod schemas (used by both apps)</text>
+
+    <!-- External / data column -->
+    <rect x="990" y="60" width="250" height="600" rx="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <text x="1010" y="88" class="grp" fill="#475569">EXTERNAL &amp; DATA</text>
+    <rect x="1010" y="172" width="210" height="78" class="b" fill="#d1fae5" stroke="#059669"/>
+    <text x="1025" y="200" class="t2">MongoDB Atlas</text>
+    <text x="1025" y="222" class="s2">documents &amp; indexes</text>
+    <rect x="1010" y="266" width="210" height="78" class="b" fill="#d1fae5" stroke="#059669"/>
+    <text x="1025" y="294" class="t2">Redis (Upstash)</text>
+    <text x="1025" y="316" class="s2">sessions · single-session</text>
+    <rect x="1010" y="360" width="210" height="86" class="b" fill="#ffedd5" stroke="#ea580c"/>
+    <text x="1025" y="388" class="t2">OpenAI API</text>
+    <text x="1025" y="409" class="s2">Whisper transcribe</text>
+    <text x="1025" y="427" class="s2">GPT-4o-mini judge</text>
+
+    <!-- edges FE -> BE -->
+    <path class="e2" d="M350,432 H448" marker-end="url(#ar2)"/>
+    <text x="399" y="424" text-anchor="middle" class="s2">REST</text>
+    <path class="e2" d="M350,510 H688" marker-end="url(#ar2)" stroke-dasharray="6 5"/>
+    <text x="520" y="503" text-anchor="middle" class="s2">Socket.IO events</text>
+
+    <!-- BE internal flow -->
+    <path class="e2" d="M560,250 V264" marker-end="url(#ar2)"/>
+    <path class="e2" d="M800,250 V264" marker-end="url(#ar2)"/>
+    <path class="e2" d="M680,386 V400" marker-end="url(#ar2)"/>
+    <path class="e2" d="M680,160 V170" marker-end="url(#ar2)"/>
+
+    <!-- services -> data -->
+    <path class="e2" d="M910,300 H1008" marker-end="url(#ar2)"/>
+    <text x="958" y="292" text-anchor="middle" class="s2">read/write</text>
+    <path class="e2" d="M910,330 H1008" marker-end="url(#ar2)"/>
+    <path class="e2" d="M910,360 H1008" marker-end="url(#ar2)"/>
+    <text x="958" y="408" text-anchor="middle" class="s2">AI calls</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#2563eb"></i>Frontend modules</span>
+    <span><i style="background:#7c3aed"></i>Backend layers</span>
+    <span><i style="background:#d97706"></i>Shared package</span>
+    <span><i style="background:#059669"></i>Data stores</span>
+    <span><i style="background:#ea580c"></i>OpenAI</span>
+  </div>
+</section>
+
+<!-- ============ DIAGRAM 3 ============ -->
+<section class="diagram">
+  <div class="dh"><span class="tag">Diagram 3</span><h2>Deployment &amp; Infrastructure</h2><span class="lvl">Where each piece runs</span></div>
+  <p class="desc">Production topology: static frontend on Vercel, Dockerised backend on Render, managed MongoDB Atlas + Upstash Redis, and OpenAI as an external SaaS. Cross-origin auth uses a Bearer JWT.</p>
+  <svg viewBox="0 0 1280 600" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+    <defs>
+      <marker id="ar3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+      </marker>
+      <style>
+        .host{rx:16;stroke-width:1.6;stroke-dasharray:7 5;fill-opacity:.35}
+        .unit{rx:11;stroke-width:1.4}
+        .t3{font-size:14px;font-weight:700;fill:#0f172a}
+        .s3{font-size:11px;fill:#64748b}
+        .e3{stroke:#475569;stroke-width:2;fill:none}
+        .hl{font-size:12px;font-weight:800;letter-spacing:.6px}
+        .lb{font-size:11.5px;fill:#334155;font-weight:600}
+        .lbg{fill:#fff;opacity:.92}
+      </style>
+    </defs>
+    <text x="40" y="30" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="1">ARGUMINT</text>
+    <text x="1240" y="30" text-anchor="end" class="s3" font-size="12">Deployment &amp; Infrastructure</text>
+
+    <!-- User device -->
+    <rect x="40" y="230" width="170" height="120" class="unit" fill="#e0f2fe" stroke="#0ea5e9"/>
+    <text x="125" y="270" text-anchor="middle" class="t3">User Device</text>
+    <text x="125" y="291" text-anchor="middle" class="s3">Browser (mobile/desktop)</text>
+    <text x="125" y="309" text-anchor="middle" class="s3">localStorage: JWT</text>
+    <text x="125" y="327" text-anchor="middle" class="s3">Web Speech API (STT)</text>
+
+    <!-- Vercel host -->
+    <rect x="270" y="70" width="250" height="200" class="host" fill="#dbeafe" stroke="#2563eb"/>
+    <text x="290" y="98" class="hl" fill="#2563eb">VERCEL</text>
+    <rect x="292" y="120" width="206" height="120" class="unit" fill="#fff" stroke="#2563eb"/>
+    <text x="395" y="152" text-anchor="middle" class="t3">Static Frontend</text>
+    <text x="395" y="173" text-anchor="middle" class="s3">Vite build → dist/</text>
+    <text x="395" y="191" text-anchor="middle" class="s3">CDN + SPA rewrites</text>
+    <text x="395" y="209" text-anchor="middle" class="s3">VITE_API_BASE_URL</text>
+
+    <!-- Render host -->
+    <rect x="580" y="180" width="280" height="240" class="host" fill="#ede9fe" stroke="#7c3aed"/>
+    <text x="600" y="208" class="hl" fill="#7c3aed">RENDER</text>
+    <rect x="602" y="230" width="236" height="160" class="unit" fill="#fff" stroke="#7c3aed"/>
+    <text x="720" y="262" text-anchor="middle" class="t3">Backend Container</text>
+    <text x="720" y="283" text-anchor="middle" class="s3">Docker · Node/Express</text>
+    <text x="720" y="301" text-anchor="middle" class="s3">REST + Socket.IO (:3000)</text>
+    <text x="720" y="319" text-anchor="middle" class="s3">CORS = FRONTEND_URL</text>
+    <text x="720" y="337" text-anchor="middle" class="s3">env: JWT_SECRET, keys…</text>
+    <text x="720" y="362" text-anchor="middle" class="s3" font-style="italic">defined by render.yaml</text>
+
+    <!-- Atlas -->
+    <rect x="930" y="90" width="300" height="90" class="host" fill="#d1fae5" stroke="#059669"/>
+    <text x="950" y="118" class="hl" fill="#059669">MONGODB ATLAS</text>
+    <rect x="952" y="128" width="256" height="40" class="unit" fill="#fff" stroke="#059669"/>
+    <text x="1080" y="153" text-anchor="middle" class="s3">Managed cluster · MONGODB_URI (TLS)</text>
+
+    <!-- Upstash -->
+    <rect x="930" y="210" width="300" height="90" class="host" fill="#d1fae5" stroke="#059669"/>
+    <text x="950" y="238" class="hl" fill="#059669">UPSTASH REDIS</text>
+    <rect x="952" y="248" width="256" height="40" class="unit" fill="#fff" stroke="#059669"/>
+    <text x="1080" y="273" text-anchor="middle" class="s3">Sessions · REDIS_URL (TLS)</text>
+
+    <!-- OpenAI -->
+    <rect x="930" y="330" width="300" height="100" class="host" fill="#ffedd5" stroke="#ea580c"/>
+    <text x="950" y="358" class="hl" fill="#ea580c">OPENAI (SaaS)</text>
+    <rect x="952" y="368" width="256" height="50" class="unit" fill="#fff" stroke="#ea580c"/>
+    <text x="1080" y="390" text-anchor="middle" class="s3">Whisper transcribe · GPT-4o-mini</text>
+    <text x="1080" y="407" text-anchor="middle" class="s3">OPENAI_API_KEY (HTTPS)</text>
+
+    <!-- edges -->
+    <path class="e3" d="M210,275 C250,250 250,200 290,180" marker-end="url(#ar3)"/>
+    <rect class="lbg" x="200" y="200" width="78" height="16" rx="3"/>
+    <text x="239" y="212" text-anchor="middle" class="lb">HTTPS (app)</text>
+
+    <path class="e3" d="M210,300 H600" marker-end="url(#ar3)"/>
+    <rect class="lbg" x="320" y="302" width="190" height="16" rx="3"/>
+    <text x="415" y="314" text-anchor="middle" class="lb">REST + WebSocket · Bearer JWT</text>
+
+    <path class="e3 " d="M720,230 C720,140 760,140 790,135" marker-end="url(#ar3)" stroke-dasharray="0"/>
+    <path class="e3" d="M838,300 H928" marker-end="url(#ar3)"/>
+    <rect class="lbg" x="852" y="282" width="58" height="16" rx="3"/>
+    <text x="881" y="294" text-anchor="middle" class="lb">TLS</text>
+    <!-- backend to atlas -->
+    <path class="e3" d="M838,260 C890,210 900,170 928,150" marker-end="url(#ar3)"/>
+    <text x="895" y="205" text-anchor="middle" class="lb" transform="rotate(-30 895 205)">Mongoose</text>
+    <!-- backend to openai -->
+    <path class="e3" d="M838,350 C890,370 900,380 928,385" marker-end="url(#ar3)"/>
+    <rect class="lbg" x="852" y="362" width="64" height="16" rx="3"/>
+    <text x="884" y="374" text-anchor="middle" class="lb">HTTPS</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#0ea5e9"></i>User device</span>
+    <span><i style="background:#2563eb"></i>Vercel</span>
+    <span><i style="background:#7c3aed"></i>Render</span>
+    <span><i style="background:#059669"></i>Atlas / Upstash</span>
+    <span><i style="background:#ea580c"></i>OpenAI SaaS</span>
+    <span>Dashed boxes = hosting boundaries</span>
+  </div>
+</section>
+
+<!-- ============ DIAGRAM 4 ============ -->
+<section class="diagram">
+  <div class="dh"><span class="tag">Diagram 4</span><h2>Real-Time Debate — Data Flow</h2><span class="lvl">Runtime sequence of one debate</span></div>
+  <p class="desc">A single round from speaking to scoring: speech is transcribed, arguments stream over Socket.IO, and at the end the AI judge scores every argument before XP and the leaderboard are returned.</p>
+  <svg viewBox="0 0 1280 760" xmlns="http://www.w3.org/2000/svg" font-family="inherit">
+    <defs>
+      <marker id="ar4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L7,3 L0,6 Z" fill="#475569"/>
+      </marker>
+      <marker id="ar4o" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L7,3 L0,6 Z" fill="#ea580c"/>
+      </marker>
+      <style>
+        .head{rx:9;stroke-width:1.4}
+        .ht{font-size:12.5px;font-weight:700;fill:#0f172a}
+        .hs{font-size:10px;fill:#64748b}
+        .ll{stroke:#cbd5e1;stroke-width:1.5}
+        .m{stroke:#475569;stroke-width:1.8;fill:none}
+        .mo{stroke:#ea580c;stroke-width:1.8;fill:none;stroke-dasharray:5 4}
+        .mt{font-size:11.5px;fill:#334155;font-weight:600}
+        .mto{font-size:11.5px;fill:#c2410c;font-weight:600}
+        .phase{font-size:11px;font-weight:800;fill:#7c3aed;letter-spacing:.5px}
+      </style>
+    </defs>
+    <text x="40" y="26" font-size="13" font-weight="800" fill="#7c3aed" letter-spacing="1">ARGUMINT</text>
+    <text x="1240" y="26" text-anchor="end" class="hs" font-size="12">Real-Time Debate — Data Flow</text>
+
+    <!-- lifelines -->
+    <!-- x positions -->
+    <!-- Client 120, Socket 380, Services 640, OpenAI 900, DB 1140 -->
+    <g>
+      <rect x="50" y="44" width="160" height="54" class="head" fill="#e0f2fe" stroke="#0ea5e9"/>
+      <text x="130" y="68" text-anchor="middle" class="ht">Client (Debater)</text>
+      <text x="130" y="85" text-anchor="middle" class="hs">React · Web Speech</text>
+      <line x1="130" y1="98" x2="130" y2="700" class="ll"/>
+
+      <rect x="300" y="44" width="170" height="54" class="head" fill="#ede9fe" stroke="#7c3aed"/>
+      <text x="385" y="68" text-anchor="middle" class="ht">Socket.IO Server</text>
+      <text x="385" y="85" text-anchor="middle" class="hs">socket/index.ts</text>
+      <line x1="385" y1="98" x2="385" y2="700" class="ll"/>
+
+      <rect x="560" y="44" width="170" height="54" class="head" fill="#ede9fe" stroke="#7c3aed"/>
+      <text x="645" y="68" text-anchor="middle" class="ht">Backend Services</text>
+      <text x="645" y="85" text-anchor="middle" class="hs">debate · judge · whisper</text>
+      <line x1="645" y1="98" x2="645" y2="700" class="ll"/>
+
+      <rect x="820" y="44" width="160" height="54" class="head" fill="#ffedd5" stroke="#ea580c"/>
+      <text x="900" y="68" text-anchor="middle" class="ht">OpenAI API</text>
+      <text x="900" y="85" text-anchor="middle" class="hs">Whisper · GPT-4o-mini</text>
+      <line x1="900" y1="98" x2="900" y2="700" class="ll"/>
+
+      <rect x="1070" y="44" width="160" height="54" class="head" fill="#d1fae5" stroke="#059669"/>
+      <text x="1150" y="68" text-anchor="middle" class="ht">MongoDB / Redis</text>
+      <text x="1150" y="85" text-anchor="middle" class="hs">Debate · User · session</text>
+      <line x1="1150" y1="98" x2="1150" y2="700" class="ll"/>
+    </g>
+
+    <!-- Phase labels -->
+    <text x="50" y="128" class="phase">① SPEAK &amp; TRANSCRIBE</text>
+    <!-- speech captured locally -->
+    <path class="m" d="M130,150 H126" />
+    <rect x="60" y="138" width="150" height="22" rx="5" fill="#f1f5f9" stroke="#cbd5e1"/>
+    <text x="135" y="153" text-anchor="middle" class="mt" font-size="10.5">capture speech (Web Speech API)</text>
+    <!-- fallback whisper -->
+    <path class="m" d="M130,184 H643" marker-end="url(#ar4)"/>
+    <text x="360" y="178" class="mt">POST /transcribe (audio, on STT fail)</text>
+    <path class="mo" d="M645,204 H898" marker-end="url(#ar4o)"/>
+    <text x="660" y="198" class="mto">Whisper transcribe</text>
+    <path class="mo" d="M898,224 H647" marker-end="url(#ar4o)"/>
+    <text x="660" y="240" class="mto">transcript text</text>
+    <path class="m" d="M643,258 H132" marker-end="url(#ar4)"/>
+    <text x="360" y="252" class="mt">transcript → client</text>
+
+    <line x1="40" y1="278" x2="1240" y2="278" stroke="#e2e8f0"/>
+
+    <!-- Phase 2 -->
+    <text x="50" y="300" class="phase">② ARGUE (real-time)</text>
+    <path class="m" d="M130,322 H383" marker-end="url(#ar4)"/>
+    <text x="150" y="316" class="mt">emit "submitArgument" (text, side)</text>
+    <path class="m" d="M385,346 H643" marker-end="url(#ar4)"/>
+    <text x="410" y="340" class="mt">persist + validate turn/buzzer</text>
+    <path class="m" d="M643,370 H1148" marker-end="url(#ar4)"/>
+    <text x="700" y="364" class="mt">save argument → Debate doc</text>
+    <path class="m" d="M383,394 H132" marker-end="url(#ar4)"/>
+    <text x="150" y="388" class="mt">broadcast "debateState" to room (all clients)</text>
+
+    <line x1="40" y1="414" x2="1240" y2="414" stroke="#e2e8f0"/>
+
+    <!-- Phase 3 -->
+    <text x="50" y="436" class="phase">③ JUDGE &amp; SCORE</text>
+    <path class="m" d="M130,458 H383" marker-end="url(#ar4)"/>
+    <text x="150" y="452" class="mt">emit "endDebate" (host) / all turns done</text>
+    <path class="m" d="M385,482 H643" marker-end="url(#ar4)"/>
+    <text x="410" y="476" class="mt">judge.service: build prompt per argument</text>
+    <path class="mo" d="M645,506 H898" marker-end="url(#ar4o)"/>
+    <text x="660" y="500" class="mto">GPT-4o-mini: relevance · logic · delivery</text>
+    <path class="mo" d="M898,530 H647" marker-end="url(#ar4o)"/>
+    <text x="660" y="546" class="mto">per-argument scores</text>
+    <!-- credibility for human judges -->
+    <path class="m" d="M645,566 H643" />
+    <rect x="560" y="554" width="240" height="24" rx="5" fill="#f5f3ff" stroke="#ddd6fe"/>
+    <text x="680" y="570" text-anchor="middle" class="mt" font-size="10.5">credibility.service: 6-pillar + EMA (human judges)</text>
+    <path class="m" d="M643,600 H1148" marker-end="url(#ar4)"/>
+    <text x="700" y="594" class="mt">write scores, XP, JudgeSession; update User</text>
+
+    <line x1="40" y1="620" x2="1240" y2="620" stroke="#e2e8f0"/>
+
+    <!-- Phase 4 -->
+    <text x="50" y="642" class="phase">④ RESULTS</text>
+    <path class="m" d="M643,664 H387" marker-end="url(#ar4)"/>
+    <text x="410" y="658" class="mt">results payload (leaderboard + XP)</text>
+    <path class="m" d="M385,688 H132" marker-end="url(#ar4)"/>
+    <text x="150" y="682" class="mt">emit "debateResults" → render Result page</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#0ea5e9"></i>Client</span>
+    <span><i style="background:#7c3aed"></i>Socket / Services</span>
+    <span><i style="background:#ea580c"></i>OpenAI (dashed)</span>
+    <span><i style="background:#059669"></i>MongoDB / Redis</span>
+  </div>
+</section>
+
+</main>
+<footer>
+  Generated from the Argumint monorepo (apps/frontend · apps/backend · packages/shared). Diagrams reflect README, render.yaml and vercel.json.
+</footer>
