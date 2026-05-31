@@ -138,7 +138,11 @@ export function Home() {
     return () => { alive = false; };
   }, []);
 
-  const handleLogout = async () => { try { await logout(); navigate("/login"); } catch {} };
+  const [loggingOut, setLoggingOut] = useState(false);
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try { await logout(); navigate("/login"); } catch { setLoggingOut(false); }
+  };
 
   // ─── Player card ─────────────────────────────────────────────────────────
   const isDark    = theme === "dark";
@@ -648,8 +652,8 @@ export function Home() {
                   </div>
                 )}
                 {/* Logout */}
-                <button onClick={handleLogout} disabled={isLoading} className="btn-danger" style={{ width: "100%", padding: "0.75rem", fontSize: "0.88rem", fontWeight: 700 }}>
-                  {isLoading ? "…" : "Sign out"}
+                <button onClick={handleLogout} disabled={loggingOut} className="btn-danger" style={{ width: "100%", padding: "0.75rem", fontSize: "0.88rem", fontWeight: 700 }}>
+                  {loggingOut ? "…" : "Sign out"}
                 </button>
               </div>
             </div>
@@ -888,8 +892,8 @@ export function Home() {
               </button>
             </>
           )}
-          <button onClick={handleLogout} disabled={isLoading} className="btn-danger" style={{ padding: "0.35rem 0.7rem", fontSize: "0.78rem" }}>
-            {isLoading ? "…" : "Logout"}
+          <button onClick={handleLogout} disabled={loggingOut} className="btn-danger" style={{ padding: "0.35rem 0.7rem", fontSize: "0.78rem" }}>
+            {loggingOut ? "…" : "Logout"}
           </button>
         </div>
       </nav>
