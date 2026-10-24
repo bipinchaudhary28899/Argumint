@@ -333,7 +333,7 @@ export function ResultPage() {
 
   if (!debate) return (
     <div className="bg-grid" style={{ height:"100vh", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
-      <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
+      <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
     </div>
   );
 
@@ -354,7 +354,7 @@ export function ResultPage() {
     <div onClick={() => navigate("/pricing")} style={{
       cursor: "pointer", borderRadius: "0.875rem", flexShrink: 0,
       padding: "0.875rem 1rem",
-      background: "linear-gradient(135deg,rgba(245,158,11,0.08) 0%,rgba(124,58,237,0.06) 100%)",
+      background: "linear-gradient(135deg,rgba(245,158,11,0.08) 0%,rgba(var(--violet-rgb),0.06) 100%)",
       border: "1.5px solid rgba(245,158,11,0.28)",
       display: "flex", flexDirection: "column", alignItems: "center", gap: "0.55rem",
       textAlign: "center", transition: "border-color 0.2s, box-shadow 0.2s",
@@ -408,8 +408,8 @@ export function ResultPage() {
           50%      { border-color:rgba(16,185,129,0.75); box-shadow:0 4px 32px rgba(16,185,129,0.22); }
         }
         @keyframes heroLosePulse {
-          0%,100% { box-shadow:0 2px 20px rgba(79,70,229,0.10); }
-          50%      { box-shadow:0 2px 28px rgba(79,70,229,0.20); }
+          0%,100% { box-shadow:0 2px 20px rgba(var(--blue-rgb),0.10); }
+          50%      { box-shadow:0 2px 28px rgba(var(--blue-rgb),0.20); }
         }
         .mvp-glow        { animation: mvpPulse 2s ease-in-out infinite; }
         .hero-win-anim   { animation: heroWinPulse 2.8s ease-in-out infinite; }
@@ -432,7 +432,7 @@ export function ResultPage() {
           animation: shimmer 2s linear infinite;
         }
         .play-btn { transition: transform 0.15s, box-shadow 0.15s; }
-        .play-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(124,58,237,0.48) !important; }
+        .play-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(var(--btn-primary-rgb),0.48) !important; }
         .play-btn:active { transform: translateY(0); }
         @keyframes rhetorBadgePop {
           0%   { opacity:0; transform:scale(0.6) translateY(8px); }
@@ -498,14 +498,14 @@ export function ResultPage() {
       <div className="bg-grid" style={{ height:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)", overflow:"hidden", position:"relative" }}>
         {/* Ambient gradient */}
         <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0,
-          background:"radial-gradient(ellipse 65% 55% at 15% 5%,rgba(124,58,237,0.09) 0%,transparent 58%),radial-gradient(ellipse 45% 45% at 85% 95%,rgba(16,185,129,0.05) 0%,transparent 55%)"
+          background:"radial-gradient(ellipse 65% 55% at 15% 5%,rgba(var(--violet-rgb),0.09) 0%,transparent 58%),radial-gradient(ellipse 45% 45% at 85% 95%,rgba(16,185,129,0.05) 0%,transparent 55%)"
         }} />
 
         {/* ── JUDGING ── */}
         {isJudging && (
           <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
             <div className="glass fade-up glow-cyan" style={{ padding:isMobile?"1.5rem 1.25rem":"2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
-              <img src="/logo/logo.png" alt="Judging…" className="logo-heartbeat" style={{ width:64, height:64, margin:"0 auto 1.25rem" }} />
+              <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Judging…" className="logo-heartbeat" style={{ width:64, height:64, margin:"0 auto 1.25rem" }} />
               <h2 style={{ fontSize:"1.2rem", fontWeight:800, color:"var(--text)", margin:"0 0 0.35rem" }} className="text-glow-cyan">AI Judge reviewing…</h2>
               <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>Scoring all speakers — 5–15 sec</p>
             </div>
@@ -763,7 +763,7 @@ export function ResultPage() {
                   onClick={() => navigate(`/room/${code}/analysis/${debateId}`, { state: { debate, judgeScores } })}
                   style={{
                     width:"100%", padding:"0.875rem", borderRadius:"1rem",
-                    background:"linear-gradient(135deg,rgba(79,142,247,0.1),rgba(124,58,237,0.08))",
+                    background:"linear-gradient(135deg,rgba(79,142,247,0.1),rgba(var(--violet-rgb),0.08))",
                     border:"1.5px solid rgba(79,142,247,0.35)",
                     color:"var(--text)", fontFamily:"inherit", cursor:"pointer",
                     display:"flex", alignItems:"center", justifyContent:"center", gap:"0.6rem",
@@ -785,10 +785,10 @@ export function ResultPage() {
               <div style={{ display:"flex", gap:"0.5rem", marginTop:"0.25rem" }}>
                 <button className="play-btn" onClick={()=>navigate("/")} style={{
                   flex:1, padding:"0.65rem", borderRadius:"0.75rem",
-                  background:"linear-gradient(135deg,#4f46e5,#7c3aed)",
-                  border:"none", color:"#fff", fontWeight:900, fontSize:"0.925rem",
+                  background:"linear-gradient(160deg,var(--btn-primary-from),var(--btn-primary-to))",
+                  border:"none", color:"var(--btn-primary-text)", fontWeight:900, fontSize:"0.925rem",
                   cursor:"pointer", fontFamily:"inherit",
-                  boxShadow:"0 4px 18px rgba(124,58,237,0.35)",
+                  boxShadow:"0 4px 18px rgba(var(--btn-primary-rgb),0.35)",
                   letterSpacing:"0.01em",
                 }}>⚔️ Play Again</button>
                 <button className="btn-ghost" style={{ padding:"0.65rem 0.9rem", fontSize:"0.85rem" }}

@@ -244,7 +244,7 @@ describe("DebatePage — loading state", () => {
   it("loading spinner has correct src", () => {
     mockSocket.emit.mockImplementation(() => {});
     renderPage();
-    expect(screen.getByAltText("Loading…")).toHaveAttribute("src", "/logo/logo.png");
+    expect(screen.getByAltText("Loading…")).toHaveAttribute("src", "/logo/brand/argumint-app-icon-dark.svg");
   });
 
   it("does not show debate topic while loading", () => {

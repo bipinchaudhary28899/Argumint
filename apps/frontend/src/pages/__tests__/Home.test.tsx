@@ -564,20 +564,18 @@ describe("Theme picker", () => {
     expect(mockSetTheme).toHaveBeenCalledWith("dark");
   });
 
-  it("shows 🔒 icon on Glacier theme option for Lv.1 user", () => {
+  it("does not show 🔒 icon on Glacier theme option for a Lv.1 user", () => {
     mockUseAuth.mockReturnValue({ user: makeUser({ xp: 0 }), logout: mockLogout, isLoading: false });
     renderHome();
     fireEvent.click(screen.getByTitle(/change theme/i));
-    // Locked theme renders a 🔒 icon next to Glacier
-    expect(screen.getByText("🔒")).toBeInTheDocument();
+    expect(screen.queryByText("🔒")).not.toBeInTheDocument();
   });
 
-  it("does not show 🔒 icon for Glacier when user is Lv.5", () => {
-    mockUseAuth.mockReturnValue({ user: makeUser({ xp: 1200 }), logout: mockLogout, isLoading: false });
+  it("does not show a Lv.5 badge for Glacier when user is at low level", () => {
+    mockUseAuth.mockReturnValue({ user: makeUser({ xp: 0 }), logout: mockLogout, isLoading: false });
     renderHome();
     fireEvent.click(screen.getByTitle(/change theme/i));
-    // At Lv.5 the theme is unlocked — no lock icon
-    expect(screen.queryByText("🔒")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lv.5")).not.toBeInTheDocument();
   });
 
   it("closes theme picker when backdrop is clicked", async () => {
@@ -590,13 +588,12 @@ describe("Theme picker", () => {
     await waitFor(() => expect(screen.queryByText("Theme")).not.toBeInTheDocument());
   });
 
-  it("does not apply locked theme when Glacier is clicked at low level", () => {
+  it("applies Glacier theme when clicked at low level", () => {
     mockUseAuth.mockReturnValue({ user: makeUser({ xp: 0 }), logout: mockLogout, isLoading: false });
     renderHome();
     fireEvent.click(screen.getByTitle(/change theme/i));
     fireEvent.click(screen.getByText("Glacier"));
-    // setTheme should NOT have been called for the locked theme
-    expect(mockSetTheme).not.toHaveBeenCalledWith("glacier");
+    expect(mockSetTheme).toHaveBeenCalledWith("glacier");
   });
 });
 

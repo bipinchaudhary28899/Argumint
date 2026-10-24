@@ -18,7 +18,7 @@ export function ProtectedRoute({ children, guestOnly = false }: ProtectedRoutePr
     return (
       <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
         <img
-          src="/logo/logo.png"
+          src="/logo/brand/argumint-app-icon-dark.svg"
           alt="Loading…"
           className="logo-heartbeat"
           style={{ width: 72, height: 72 }}

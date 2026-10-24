@@ -20,9 +20,9 @@ export interface ThemeMeta {
 
 /** Ordered list of available themes. Controls cycle order + picker UI. */
 export const THEMES: ThemeMeta[] = [
-  { id: "light",   label: "Light",   icon: "☀️",  desc: "Clean lavender white"     },
-  { id: "dark",    label: "Dark",    icon: "🌙",  desc: "Deep space"               },
-  { id: "glacier", label: "Glacier", icon: "🧊",  desc: "Icy frosted glass · Lv.5" },
+  { id: "light",   label: "Light",   icon: "☀️",  desc: "Paper white, Volt accents" },
+  { id: "dark",    label: "Dark",    icon: "🌙",  desc: "Charcoal night"           },
+  { id: "glacier", label: "Glacier", icon: "🧊",  desc: "Icy frosted glass"       },
   // ── add future themes here ──
 ];
 

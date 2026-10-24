@@ -107,7 +107,7 @@ export function DebateAnalysisPage() {
 
   if (!debate || !result) return (
     <div className="bg-grid" style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-      <img src="/logo/logo.png" alt="Loading…" className="logo-heartbeat" style={{ width: 64, height: 64 }} />
+      <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 64, height: 64 }} />
     </div>
   );
 
@@ -323,7 +323,7 @@ export function DebateAnalysisPage() {
 
       <div className="bg-grid" style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}>
         {/* Ambient */}
-        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 60% 50% at 20% 10%,rgba(124,58,237,0.07) 0%,transparent 60%)" }} />
+        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 60% 50% at 20% 10%,rgba(var(--violet-rgb),0.07) 0%,transparent 60%)" }} />
 
         {/* ── HEADER ── */}
         <div style={{
@@ -357,7 +357,7 @@ export function DebateAnalysisPage() {
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", position: "relative", zIndex: 1 }}>
             <div onClick={() => navigate("/pricing")} style={{
               cursor: "pointer", borderRadius: "1.25rem", padding: "2.5rem 2rem", textAlign: "center",
-              background: "linear-gradient(135deg,rgba(245,158,11,0.08),rgba(124,58,237,0.06))",
+              background: "linear-gradient(135deg,rgba(245,158,11,0.08),rgba(var(--violet-rgb),0.06))",
               border: "1.5px solid rgba(245,158,11,0.3)", maxWidth: 400, width: "100%",
             }}>
               <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🔒</div>

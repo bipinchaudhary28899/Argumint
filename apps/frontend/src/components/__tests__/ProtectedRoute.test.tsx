@@ -84,7 +84,7 @@ describe("ProtectedRoute — loading spinner", () => {
   it("spinner img has the correct logo src", () => {
     mockUseAuth.mockReturnValue({ user: null, isLoading: true });
     renderRoute(false);
-    expect(screen.getByAltText(/Loading/i)).toHaveAttribute("src", "/logo/logo.png");
+    expect(screen.getByAltText(/Loading/i)).toHaveAttribute("src", "/logo/brand/argumint-app-icon-dark.svg");
   });
 });
 

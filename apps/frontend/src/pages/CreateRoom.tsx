@@ -296,9 +296,9 @@ export function CreateRoom() {
                       padding: isMobile ? "0.75rem" : "0.875rem 1rem",
                       borderRadius: "0.875rem",
                       border: `2px solid ${active ? "var(--blue)" : locked ? (isGlacier ? "rgba(2,132,199,0.3)" : "rgba(245,158,11,0.3)") : "var(--border)"}`,
-                      background: active ? "rgba(79,70,229,0.07)" : locked ? (isGlacier ? "rgba(2,132,199,0.04)" : "rgba(245,158,11,0.03)") : "var(--surface2)",
+                      background: active ? "rgba(var(--blue-rgb),0.07)" : locked ? (isGlacier ? "rgba(2,132,199,0.04)" : "rgba(245,158,11,0.03)") : "var(--surface2)",
                       cursor: locked ? "pointer" : "pointer", transition: "all 0.2s",
-                      boxShadow: active ? "0 4px 16px rgba(79,70,229,0.14)" : "none",
+                      boxShadow: active ? "0 4px 16px rgba(var(--blue-rgb),0.14)" : "none",
                       opacity: locked ? 0.75 : 1,
                     }}
                   >
@@ -313,7 +313,7 @@ export function CreateRoom() {
                         </span>
                       )}
                       {active && !locked && (
-                        <span style={{ marginLeft: "auto", fontSize: "0.58rem", fontWeight: 800, color: "var(--blue)", background: "rgba(79,70,229,0.12)", padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
+                        <span style={{ marginLeft: "auto", fontSize: "0.58rem", fontWeight: 800, color: "var(--blue)", background: "rgba(var(--blue-rgb),0.12)", padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
                           SELECTED
                         </span>
                       )}
@@ -393,7 +393,7 @@ export function CreateRoom() {
             )}
 
             {/* Summary strip */}
-            <div style={{ marginTop: "0.25rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(79,70,229,0.05)", border: "1px solid rgba(79,70,229,0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
+            <div style={{ marginTop: "0.25rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(var(--blue-rgb),0.05)", border: "1px solid rgba(var(--blue-rgb),0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
               <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
                 <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{totalTurns}</span>
                 {" "}turns

@@ -5,6 +5,7 @@ import { useTheme, THEMES } from "../contexts/ThemeContext";
 import { getLevelInfo } from "@argumint/shared";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { NavLogo } from "../components/NavLogo";
+import { Icon, type IconName } from "../components/Icon";
 import { ProWelcomeModal } from "../components/ProWelcomeModal";
 import { platformApi } from "../services/api";
 
@@ -26,7 +27,7 @@ function winRate(won: number, total: number): string {
 }
 
 const AVATAR_PALETTES = [
-  { bg: "#ede9fe", color: "#4f46e5", border: "#c4b5fd" },
+  { bg: "#eef9c8", color: "#3b5200", border: "#c8f135" },
   { bg: "#d1fae5", color: "#047857", border: "#6ee7b7" },
   { bg: "#e0f2fe", color: "#0369a1", border: "#7dd3fc" },
   { bg: "#fce7f3", color: "#be185d", border: "#f9a8d4" },
@@ -36,6 +37,15 @@ const AVATAR_PALETTES = [
 function avatarPalette(username: string) {
   return AVATAR_PALETTES[username.charCodeAt(0) % AVATAR_PALETTES.length];
 }
+
+// ─── Sidebar links — existing routes only ─────────────────────────────────────
+const SIDEBAR_LINKS: { id: string; label: string; icon: IconName; path: string | null }[] = [
+  { id: "home",    label: "Home",          icon: "home",  path: null },
+  { id: "create",  label: "Create room",   icon: "plus",  path: "/create-room" },
+  { id: "join",    label: "Join room",     icon: "join",  path: "/join-room" },
+  { id: "rewards", label: "Level rewards", icon: "star",  path: "/level-rewards" },
+  { id: "pro",     label: "Pro",           icon: "crown", path: "/pricing" },
+];
 
 // ─── Stat box ─────────────────────────────────────────────────────────────────
 function StatBox({ label, value, color }: { label: string; value: string | number; color?: string }) {
@@ -64,16 +74,16 @@ function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc:
       borderRadius: "0.875rem",
       padding: "1rem 1.125rem",
       display: "flex", flexDirection: "column", gap: "0.4rem",
-      boxShadow: "0 2px 12px rgba(79,70,229,0.06)",
+      boxShadow: "0 2px 12px rgba(var(--blue-rgb),0.06)",
       transition: "transform 0.22s ease, box-shadow 0.22s ease",
     }}
     onMouseEnter={e => {
       (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 8px 28px rgba(79,70,229,0.12)";
+      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 8px 28px rgba(var(--blue-rgb),0.12)";
     }}
     onMouseLeave={e => {
       (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 12px rgba(79,70,229,0.06)";
+      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 12px rgba(var(--blue-rgb),0.06)";
     }}
     >
       <div style={{ fontSize: "1.35rem" }}>{icon}</div>
@@ -199,12 +209,12 @@ export function Home() {
           width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
           background: isPro
             ? (isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)")
-            : "linear-gradient(135deg, #4f46e5, #7c3aed)",
+            : "var(--volt)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "1.3rem", fontWeight: 900, color: "#fff",
+          fontSize: "1.3rem", fontWeight: 900, color: isPro ? "#fff" : "var(--on-volt)",
           boxShadow: isPro
             ? (isGlacier ? "0 4px 16px rgba(2,132,199,0.5)" : "0 4px 16px rgba(245,158,11,0.5)")
-            : "0 4px 16px rgba(79,70,229,0.4)",
+            : "0 4px 16px rgba(var(--volt-rgb),0.35)",
         }}>
           {user?.username?.[0]?.toUpperCase() ?? "?"}
         </div>
@@ -218,8 +228,8 @@ export function Home() {
               padding: "0.1rem 0.45rem", borderRadius: "9999px",
               background: isPro
                 ? ac.bg
-                : (isDark ? "rgba(99,102,241,0.18)" : "rgba(79,70,229,0.1)"),
-              border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(79,70,229,0.35)",
+                : (isDark ? "rgba(var(--blue-rgb),0.18)" : "rgba(var(--blue-rgb),0.1)"),
+              border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(var(--blue-rgb),0.35)",
               color: isPro ? ac.dark : "var(--blue)",
             }}>
               Lv.{lvlInfo.current.level}
@@ -257,8 +267,8 @@ export function Home() {
         display: "flex", gap: "0.5rem", padding: "0.75rem 0.5rem", borderRadius: "0.625rem",
         background: isPro
           ? (isGlacier ? "rgba(2,132,199,0.07)" : isDark ? "rgba(245,158,11,0.08)" : "rgba(245,158,11,0.04)")
-          : isDark ? "rgba(99,102,241,0.08)" : "rgba(79,70,229,0.03)",
-        border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(99,102,241,0.2)" : "var(--border)"}`,
+          : isDark ? "rgba(var(--blue-rgb),0.08)" : "rgba(var(--blue-rgb),0.03)",
+        border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(var(--blue-rgb),0.2)" : "var(--border)"}`,
       }}>
         <StatBox label="Won"   value={userStats.debatesWon}   color="var(--for)" />
         <div style={{ width: 1, background: "var(--border)" }} />
@@ -278,10 +288,10 @@ export function Home() {
                   : credBand === "moderate" ? "var(--blue)"
                   :                           "#ef4444";
   const credBg    = credBand === "strong"   ? "rgba(34,197,94,0.1)"
-                  : credBand === "moderate" ? "rgba(79,70,229,0.08)"
+                  : credBand === "moderate" ? "rgba(var(--blue-rgb),0.08)"
                   :                           "rgba(239,68,68,0.08)";
   const credBorder = credBand === "strong"  ? "rgba(34,197,94,0.3)"
-                  : credBand === "moderate" ? "rgba(79,70,229,0.25)"
+                  : credBand === "moderate" ? "rgba(var(--blue-rgb),0.25)"
                   :                           "rgba(239,68,68,0.3)";
   const credIcon   = credBand === "strong"  ? "⚖️"
                   : credBand === "moderate" ? "📋"
@@ -359,8 +369,8 @@ export function Home() {
                 borderRadius: "0.625rem",
                 background: isFirst
                   ? (isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.12),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(217,119,6,0.06))")
-                  : isMe ? "rgba(79,70,229,0.07)" : "var(--surface)",
-                border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.38)" : "rgba(245,158,11,0.38)") : isMe ? "rgba(79,70,229,0.28)" : "var(--border)"}`,
+                  : isMe ? "rgba(var(--blue-rgb),0.07)" : "var(--surface)",
+                border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.38)" : "rgba(245,158,11,0.38)") : isMe ? "rgba(var(--blue-rgb),0.28)" : "var(--border)"}`,
                 boxShadow: isFirst ? (isGlacier ? "0 2px 12px rgba(2,132,199,0.14)" : "0 2px 12px rgba(245,158,11,0.14)") : "none",
                 transition: "background 0.2s",
               }}>
@@ -428,31 +438,29 @@ export function Home() {
       <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowThemePicker(false)} />
       <div style={{
         position: "fixed", top: 52, right: 12, zIndex: 200,
-        background: "rgba(255,255,255,0.97)", border: "1px solid rgba(0,0,0,0.08)",
+        background: "var(--menu-bg)", border: "1px solid var(--border)",
         borderRadius: "0.875rem", padding: "0.4rem",
         boxShadow: "0 12px 40px rgba(0,0,0,0.14)",
         display: "flex", flexDirection: "column", gap: "0.2rem", minWidth: 175,
       }}>
-        <div style={{ fontSize: "0.56rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#94a3b8", padding: "0.2rem 0.5rem 0.3rem" }}>Theme</div>
+        <div style={{ fontSize: "0.56rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", padding: "0.2rem 0.5rem 0.3rem" }}>Theme</div>
         {THEMES.map(t => {
-          const active     = theme === t.id;
-          const levelGated = t.id === "glacier" && lvlInfo.current.level < 5;
+          const active = theme === t.id;
           return (
             <button key={t.id}
-              onClick={() => { if (levelGated) { setShowThemePicker(false); return; } setTheme(t.id); setShowThemePicker(false); }}
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.55rem", borderRadius: "0.55rem", border: "none", cursor: levelGated ? "default" : "pointer", textAlign: "left", width: "100%", background: active ? "rgba(2,132,199,0.08)" : "transparent", opacity: levelGated ? 0.65 : 1, fontFamily: "inherit", color: "#1e293b" }}
-              onMouseEnter={e => { if (!active && !levelGated) (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.04)"; }}
-              onMouseLeave={e => { if (!active && !levelGated) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+              onClick={() => { setTheme(t.id); setShowThemePicker(false); }}
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.55rem", borderRadius: "0.55rem", border: "none", cursor: "pointer", textAlign: "left", width: "100%", background: active ? "var(--accent-soft)" : "transparent", fontFamily: "inherit", color: "var(--text)" }}
+              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+              onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
             >
               <span style={{ fontSize: "0.95rem", lineHeight: 1, flexShrink: 0 }}>{t.icon}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: active ? 800 : 600, color: active ? "#0284c7" : "#1e293b", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", fontWeight: active ? 800 : 600, color: active ? "var(--accent-soft-text)" : "var(--text)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                   {t.label}
-                  {levelGated && <span style={{ fontSize: "0.52rem", fontWeight: 800, padding: "0.08rem 0.3rem", borderRadius: "9999px", background: "rgba(14,165,233,0.12)", color: "#0284c7" }}>Lv.5</span>}
                 </div>
-                <div style={{ fontSize: "0.6rem", color: "#64748b", marginTop: "0.04rem" }}>{t.desc}</div>
+                <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "0.04rem" }}>{t.desc}</div>
               </div>
-              {active ? <span style={{ fontSize: "0.68rem", color: "#0284c7", flexShrink: 0 }}>✓</span> : levelGated ? <span style={{ fontSize: "0.62rem", color: "#94a3b8", flexShrink: 0 }}>🔒</span> : null}
+              {active ? <span style={{ color: "var(--accent-soft-text)", flexShrink: 0 }}><Icon name="check" size={14} /></span> : null}
             </button>
           );
         })}
@@ -479,13 +487,13 @@ export function Home() {
           </div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: isPro ? (isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)") : "linear-gradient(135deg,#4f46e5,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: 900, color: "#fff", boxShadow: isPro ? (isGlacier ? "0 3px 12px rgba(2,132,199,0.45)" : "0 3px 12px rgba(245,158,11,0.45)") : "0 3px 12px rgba(79,70,229,0.4)" }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: isPro ? (isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)") : "var(--volt)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: 900, color: isPro ? "#fff" : "var(--on-volt)", boxShadow: isPro ? (isGlacier ? "0 3px 12px rgba(2,132,199,0.45)" : "0 3px 12px rgba(245,158,11,0.45)") : "0 3px 12px rgba(var(--volt-rgb),0.35)" }}>
             {user?.username?.[0]?.toUpperCase() ?? "?"}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.username}</div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginTop: "0.12rem" }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.62rem", fontWeight: 900, padding: "0.08rem 0.4rem", borderRadius: "9999px", background: isPro ? ac.bg : "rgba(79,70,229,0.1)", border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(79,70,229,0.3)", color: isPro ? ac.dark : "var(--blue)" }}>Lv.{lvlInfo.current.level}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.62rem", fontWeight: 900, padding: "0.08rem 0.4rem", borderRadius: "9999px", background: isPro ? ac.bg : "rgba(var(--blue-rgb),0.1)", border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(var(--blue-rgb),0.3)", color: isPro ? ac.dark : "var(--blue)" }}>Lv.{lvlInfo.current.level}</span>
               <span style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>{lvlInfo.current.title}</span>
             </div>
           </div>
@@ -502,7 +510,7 @@ export function Home() {
           <div style={{ fontSize: "0.54rem", color: "var(--muted)", marginTop: "0.15rem", textAlign: "right" }}>{xp} total XP</div>
         </div>
         {/* Stats */}
-        <div style={{ display: "flex", gap: "0.4rem", padding: "0.625rem 0.4rem", borderRadius: "0.5rem", background: isPro ? (isGlacier ? "rgba(2,132,199,0.06)" : isDark ? "rgba(245,158,11,0.07)" : "rgba(245,158,11,0.03)") : isDark ? "rgba(99,102,241,0.07)" : "rgba(79,70,229,0.03)", border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(99,102,241,0.18)" : "var(--border)"}` }}>
+        <div style={{ display: "flex", gap: "0.4rem", padding: "0.625rem 0.4rem", borderRadius: "0.5rem", background: isPro ? (isGlacier ? "rgba(2,132,199,0.06)" : isDark ? "rgba(245,158,11,0.07)" : "rgba(245,158,11,0.03)") : isDark ? "rgba(var(--blue-rgb),0.07)" : "rgba(var(--blue-rgb),0.03)", border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(var(--blue-rgb),0.18)" : "var(--border)"}` }}>
           <StatBox label="Won"   value={userStats.debatesWon}   color="var(--for)" />
           <div style={{ width: 1, background: "var(--border)" }} />
           <StatBox label="Lost"  value={userStats.debatesLost}  color="var(--against)" />
@@ -517,11 +525,11 @@ export function Home() {
     return (
       <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", position: "relative" }}>
         {/* Background layers */}
-        <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", background: isPro ? "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(245,158,11,0.07) 0%,transparent 60%)" : "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(124,58,237,0.07) 0%,transparent 60%)" }} />
+        <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", background: isPro ? "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(245,158,11,0.07) 0%,transparent 60%)" : "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(var(--volt-rgb),0.08) 0%,transparent 60%)" }} />
         <div className="bg-grid" style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />
 
         {/* ── TOP NAV ── */}
-        <nav style={{ position: "relative", zIndex: 10, flexShrink: 0, height: 56, padding: "0 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border)", background: "var(--bg)" }}>
+        <nav style={{ position: "relative", zIndex: 10, flexShrink: 0, height: 56, padding: "0 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--hair)", background: "var(--surface)" }}>
           <NavLogo isPro={isPro} isGlacier={isGlacier} />
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             {isPro && (
@@ -540,7 +548,7 @@ export function Home() {
         </nav>
 
         {/* ── CONTENT AREA ── */}
-        <div style={{ flex: 1, minHeight: 0, position: "relative", zIndex: 1, paddingBottom: "calc(58px + env(safe-area-inset-bottom, 0px))" }}>
+        <div style={{ flex: 1, minHeight: 0, position: "relative", zIndex: 1, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
 
           {/* ─── HOME TAB ─── */}
           {activeTab === "home" && (
@@ -560,9 +568,9 @@ export function Home() {
                   {isGlacier ? (
                     <><span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argue smarter.</span><br /><span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8,#bae6fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Win the room.</span></>
                   ) : isPro ? (
-                    <><span style={{ backgroundImage: ac.grad135, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argue smarter.</span><br /><span style={{ backgroundImage: "linear-gradient(135deg,#22d3ee,#4f46e5,#7c3aed)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Win the room.</span></>
+                    <><span style={{ backgroundImage: ac.grad135, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argue smarter.</span><br /><span className="brand-highlight">Win the room.</span></>
                   ) : (
-                    <>Argue smarter.<br /><span style={{ backgroundImage: "linear-gradient(135deg,#22d3ee,#4f46e5,#7c3aed)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Win the room.</span></>
+                    <>Argue smarter.<br /><span className="brand-highlight">Win the room.</span></>
                   )}
                 </h1>
                 <p style={{ margin: 0, color: "var(--subtle)", fontSize: "0.82rem", lineHeight: 1.6 }}>
@@ -677,7 +685,7 @@ export function Home() {
                       const lvl = getLevelInfo(entry.xp);
                       const pal = avatarPalette(entry.username);
                       return (
-                        <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: isFirst ? "0.5rem 0.7rem" : "0.375rem 0.6rem", borderRadius: "0.6rem", background: isFirst ? (isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.12),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(217,119,6,0.06))") : isMe ? "rgba(79,70,229,0.07)" : "var(--surface)", border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.35)" : "rgba(245,158,11,0.35)") : isMe ? "rgba(79,70,229,0.25)" : "var(--border)"}` }}>
+                        <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: isFirst ? "0.5rem 0.7rem" : "0.375rem 0.6rem", borderRadius: "0.6rem", background: isFirst ? (isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.12),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(217,119,6,0.06))") : isMe ? "rgba(var(--blue-rgb),0.07)" : "var(--surface)", border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.35)" : "rgba(245,158,11,0.35)") : isMe ? "rgba(var(--blue-rgb),0.25)" : "var(--border)"}` }}>
                           <div style={{ width: isFirst ? 28 : 24, height: isFirst ? 28 : 24, borderRadius: "50%", flexShrink: 0, background: pal.bg, border: `1.5px solid ${pal.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isFirst ? "0.7rem" : "0.6rem", fontWeight: 900, color: pal.color }}>
                             {entry.username[0].toUpperCase()}
                           </div>
@@ -699,30 +707,22 @@ export function Home() {
         </div>
 
         {/* ── BOTTOM NAV ── */}
-        <nav style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100, height: "calc(58px + env(safe-area-inset-bottom, 0px))", borderTop: "1px solid var(--border)", background: "var(--bg)", display: "flex", alignItems: "stretch", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <nav aria-label="Main" className="app-tabbar">
           {([
-            { id: "home",        icon: "🏠", label: "Home" },
-            { id: "leaderboard", icon: "🏆", label: "Rank" },
-            { id: "profile",     icon: "👤", label: "Me"   },
-          ] as { id: string; icon: string; label: string }[]).map(({ id, icon, label }) => {
+            { id: "home",        icon: "home",   label: "Home" },
+            { id: "leaderboard", icon: "trophy", label: "Rank" },
+            { id: "profile",     icon: "user",   label: "Me"   },
+          ] as { id: string; icon: IconName; label: string }[]).map(({ id, icon, label }) => {
             const isActive = activeTab === id;
-            const accentColor = isGlacier ? "#0284c7" : "var(--blue)";
             return (
               <button
                 key={id}
                 onClick={() => setActiveTab(id as "home" | "leaderboard" | "profile")}
-                style={{
-                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "0.12rem",
-                  background: "transparent", border: "none", cursor: "pointer", padding: "0.2rem 0", position: "relative",
-                }}
+                aria-current={isActive ? "page" : undefined}
+                className={`app-tabbar-item${isActive ? " is-active" : ""}`}
               >
-                {isActive && (
-                  <div style={{ position: "absolute", top: 0, left: "22%", right: "22%", height: 2, borderRadius: "0 0 3px 3px", background: accentColor }} />
-                )}
-                <span style={{ fontSize: isActive ? "1.15rem" : "1.05rem", lineHeight: 1, transition: "font-size 0.15s" }}>{icon}</span>
-                <span style={{ fontSize: "0.5rem", fontWeight: isActive ? 800 : 600, color: isActive ? accentColor : "var(--muted)", letterSpacing: "0.04em", transition: "color 0.15s" }}>
-                  {label}
-                </span>
+                <Icon name={icon} size={20} />
+                <span>{label}</span>
               </button>
             );
           })}
@@ -739,32 +739,75 @@ export function Home() {
   // ── END MOBILE ─────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", position: "relative" }}>
+    <div className="app-shell" style={{ height: "100vh", display: "flex", background: "var(--bg)", position: "relative" }}>
       {/* Clean gradient bg — golden tint for Pro */}
       <div style={{
         position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
         background: isPro
           ? "radial-gradient(ellipse 70% 60% at 15% 0%, rgba(245,158,11,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 90% 100%, rgba(251,191,36,0.05) 0%, transparent 55%)"
-          : "radial-gradient(ellipse 70% 60% at 15% 0%, rgba(124,58,237,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 90% 100%, rgba(14,165,233,0.06) 0%, transparent 55%)",
+          : "radial-gradient(ellipse 70% 60% at 15% 0%, rgba(var(--volt-rgb),0.08) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 90% 100%, rgba(var(--volt-rgb),0.05) 0%, transparent 55%)",
       }} />
       {/* Soft grid */}
       <div className="bg-grid" style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />
 
-      {/* ── NAV ── */}
-      <nav className="game-nav" style={{ position: "relative" }}>
-        <NavLogo isPro={isPro} isGlacier={isGlacier} />
+      {/* ── SIDEBAR ── */}
+      <aside className="app-sidebar">
+        <div className="app-sidebar-logo">
+          <NavLogo isPro={isPro} isGlacier={isGlacier} />
+        </div>
+        <nav aria-label="Main" className="app-sidebar-links">
+          {SIDEBAR_LINKS.map(link => {
+            const active = link.id === "home";
+            return (
+              <button
+                key={link.id}
+                onClick={() => { if (link.path) navigate(link.path); }}
+                aria-current={active ? "page" : undefined}
+                title={link.label}
+                className={`app-sidebar-link${active ? " is-active" : ""}`}
+              >
+                <Icon name={link.icon} />
+                <span className="app-sidebar-label">{link.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="app-sidebar-foot">
+          {!isPro && (
+            <button onClick={() => navigate("/pricing")} className="app-sidebar-pro">
+              <span className="app-sidebar-pro-title"><Icon name="bolt" size={16} />GO PRO</span>
+              <span className="app-sidebar-pro-copy">Judges · Spectators · Buzzer · Voting — ₹50/mo</span>
+            </button>
+          )}
+          <div className="app-sidebar-user">
+            <span className="app-sidebar-avatar" style={isPro ? { background: isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff" } : undefined}>
+              {user?.username?.[0]?.toUpperCase() ?? "?"}
+            </span>
+            <div className="app-sidebar-user-text">
+              <span className="app-sidebar-user-name">{user?.username}</span>
+              <span className="app-sidebar-user-meta">Lv.{lvlInfo.current.level} · {lvlInfo.current.title}</span>
+            </div>
+            <button onClick={handleLogout} disabled={loggingOut} className="app-sidebar-logout" title="Logout">
+              <Icon name="logout" />
+              <span className="sr-only">{loggingOut ? "…" : "Logout"}</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="app-main-col">
+      {/* ── TOP BAR ── */}
+      <header className="app-topbar">
+        <div className="app-topbar-title">
+          Welcome back{user?.username ? "," : ""} <strong>{user?.username}</strong>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          {!isMobile && (stats?.liveDebates ?? 0) > 0 && (
-            <div className="nav-chip" style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.22rem 0.6rem", borderRadius: "9999px", background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.22)" }}>
+          {(stats?.liveDebates ?? 0) > 0 && (
+            <div className="nav-chip" style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.22rem 0.6rem", borderRadius: "9999px", background: "rgba(var(--against-rgb),0.08)", border: "1px solid rgba(var(--against-rgb),0.22)" }}>
               <div className="pulse-dot pulse-dot-red" />
               <span style={{ fontSize: "0.67rem", fontWeight: 700, color: "var(--against)" }}>{stats?.liveDebates} LIVE</span>
             </div>
           )}
-          <div className="nav-chip" style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: "9999px", background: "rgba(79,70,229,0.07)", border: "1px solid rgba(79,70,229,0.2)" }}>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem", fontWeight: 900, color: "var(--blue)" }}>Lv.{lvlInfo.current.level}</span>
-            {!isMobile && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "var(--subtle)" }}>{lvlInfo.current.title}</span>}
-          </div>
-          {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.82rem", fontWeight: 600 }}>{user?.username}</span>}
           {isPro && isCancelled ? (
             <div
               onClick={() => navigate("/pricing")}
@@ -807,56 +850,43 @@ export function Home() {
                 <div style={{
                   position: "absolute", top: "calc(100% + 0.5rem)", right: 0, zIndex: 200,
                   /* Always solid — never transparent regardless of theme */
-                  background: "rgba(255,255,255,0.97)",
-                  border: "1px solid rgba(0,0,0,0.08)",
+                  background: "var(--menu-bg)",
+                  border: "1px solid var(--border)",
                   borderRadius: "0.875rem", padding: "0.4rem",
                   boxShadow: "0 12px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
                   display: "flex", flexDirection: "column", gap: "0.2rem", minWidth: 180,
                 }}>
-                  <div style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#94a3b8", padding: "0.2rem 0.5rem 0.35rem" }}>
+                  <div style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", padding: "0.2rem 0.5rem 0.35rem" }}>
                     Theme
                   </div>
                   {THEMES.map(t => {
-                    const active      = theme === t.id;
-                    const levelGated  = t.id === "glacier" && lvlInfo.current.level < 5;
+                    const active = theme === t.id;
                     return (
                       <button
                         key={t.id}
                         onClick={() => {
-                          if (levelGated) { setShowThemePicker(false); return; }
                           setTheme(t.id); setShowThemePicker(false);
                         }}
                         style={{
                           display: "flex", alignItems: "center", gap: "0.55rem",
                           padding: "0.45rem 0.6rem", borderRadius: "0.6rem",
-                          border: "none", cursor: levelGated ? "default" : "pointer", textAlign: "left", width: "100%",
-                          background: active ? "rgba(2,132,199,0.08)" : "transparent",
-                          opacity: levelGated ? 0.65 : 1,
+                          border: "none", cursor: "pointer", textAlign: "left", width: "100%",
+                          background: active ? "var(--accent-soft)" : "transparent",
                           transition: "background 0.15s",
                           fontFamily: "inherit",
-                          color: "#1e293b",
+                          color: "var(--text)",
                         }}
-                        onMouseEnter={e => { if (!active && !levelGated) (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.04)"; }}
-                        onMouseLeave={e => { if (!active && !levelGated) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
+                        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
                       >
                         <span style={{ fontSize: "1rem", lineHeight: 1, flexShrink: 0 }}>{t.icon}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: "0.78rem", fontWeight: active ? 800 : 600, color: active ? "#0284c7" : "#1e293b", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                          <div style={{ fontSize: "0.78rem", fontWeight: active ? 800 : 600, color: active ? "var(--accent-soft-text)" : "var(--text)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
                             {t.label}
-                            {levelGated && (
-                              <span style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.06em", padding: "0.1rem 0.35rem", borderRadius: "9999px", background: "rgba(14,165,233,0.12)", color: "#0284c7" }}>
-                                Lv.5
-                              </span>
-                            )}
                           </div>
-                          <div style={{ fontSize: "0.62rem", color: "#64748b", marginTop: "0.05rem" }}>{t.desc}</div>
+                          <div style={{ fontSize: "0.62rem", color: "var(--muted)", marginTop: "0.05rem" }}>{t.desc}</div>
                         </div>
-                        {active
-                          ? <span style={{ fontSize: "0.7rem", color: "#0284c7", flexShrink: 0 }}>✓</span>
-                          : levelGated
-                            ? <span style={{ fontSize: "0.65rem", color: "#94a3b8", flexShrink: 0 }}>🔒</span>
-                            : null
-                        }
+                        {active ? <span style={{ color: "var(--accent-soft-text)", flexShrink: 0 }}><Icon name="check" size={15} /></span> : null}
                       </button>
                     );
                   })}
@@ -892,11 +922,8 @@ export function Home() {
               </button>
             </>
           )}
-          <button onClick={handleLogout} disabled={loggingOut} className="btn-danger" style={{ padding: "0.35rem 0.7rem", fontSize: "0.78rem" }}>
-            {loggingOut ? "…" : "Logout"}
-          </button>
         </div>
-      </nav>
+      </header>
 
       {/* ── MAIN ── */}
       <main style={{
@@ -906,7 +933,7 @@ export function Home() {
       }}>
         {isMobile && <div style={{ marginBottom: "1.25rem" }}>{PlayerCard}</div>}
 
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: "1.5rem", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) 300px", gap: "1.5rem", alignItems: "start" }}>
 
           {/* ── LEFT ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -937,12 +964,13 @@ export function Home() {
                 ) : (
                   <>Argue smarter.</>
                 )}<br />
-                <span style={{ backgroundImage: isGlacier
-                  ? "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8,#bae6fd)"
-                  : "linear-gradient(135deg,#22d3ee,#4f46e5,#7c3aed)",
-                  WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-                  Win the room.
-                </span>
+                {isGlacier ? (
+                  <span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8,#bae6fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                    Win the room.
+                  </span>
+                ) : (
+                  <span className="brand-highlight">Win the room.</span>
+                )}
               </h1>
               <p style={{ color: "var(--subtle)", fontSize: isMobile ? "0.9rem" : "1rem", lineHeight: 1.65, maxWidth: 480, margin: 0 }}>
                 Real-time structured debates. AI judging. Live transcription.<br />Compete against others or sharpen your rhetoric.
@@ -950,7 +978,7 @@ export function Home() {
             </div>
 
             {/* CTAs */}
-            <div className="fade-up" style={{ display: "flex", gap: "0.875rem", flexDirection: isMobile ? "column" : "row", animationDelay: "0.08s" }}>
+            <div className="fade-up" style={{ display: "flex", flexWrap: "wrap", gap: "0.875rem", flexDirection: isMobile ? "column" : "row", animationDelay: "0.08s" }}>
               <button onClick={() => navigate("/create-room")} className="btn-primary" style={{ fontSize: "1rem", padding: "0.875rem 2rem", fontWeight: 800 }}>
                 ⚔️ Create Room
               </button>
@@ -1017,6 +1045,7 @@ export function Home() {
           )}
         </div>
       </main>
+      </div>
 
       {/* Pro welcome modal — shown once after first upgrade */}
       {showProWelcome && userId && (

@@ -66,10 +66,10 @@ export function LevelRewards() {
       <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
         <div style={{
           width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
-          background: isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#4f46e5,#7c3aed)",
+          background: isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "var(--volt)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "1rem", fontWeight: 900, color: "#fff",
-          boxShadow: isGlacier ? "0 3px 12px rgba(2,132,199,0.4)" : "0 3px 12px rgba(79,70,229,0.4)",
+          fontSize: "1rem", fontWeight: 900, color: isGlacier ? "#fff" : "var(--on-volt)",
+          boxShadow: isGlacier ? "0 3px 12px rgba(2,132,199,0.4)" : "0 3px 12px rgba(var(--volt-rgb),0.35)",
         }}>
           {user?.username?.[0]?.toUpperCase() ?? "?"}
         </div>
@@ -148,7 +148,7 @@ export function LevelRewards() {
       </div>
       <div style={{ position: "relative", height: 52, margin: "0 15px" }}>
         <div style={{ position: "absolute", top: 14, left: 0, right: 0, height: 3, borderRadius: 9999, background: isDark ? "rgba(255,255,255,0.08)" : "var(--border)" }} />
-        <div style={{ position: "absolute", top: 14, left: 0, height: 3, borderRadius: 9999, width: `${fillPct}%`, background: trackGrad, boxShadow: isGlacier ? "0 0 8px rgba(56,189,248,0.4)" : "0 0 8px rgba(79,70,229,0.25)", transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }} />
+        <div style={{ position: "absolute", top: 14, left: 0, height: 3, borderRadius: 9999, width: `${fillPct}%`, background: trackGrad, boxShadow: isGlacier ? "0 0 8px rgba(56,189,248,0.4)" : "0 0 8px rgba(var(--blue-rgb),0.25)", transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }} />
         {ROADMAP_MILESTONES.map((m) => {
           const reached = curLevel >= m.level;
           const active  = curLevel === m.level;
@@ -348,7 +348,7 @@ export function LevelRewards() {
         <NavLogo isPro={isPro} isGlacier={isGlacier} />
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
           {!isMobile && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: "9999px", background: "rgba(79,70,229,0.07)", border: "1px solid rgba(79,70,229,0.2)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.28rem 0.65rem", borderRadius: "9999px", background: "rgba(var(--blue-rgb),0.07)", border: "1px solid rgba(var(--blue-rgb),0.2)" }}>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.68rem", fontWeight: 900, color: "var(--blue)" }}>Lv.{curLevel}</span>
               <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "var(--subtle)" }}>{lvlInfo.current.title}</span>
             </div>

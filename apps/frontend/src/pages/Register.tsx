@@ -58,7 +58,7 @@ export function Register() {
       <button onClick={() => navigate("/")} className="btn-ghost" style={{ position: "fixed", top: "1rem", left: "1rem", fontSize: "0.82rem", padding: "0.35rem 0.75rem", zIndex: 10 }}>← Back</button>
       <div className="fade-up w-full" style={{ maxWidth: 440, width: "100%" }}>
         <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-          <img src="/logo/logo.png" alt="Argumint" style={{ width: 96, height: 96, borderRadius: "1.25rem", objectFit: "contain", display: "block", margin: "0 auto" }} />
+          <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Argumint" style={{ width: 96, height: 96, borderRadius: "1.25rem", objectFit: "contain", display: "block", margin: "0 auto" }} />
           <div style={{ marginTop: "0.75rem", color: "var(--muted)", fontSize: "0.8rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 600 }}>Create your account</div>
         </div>
         <div className="glass" style={{ padding: "2.25rem" }}>

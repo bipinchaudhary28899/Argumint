@@ -7,8 +7,8 @@ const FREE_FEATURES = [
   "Create & join rooms — alternate mode",
   "Live transcription on desktop",
   "AI scoring after every debate",
-  "Light & dark mode",
-  "Level-up surprises (e.g. Glacier theme at Lv. 5)",
+  "Light, dark, and Glacier theme options",
+  "Level-up surprises as you earn XP",
 ];
 
 const PRO_FEATURES = [
