@@ -32,6 +32,9 @@ import { SubscriptionSuccess } from "./pages/SubscriptionSuccess";
 import { SubscriptionCancel } from "./pages/SubscriptionCancel";
 import { LevelRewards } from "./pages/LevelRewards";
 import { DebateAnalysisPage } from "./pages/DebateAnalysisPage";
+import { LeaderboardPage } from "./pages/LeaderboardPage";
+import { MatchHistoryPage } from "./pages/MatchHistoryPage";
+import { JudgeCredibilityPage } from "./pages/JudgeCredibilityPage";
 
 function App() {
   return (
@@ -139,6 +142,11 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* ── Player stats (views over existing leaderboard / history / judge data) ── */}
+          <Route path="/leaderboard" element={<ProtectedRoute><LeaderboardPage /></ProtectedRoute>} />
+          <Route path="/history" element={<ProtectedRoute><MatchHistoryPage /></ProtectedRoute>} />
+          <Route path="/judge-credibility" element={<ProtectedRoute><JudgeCredibilityPage /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

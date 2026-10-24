@@ -291,7 +291,8 @@ describe("DebatePage — basic rendering after load", () => {
   it("shows the debate topic", () => {
     setupSocket();
     renderPage();
-    expect(screen.getByText(/AI will do more good than harm/i)).toBeInTheDocument();
+    // RoomHeader renders the motion twice (desktop row + mobile line)
+    expect(screen.getAllByText(/AI will do more good than harm/i).length).toBeGreaterThan(0);
   });
 
   it("shows FOR label for the for-side panel (desktop)", () => {
@@ -307,10 +308,10 @@ describe("DebatePage — basic rendering after load", () => {
     expect(screen.getByText("AGAINST")).toBeInTheDocument();
   });
 
-  it("shows Transcript section header", () => {
+  it("shows the 'Arguments so far' transcript header", () => {
     setupSocket();
     renderPage();
-    expect(screen.getByText("Transcript")).toBeInTheDocument();
+    expect(screen.getByText("Arguments so far")).toBeInTheDocument();
   });
 
   it("shows empty-transcript placeholder when no rounds", () => {
@@ -360,22 +361,22 @@ describe("DebatePage — alternate mode turn display", () => {
     expect(screen.getAllByText(/Bob/).length).toBeGreaterThan(0);
   });
 
-  it("shows 'Your turn' text when it IS the user's turn", () => {
+  it("shows 'You're on' text when it IS the user's turn", () => {
     setupSocket({ currentTurn: { roundNumber: 1, speakerId: "user-1", speakerUsername: "Alice", side: "for", endsAt: new Date(Date.now() + 60_000) } });
     renderPage();
-    expect(screen.getByText(/Your turn/i)).toBeInTheDocument();
+    expect(screen.getByText(/You're on/i)).toBeInTheDocument();
   });
 
-  it("shows 'Done → Submit' button when it is the user's turn", () => {
+  it("shows 'Finish turn' button when it is the user's turn", () => {
     setupSocket({ currentTurn: { roundNumber: 1, speakerId: "user-1", speakerUsername: "Alice", side: "for", endsAt: new Date(Date.now() + 60_000) } });
     renderPage();
-    expect(screen.getByRole("button", { name: /Done.*Submit/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Finish turn/i })).toBeInTheDocument();
   });
 
-  it("does NOT show 'Done → Submit' button when it is not the user's turn", () => {
+  it("does NOT show 'Finish turn' button when it is not the user's turn", () => {
     setupSocket();
     renderPage();
-    expect(screen.queryByRole("button", { name: /Done.*Submit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Finish turn/i })).not.toBeInTheDocument();
   });
 
   it("shows 'Waiting for next turn' when currentTurn is null", () => {
@@ -388,12 +389,12 @@ describe("DebatePage — alternate mode turn display", () => {
 // ── Alternate mode — submit flow ──────────────────────────────────────────────
 
 describe("DebatePage — alternate mode submit", () => {
-  it("emits debate:submit-argument when 'Done → Submit' is clicked", async () => {
+  it("emits debate:submit-argument when 'Finish turn' is clicked", async () => {
     setupSocket({ currentTurn: { roundNumber: 1, speakerId: "user-1", speakerUsername: "Alice", side: "for", endsAt: new Date(Date.now() + 60_000) } });
     renderPage();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /Done.*Submit/i }));
+      fireEvent.click(screen.getByRole("button", { name: /Finish turn/i }));
     });
     // Flush Promise microtasks from recorder.stop() and debateApi.transcribe()
     await act(async () => {
@@ -413,7 +414,7 @@ describe("DebatePage — alternate mode submit", () => {
 // ── Buzzer mode ───────────────────────────────────────────────────────────────
 
 describe("DebatePage — buzzer mode", () => {
-  it("shows 🎙 grab mic button in buzzer mode when window is open", () => {
+  it("shows the 'Grab the mic' button in buzzer mode when window is open", () => {
     mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
       if (event === "debate:get-state" && cb) {
         cb({ success: true, debate: makeBuzzerDebate(), roomParticipants: [] });
@@ -422,7 +423,7 @@ describe("DebatePage — buzzer mode", () => {
       }
     });
     renderPage();
-    expect(screen.getByText("🎙")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Grab the mic/i })).toBeEnabled();
   });
 
   it("grab button emits buzzer:grab when clicked", async () => {
@@ -434,8 +435,8 @@ describe("DebatePage — buzzer mode", () => {
       }
     });
     renderPage();
-    // The 🎙 button is inside the ring — it's a button element
-    const grabBtn = screen.getByRole("button", { name: /🎙/ });
+    // The grab button is inside the buzzer ring
+    const grabBtn = screen.getByRole("button", { name: /Grab the mic/i });
     fireEvent.click(grabBtn);
     expect(mockSocket.emit).toHaveBeenCalledWith(
       "buzzer:grab",
@@ -473,7 +474,7 @@ describe("DebatePage — buzzer mode", () => {
     expect(screen.getAllByText(/Now speaking/i).length).toBeGreaterThan(0);
   });
 
-  it("shows 'Your turn' and 🎙 Release button when user is the holder", () => {
+  it("shows 'You're on' and the Release button when user is the holder", () => {
     mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
       if (event === "debate:get-state" && cb) {
         cb({
@@ -497,10 +498,11 @@ describe("DebatePage — buzzer mode", () => {
       }
     });
     renderPage();
+    expect(screen.getByText(/You're on/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Release/i })).toBeInTheDocument();
   });
 
-  it("'🎙 Release' button emits buzzer:release", async () => {
+  it("'Release mic' button emits buzzer:release", async () => {
     mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
       if (event === "debate:get-state" && cb) {
         cb({
@@ -583,7 +585,7 @@ describe("DebatePage — observer roles", () => {
     expect(screen.getByText("Judging")).toBeInTheDocument();
   });
 
-  it("shows '👁️' emoji for spectator and '⚖️' emoji for judge in observer banner", () => {
+  it("shows the 'Watching live' copy in the spectator banner", () => {
     sessionStorage.setItem("argumint_room_role", "spectator");
     mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
       if (event === "debate:get-state" && cb) {
@@ -593,7 +595,7 @@ describe("DebatePage — observer roles", () => {
       }
     });
     renderPage();
-    expect(screen.getByText("👁️")).toBeInTheDocument();
+    expect(screen.getByText("Watching live")).toBeInTheDocument();
   });
 });
 
@@ -626,14 +628,14 @@ describe("DebatePage — judge role behaviors", () => {
     });
   }
 
-  it("judge sees '⚖️' emoji and 'Judging' text in the observer banner during debate", () => {
+  it("judge sees 'Judging' banner and inline score controls during debate", () => {
     setupJudgeDebate();
     renderPage();
     expect(screen.getByText("Judging")).toBeInTheDocument();
-    expect(screen.getByText("⚖️")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Raise Bob's score/i })).toBeInTheDocument();
   });
 
-  it("judge does NOT see 'Done → Submit' button (not in turn order)", () => {
+  it("judge does NOT see 'Finish turn' button (not in turn order)", () => {
     setupJudgeDebate({
       currentTurn: {
         roundNumber: 1,
@@ -644,10 +646,10 @@ describe("DebatePage — judge role behaviors", () => {
       },
     });
     renderPage();
-    expect(screen.queryByRole("button", { name: /Done.*Submit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Finish turn/i })).not.toBeInTheDocument();
   });
 
-  it("judge sees '⚖️ Judges' strip when room presence includes a judge", () => {
+  it("judge sees the 'Judges' list when room presence includes a judge", () => {
     sessionStorage.setItem("argumint_room_role", "judge");
     mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
       if (event === "debate:get-state" && cb) {
@@ -663,7 +665,7 @@ describe("DebatePage — judge role behaviors", () => {
       }
     });
     renderPage();
-    expect(screen.getAllByText(/⚖️/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Judges")).toBeInTheDocument();
   });
 
   it("judge sees 'Debate Complete' panel when debate status is ended", () => {
@@ -774,13 +776,13 @@ describe("DebatePage — socket event: debate:ended", () => {
     expect(screen.getByText(/Debate Complete/i)).toBeInTheDocument();
   });
 
-  it("shows '🏆' emoji in the finished panel", () => {
+  it("shows 'Navigating to results…' in the finished panel", () => {
     setupSocket();
     renderPage();
     act(() => {
       mockSocket._emit("debate:ended", { rounds: [] });
     });
-    expect(screen.getByText("🏆")).toBeInTheDocument();
+    expect(screen.getByText(/Navigating to results/i)).toBeInTheDocument();
   });
 });
 
@@ -849,8 +851,9 @@ describe("DebatePage — socket event: buzzer:open", () => {
       mockSocket._emit("buzzer:open", {});
     });
 
-    // After buzzer:open, canGrab should be true → 🎙 button becomes active
-    expect(screen.getByText("🎙")).toBeInTheDocument();
+    // After buzzer:open, canGrab should be true → grab button is active
+    expect(screen.getByRole("button", { name: /Grab the mic/i })).toBeEnabled();
+    expect(screen.getByText("Floor open")).toBeInTheDocument();
   });
 });
 
@@ -930,8 +933,9 @@ describe("DebatePage — socket event: room:participant-joined / left", () => {
       });
     });
 
-    // ⚖️ Judges label should appear in observers strip
-    expect(screen.getAllByText(/⚖️/).length).toBeGreaterThan(0);
+    // Judges list should appear in the observers card
+    expect(screen.getByText("Judges")).toBeInTheDocument();
+    expect(screen.getByText(/AI judge \+ 1 human judge listening/i)).toBeInTheDocument();
   });
 
   it("updates presence when room:participant-left fires", () => {
@@ -954,8 +958,9 @@ describe("DebatePage — socket event: room:participant-joined / left", () => {
       mockSocket._emit("room:participant-left", { participants: [] });
     });
 
-    // Observers strip should be gone (no more observers)
-    expect(screen.queryByText("⚖️ Judges")).toBeNull();
+    // Judges list should be gone (no more observers)
+    expect(screen.queryByText("Judges")).toBeNull();
+    expect(screen.getByText("AI judge listening")).toBeInTheDocument();
   });
 });
 
@@ -971,7 +976,7 @@ describe("DebatePage — preview mode (admin only)", () => {
 
   it("shows debate topic in preview mode without needing socket", () => {
     renderPage();
-    expect(screen.getByText(/Artificial Intelligence will do more good than harm/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Artificial Intelligence will do more good than harm/i).length).toBeGreaterThan(0);
   });
 
   it("does not show error or loading spinner in preview mode", () => {
@@ -993,14 +998,14 @@ describe("DebatePage — preview mode (admin only)", () => {
   it("preview-buzzer mode shows buzzer topic", () => {
     mockParams = { code: "PREVIEW", debateId: "preview-buzzer" };
     renderPage();
-    expect(screen.getByText(/Social media does more harm than good/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Social media does more harm than good/i).length).toBeGreaterThan(0);
   });
 
   it("preview mode does not render ConnectionStatusBanner", () => {
     renderPage();
     // In preview mode we skip real socket entirely — banner should still mount
     // but let's verify the debate content renders
-    expect(screen.getByText(/Artificial Intelligence/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Artificial Intelligence/i).length).toBeGreaterThan(0);
   });
 });
 
@@ -1073,22 +1078,25 @@ describe("DebatePage — handleHostEnd", () => {
 // ── Mobile layout ─────────────────────────────────────────────────────────────
 
 describe("DebatePage — mobile layout", () => {
-  it("does NOT show desktop FOR/AGAINST side panels on mobile", () => {
+  it("stacks the arena into one column with the stage first on mobile", () => {
     mockUseIsMobile.mockReturnValue(true);
     setupSocket();
     renderPage();
-    // Mobile shows mini FOR/AGAINST strip, not the full side panels
-    // The full "FOR" / "AGAINST" labels (in side panels) should not be there
-    // but the mobile mini-labels may appear — test the desktop panels are absent
-    expect(screen.queryByText("AGAINST")).not.toBeInTheDocument();
+    const stage = screen.getByRole("region", { name: "Current speaker" });
+    const grid  = stage.parentElement as HTMLElement;
+    expect(grid.style.gridTemplateColumns).toBe("minmax(0, 1fr)");
+    expect(grid.style.gridTemplateAreas).toMatch(/^"stage"/);
+    // DOM order matches the visual order: stage → turns → teams → log
+    const order = Array.from(grid.children).map((el) => el.getAttribute("aria-label"));
+    expect(order).toEqual(["Current speaker", "Turn order", "Teams", "Transcript"]);
   });
 
-  it("shows compact FOR/AGN strip on mobile", () => {
+  it("shows FOR / AGAINST team cards on mobile", () => {
     mockUseIsMobile.mockReturnValue(true);
     setupSocket();
     renderPage();
-    // Mobile shows vertical "FOR" label in the mini side strip
     expect(screen.getAllByText("FOR").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("AGAINST").length).toBeGreaterThan(0);
   });
 });
 
@@ -1157,5 +1165,172 @@ describe("DebatePage — ConnectionStatusBanner integration", () => {
     // the initial isConnected=true path).
     const banner = screen.getByTestId("connection-banner");
     expect(banner).toBeInTheDocument();
+  });
+});
+
+// ── Room header + board layout ───────────────────────────────────────────────
+
+describe("DebatePage — room header", () => {
+  it("shows the round status pill and the room code", () => {
+    setupSocket();
+    renderPage();
+    expect(screen.getByText("Round 1 of 2 · Live")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Copy room code ABC123/i })).toBeInTheDocument();
+  });
+
+  it("Leave navigates home", () => {
+    setupSocket();
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /Leave room/i }));
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("shows the user's side chip", () => {
+    setupSocket();
+    renderPage();
+    expect(screen.getByText("You · FOR")).toBeInTheDocument();
+  });
+
+  it("host sees 'End debate' in buzzer mode and it emits debate:host-end", () => {
+    mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
+      if (event === "debate:get-state" && cb) cb({ success: true, debate: makeBuzzerDebate(), roomParticipants: [] });
+      else if (cb) cb({ success: true });
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /End debate/i }));
+    expect(mockSocket.emit).toHaveBeenCalledWith("debate:host-end", { debateId: "debate-1" }, expect.any(Function));
+  });
+});
+
+describe("DebatePage — alternate board", () => {
+  it("marks finished, live and upcoming turns in the turn strip", () => {
+    setupSocket(); // Bob (index 1) is speaking in round 1
+    renderPage();
+    expect(screen.getByText("FOR · Done")).toBeInTheDocument();
+    expect(screen.getByText("AGAINST · Live")).toBeInTheDocument();
+    expect(screen.getByText("Round 2 next")).toBeInTheDocument();
+  });
+
+  it("shows the turn countdown as m:ss", () => {
+    setupSocket();
+    renderPage();
+    expect(screen.getByRole("timer")).toHaveTextContent("1:00");
+    expect(screen.getByRole("timer")).toHaveTextContent("of 1:30");
+  });
+
+  it("labels arguments by round and turn, newest first", () => {
+    setupSocket({
+      rounds: [
+        { roundNumber: 1, speakerId: "user-1", speakerUsername: "Alice", side: "for", argument: "First.", submittedAt: new Date(), durationSeconds: 40 },
+        { roundNumber: 1, speakerId: "user-2", speakerUsername: "Bob", side: "against", argument: "Second.", submittedAt: new Date(), durationSeconds: 40 },
+      ],
+      currentTurn: null,
+    });
+    renderPage();
+    const log = screen.getByRole("region", { name: "Transcript" });
+    const items = Array.from(log.querySelectorAll("li")).map((li) => li.textContent);
+    expect(items[0]).toContain("R1 · T2");
+    expect(items[0]).toContain("Second.");
+    expect(items[1]).toContain("R1 · T1");
+  });
+});
+
+describe("DebatePage — buzzer board", () => {
+  it("shows floor time per debater and the live feed", () => {
+    mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
+      if (event === "debate:get-state" && cb) {
+        cb({
+          success: true,
+          debate: makeBuzzerDebate({
+            rounds: [{ roundNumber: 1, speakerId: "user-2", speakerUsername: "Bob", side: "against", argument: "Bob's point.", submittedAt: new Date(), durationSeconds: 75 }],
+          }),
+          roomParticipants: [],
+        });
+      } else if (cb) cb({ success: true });
+    });
+    renderPage();
+    expect(screen.getByText("Floor time")).toBeInTheDocument();
+    expect(screen.getByText("Live feed")).toBeInTheDocument();
+    expect(screen.getAllByText("1:15").length).toBeGreaterThan(0);
+    expect(screen.getByText("Bob's point.")).toBeInTheDocument();
+  });
+
+  it("shows the re-grab window countdown when the window is open", () => {
+    mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
+      if (event === "debate:get-state" && cb) cb({ success: true, debate: makeBuzzerDebate(), roomParticipants: [] });
+      else if (cb) cb({ success: true });
+    });
+    renderPage();
+    expect(screen.getByRole("progressbar", { name: /Re-grab window/i })).toBeInTheDocument();
+    expect(screen.getByText("Window closes in")).toBeInTheDocument();
+  });
+
+  it("spectators don't get a grab button", () => {
+    mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
+      if (event === "debate:get-state" && cb) {
+        cb({
+          success: true,
+          debate: makeBuzzerDebate({
+            creatorId: "user-2",
+            turnOrder: [
+              { userId: "user-2", username: "Bob", side: "for" },
+              { userId: "user-3", username: "Charlie", side: "against" },
+            ],
+          }),
+          roomParticipants: [],
+        });
+      } else if (cb) cb({ success: true });
+    });
+    renderPage();
+    expect(screen.getByText("Spectating")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Grab the mic/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("DebatePage — judge scoring board (preview role switcher)", () => {
+  beforeEach(() => {
+    mockParams = { code: "PREVIEW", debateId: "preview" };
+    mockUseAuth.mockReturnValue({ user: { ...mockUser, email: "bkumar28899@gmail.com" } });
+    mockSocket.emit.mockImplementation((_event: string, _payload: any, cb?: Function) => { if (cb) cb({ success: true }); });
+  });
+
+  it("switching to Judge opens the scoring board with a slider per debater", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Judge" }));
+    expect(screen.getByRole("heading", { name: "Score each debater" })).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Overall score")).toHaveLength(2);
+    expect(screen.getByText("Scoring window")).toBeInTheDocument();
+    expect(screen.getByText("Window closes in")).toBeInTheDocument();
+  });
+
+  it("moving a slider re-orders the ranking", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Judge" }));
+    const [, challenger] = screen.getAllByLabelText("Overall score");
+    fireEvent.change(challenger, { target: { value: "80" } });
+    const ranking = screen.getByText("Your ranking").nextElementSibling as HTMLElement;
+    expect(ranking.querySelector("li")?.textContent).toContain("Challenger");
+    expect(ranking.querySelector("li")?.textContent).toContain("80");
+  });
+
+  it("Lock scores submits and then locks the judge scores", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Judge" }));
+    fireEvent.click(screen.getByRole("button", { name: /Lock scores/i }));
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      "debate:submit-judge-scores",
+      { debateId: "preview", scores: [{ userId: "user-1", score: 50 }, { userId: "mock-p2", score: 50 }] },
+      expect.any(Function),
+    );
+    expect(mockSocket.emit).toHaveBeenCalledWith("debate:lock-judge-scores", { debateId: "preview" });
+    expect(screen.getByText(/Scores locked — waiting for results/i)).toBeInTheDocument();
+  });
+
+  it("switching back to Debater closes the scoring board", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Judge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Debater" }));
+    expect(screen.queryByRole("heading", { name: "Score each debater" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Current speaker" })).toBeInTheDocument();
   });
 });

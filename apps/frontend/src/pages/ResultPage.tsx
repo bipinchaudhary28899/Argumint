@@ -6,6 +6,9 @@ import { useSocket } from "../hooks/useSocket";
 import { useLeaveRoomOnNavigate } from "../hooks/useLeaveRoomOnNavigate";
 import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { RoomHeader, type RoomStatusTone } from "../components/RoomHeader";
+import { initials } from "../components/AppShell";
+import { Icon, type IconName } from "../components/Icon";
 import { getLevelInfo } from "@argumint/shared";
 import type { Debate, ScoreBreakdown } from "@argumint/shared"; // ScoreBreakdown used in rankedAll/myScore types
 
@@ -23,11 +26,24 @@ function ordinal(n: number) {
   return n+(s[(v-20)%10]||s[v]||s[0]);
 }
 
-function getOutcome(rank: number, won: boolean) {
-  if (won && rank === 1) return { label:"🏆 MVP",        badge:"VICTORY",        color:"var(--for)",    glow:"glow-for"  };
-  if (won)              return { label:"✓ WINNER",      badge:`${ordinal(rank)} OVERALL`, color:"var(--for)",    glow:"glow-for"  };
-  if (rank === 2)       return { label:"RUNNER-UP",     badge:"2nd PLACE",       color:"var(--cyan)",   glow:"glow-cyan" };
-  return                       { label:`${ordinal(rank)} PLACE`, badge:"DEFEATED", color:"var(--muted)", glow:""          };
+// Outcome chip shown in the "Your result" card
+function getOutcome(rank: number, won: boolean): { label: string; chip: string; icon: IconName } {
+  if (won && rank === 1) return { label:"MVP",                  chip:"ds-chip-gold",    icon:"crown"  };
+  if (won)              return { label:"WINNER",               chip:"ds-chip-for",     icon:"trophy" };
+  if (rank === 2)       return { label:"RUNNER-UP",            chip:"ds-chip-accent",  icon:"star"   };
+  return                       { label:`${ordinal(rank)} PLACE`, chip:"ds-chip-neutral", icon:"flag"   };
+}
+
+type Cat = "clarity" | "evidence" | "rebuttal" | "organization";
+const CATS: Cat[] = ["clarity", "evidence", "rebuttal", "organization"];
+const CAT_LABELS: Record<Cat, string> = { clarity:"Clarity", evidence:"Evidence", rebuttal:"Rebuttal", organization:"Organization" };
+const CAT_SHORT:  Record<Cat, string> = { clarity:"CLAR", evidence:"EVID", rebuttal:"REBUT", organization:"ORG" };
+// Category data colours (kept from the original score breakdown)
+const CAT_COLORS: Record<Cat, string> = { clarity:"#22d3ee", evidence:"#10b981", rebuttal:"#f43f5e", organization:"#a78bfa" };
+
+/** Inline style for a gradient-filled number (score/XP data colour) */
+function gradText(bg: string): React.CSSProperties {
+  return { background: bg, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -320,19 +336,20 @@ export function ResultPage() {
     return () => { ts.forEach(clearTimeout); timersRef.current = []; };
   }, [debate?.result, myScore, myXPAward, user]);
 
+
   // ── Error/loading ─────────────────────────────────────────────────────────
 
   if (error) return (
-    <div className="bg-grid" style={{ height:"100vh", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
-      <div className="glass" style={{ padding:"2.5rem", textAlign:"center", maxWidth:400 }}>
-        <p style={{ color:"var(--against)", marginBottom:"0.875rem" }}>⚠ {error}</p>
-        <button onClick={() => navigate("/")} className="btn-ghost">Back to Home</button>
+    <div className="ds-room-page" style={{ alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div className="ds-card" style={{ padding:32, textAlign:"center", maxWidth:400, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
+        <p style={{ margin:0, color:"var(--ds-against-text)", display:"flex", alignItems:"center", gap:8 }}><Icon name="info" size={18} />{error}</p>
+        <button onClick={() => navigate("/")} className="ds-btn ds-btn-secondary">Back to Home</button>
       </div>
     </div>
   );
 
   if (!debate) return (
-    <div className="bg-grid" style={{ height:"100vh", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--bg)" }}>
+    <div className="ds-room-page" style={{ alignItems:"center", justifyContent:"center" }}>
       <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
     </div>
   );
@@ -349,91 +366,50 @@ export function ResultPage() {
   const leveledUp   = myXPAward?.leveledUp ?? false;
   const newLevelTitle = myXPAward?.newLevelTitle ?? levelInfo.current.title;
 
-  // ── Compact Pro upgrade banner (replaces all individual lock overlays) ───
+  // Room header status pill
+  const status: { label: string; tone: RoomStatusTone } =
+    result       ? { label:"Results",        tone: result.winnerSide } :
+    judgingError ? { label:"Judging failed", tone:"gold" } :
+                   { label:"Judging",        tone:"accent" };
+
+  const goHome = () => navigate("/");
+
+  const card: React.CSSProperties = {
+    padding: isMobile ? 18 : 24, display:"flex", flexDirection:"column", gap:14, minWidth:0,
+  };
+
+  // ── Compact Pro upgrade banner (free users, replaces the analysis button) ─
   const ProUpgradeBanner = (
-    <div onClick={() => navigate("/pricing")} style={{
-      cursor: "pointer", borderRadius: "0.875rem", flexShrink: 0,
-      padding: "0.875rem 1rem",
-      background: "linear-gradient(135deg,rgba(245,158,11,0.08) 0%,rgba(var(--violet-rgb),0.06) 100%)",
-      border: "1.5px solid rgba(245,158,11,0.28)",
-      display: "flex", flexDirection: "column", alignItems: "center", gap: "0.55rem",
-      textAlign: "center", transition: "border-color 0.2s, box-shadow 0.2s",
-    }}
-      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(245,158,11,0.55)"; (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 20px rgba(245,158,11,0.12)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(245,158,11,0.28)"; (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
-    >
-      <div style={{ fontSize: "1.4rem" }}>🔒</div>
-      <div>
-        <div style={{ fontSize: "0.72rem", fontWeight: 900, color: "#fbbf24", marginBottom: "0.2rem" }}>Full Debate Review</div>
-        <div style={{ fontSize: "0.62rem", color: "var(--muted)", lineHeight: 1.5 }}>
-          Performance breakdown · AI analysis<br />Strengths · Weaknesses · Key moments
-        </div>
-      </div>
-      <div style={{
-        fontSize: "0.68rem", fontWeight: 800, padding: "0.32rem 1rem",
-        borderRadius: "9999px", background: "linear-gradient(135deg,#f59e0b,#d97706)",
-        color: "#000", letterSpacing: "0.04em",
-      }}>⚡ Go Pro — ₹50/mo</div>
-    </div>
+    <button type="button" className="res-pro" onClick={() => navigate("/pricing")}>
+      <span style={{ width:40, height:40, borderRadius:12, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"var(--ds-gold-bg)", color:"var(--ds-gold-text)" }}>
+        <Icon name="lock" size={18} />
+      </span>
+      <span style={{ flex:"1 1 160px", minWidth:0, display:"flex", flexDirection:"column", gap:2 }}>
+        <span style={{ fontWeight:800, fontSize:14, color:"var(--ds-gold-text)" }}>Full debate review</span>
+        <span style={{ fontSize:13, lineHeight:1.45, color:"var(--ds-muted)" }}>Performance breakdown · AI analysis · Strengths · Weaknesses · Key moments</span>
+      </span>
+      <span className="ds-chip ds-chip-gold" style={{ border:"1px solid var(--ds-gold-line)" }}><Icon name="bolt" size={14} />Go Pro — ₹50/mo</span>
+    </button>
   );
 
   return (
     <>
       <style>{`
-        @keyframes mvpPulse {
-          0%,100% { box-shadow:0 0 0 0 rgba(16,185,129,0); }
-          50%      { box-shadow:0 0 18px 4px rgba(16,185,129,0.35); }
-        }
         @keyframes levelUpPop {
           0%   { transform:scale(0.7) translateY(12px); opacity:0; }
           60%  { transform:scale(1.06) translateY(-2px); opacity:1; }
           100% { transform:scale(1) translateY(0); opacity:1; }
         }
-        @keyframes shimmer {
-          0%   { background-position: -200% center; }
-          100% { background-position:  200% center; }
-        }
         @keyframes levelBadgePop {
           0%   { transform: scale(1); }
-          30%  { transform: scale(1.45); box-shadow: 0 0 14px 4px rgba(16,185,129,0.55); }
-          60%  { transform: scale(0.92); }
-          100% { transform: scale(1); box-shadow: none; }
+          30%  { transform: scale(1.3); }
+          60%  { transform: scale(0.94); }
+          100% { transform: scale(1); }
         }
         @keyframes cardFadeUp {
           0%   { opacity:0; transform:translateY(10px); }
           100% { opacity:1; transform:translateY(0); }
         }
-        @keyframes heroWinPulse {
-          0%,100% { border-color:rgba(16,185,129,0.45); box-shadow:0 4px 32px rgba(16,185,129,0.10); }
-          50%      { border-color:rgba(16,185,129,0.75); box-shadow:0 4px 32px rgba(16,185,129,0.22); }
-        }
-        @keyframes heroLosePulse {
-          0%,100% { box-shadow:0 2px 20px rgba(var(--blue-rgb),0.10); }
-          50%      { box-shadow:0 2px 28px rgba(var(--blue-rgb),0.20); }
-        }
-        .mvp-glow        { animation: mvpPulse 2s ease-in-out infinite; }
-        .hero-win-anim   { animation: heroWinPulse 2.8s ease-in-out infinite; }
-        .hero-lose-anim  { animation: heroLosePulse 3s ease-in-out infinite; }
-        .level-up-pop    { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
-        .level-badge-pop { animation: levelBadgePop 0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
-        .res-col > * { animation: cardFadeUp 0.38s cubic-bezier(.4,0,.2,1) both; }
-        .res-col > *:nth-child(1) { animation-delay:0.06s; }
-        .res-col > *:nth-child(2) { animation-delay:0.12s; }
-        .res-col > *:nth-child(3) { animation-delay:0.18s; }
-        .res-col > *:nth-child(4) { animation-delay:0.24s; }
-        .res-row { transition: background 0.18s, transform 0.15s; }
-        .res-row:hover { transform: translateX(2px); }
-        .shimmer-text {
-          background: linear-gradient(90deg, #f59e0b, #10b981, #22d3ee, #f59e0b);
-          background-size: 300% auto;
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-          animation: shimmer 2s linear infinite;
-        }
-        .play-btn { transition: transform 0.15s, box-shadow 0.15s; }
-        .play-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(var(--btn-primary-rgb),0.48) !important; }
-        .play-btn:active { transform: translateY(0); }
         @keyframes rhetorBadgePop {
           0%   { opacity:0; transform:scale(0.6) translateY(8px); }
           65%  { opacity:1; transform:scale(1.1) translateY(-2px); }
@@ -448,9 +424,19 @@ export function ResultPage() {
           from { transform:scaleX(0); transform-origin:left; }
           to   { transform:scaleX(1); transform-origin:left; }
         }
+        .level-up-pop    { animation: levelUpPop 0.5s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .level-badge-pop { display:inline-block; animation: levelBadgePop 0.55s cubic-bezier(.34,1.56,.64,1) forwards; }
+        .res-col > * { animation: cardFadeUp 0.38s cubic-bezier(.4,0,.2,1) both; }
+        .res-col > *:nth-child(2) { animation-delay:0.08s; }
+        .res-col > *:nth-child(3) { animation-delay:0.16s; }
         .rhetor-badge    { animation:rhetorBadgePop 0.45s cubic-bezier(.34,1.56,.64,1) both; }
         .rank-delta-chip { animation:rankDeltaFloat 0.5s ease-out 0.35s both; }
         .bar-fill-in     { animation:barFillIn 0.9s cubic-bezier(.4,0,.2,1) both; }
+        .res-page button:focus-visible { outline: 2px solid var(--ds-accent-line); outline-offset: 2px; }
+        .res-pro { width:100%; box-sizing:border-box; padding:14px 16px; border-radius:16px; cursor:pointer; text-align:left;
+          display:flex; flex-wrap:wrap; align-items:center; gap:12px; font:inherit; color:var(--ds-text);
+          background:var(--ds-gold-bg); border:1px solid var(--ds-gold-line); transition:transform .15s, box-shadow .15s; }
+        .res-pro:hover { transform:translateY(-1px); box-shadow:var(--ds-shadow); }
       `}</style>
 
       {/* ── XP EARNED POPUP ── */}
@@ -463,31 +449,19 @@ export function ResultPage() {
           transition:"opacity 0.35s ease",
           pointerEvents:"none",
         }}>
-          <div className="glass" style={{
+          <div className="ds-card" style={{
             textAlign:"center",
-            padding: isMobile ? "2rem 2.5rem" : "2.5rem 4rem",
-            borderRadius:"1.25rem",
-            border:"1px solid rgba(245,158,11,0.35)",
-            background:"rgba(10,10,20,0.85)",
-            boxShadow:"0 0 40px rgba(245,158,11,0.2)",
+            padding: isMobile ? "28px 40px" : "40px 64px",
+            borderColor:"var(--ds-gold-line)",
           }}>
-            <div style={{ fontSize:"0.7rem", fontWeight:700, letterSpacing:"0.18em", textTransform:"uppercase", color:"var(--gold)", marginBottom:"0.5rem" }}>
-              Points Earned
-            </div>
-            <div style={{
-              fontFamily:"'JetBrains Mono',monospace",
-              fontSize: isMobile ? "4.5rem" : "6rem",
-              fontWeight:900,
-              lineHeight:1,
-              background:"linear-gradient(135deg,#f59e0b,#fbbf24,#fde68a)",
-              WebkitBackgroundClip:"text",
-              WebkitTextFillColor:"transparent",
-              backgroundClip:"text",
-              letterSpacing:"-0.03em",
+            <div className="ds-eyebrow" style={{ color:"var(--ds-gold-text)", marginBottom:8 }}>Points earned</div>
+            <div className="ds-mono" style={{
+              fontSize: isMobile ? 72 : 96, fontWeight:800, lineHeight:1, letterSpacing:"-0.03em",
+              color:"var(--ds-gold-text)",
             }}>
               +{popupCount}
             </div>
-            <div style={{ fontSize:"1rem", fontWeight:800, color:"var(--gold)", letterSpacing:"0.15em", textTransform:"uppercase", marginTop:"0.25rem" }}>
+            <div className="ds-mono" style={{ fontSize:16, fontWeight:700, color:"var(--ds-gold-text)", letterSpacing:"0.15em", marginTop:4 }}>
               XP
             </div>
           </div>
@@ -495,314 +469,356 @@ export function ResultPage() {
       )}
 
       <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
-      <div className="bg-grid" style={{ height:"100vh", display:"flex", flexDirection:"column", background:"var(--bg)", overflow:"hidden", position:"relative" }}>
-        {/* Ambient gradient */}
-        <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:0,
-          background:"radial-gradient(ellipse 65% 55% at 15% 5%,rgba(var(--violet-rgb),0.09) 0%,transparent 58%),radial-gradient(ellipse 45% 45% at 85% 95%,rgba(16,185,129,0.05) 0%,transparent 55%)"
-        }} />
+      <div className="ds-room-page res-page">
+        <RoomHeader
+          onLeave={goHome}
+          leaveLabel="Leave"
+          motion={debate.topic}
+          status={status}
+          code={debate.roomCode || code}
+        />
 
-        {/* ── JUDGING ── */}
-        {isJudging && (
-          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
-            <div className="glass fade-up glow-cyan" style={{ padding:isMobile?"1.5rem 1.25rem":"2.5rem 3rem", textAlign:"center", border:"1px solid rgba(34,211,238,0.2)", maxWidth:380 }}>
-              <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Judging…" className="logo-heartbeat" style={{ width:64, height:64, margin:"0 auto 1.25rem" }} />
-              <h2 style={{ fontSize:"1.2rem", fontWeight:800, color:"var(--text)", margin:"0 0 0.35rem" }} className="text-glow-cyan">AI Judge reviewing…</h2>
-              <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>Scoring all speakers — 5–15 sec</p>
-            </div>
-          </div>
-        )}
+        <main className="ds-room-main" style={isMobile ? undefined : { paddingTop:28 }}>
 
-        {/* ── JUDGE FAILED ── */}
-        {judgingError && !result && (
-          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
-            <div style={{ padding:"1.5rem 2rem", background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)", borderRadius:"1rem", textAlign:"center", maxWidth:380 }}>
-              <p style={{ fontWeight:700, color:"var(--gold)", marginBottom:"0.25rem" }}>Judge unavailable</p>
-              <p style={{ color:"var(--muted)", fontSize:"0.82rem", margin:0 }}>{judgingError}</p>
-            </div>
-          </div>
-        )}
-
-        {/* ── NO SCORE FALLBACK ── */}
-        {result && !myScore && (
-          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", position:"relative", zIndex:1 }}>
-            <div className="glass" style={{ padding:"2rem", textAlign:"center", maxWidth:340 }}>
-              <p style={{ color:"var(--muted)", marginBottom:"1rem" }}>Score not available — you may not have been in this debate.</p>
-              <button onClick={() => navigate("/")} className="btn-primary">Back to Home</button>
-            </div>
-          </div>
-        )}
-
-        {/* ══════════════════════════════════════════
-            MAIN RESULT LAYOUT — centred single-column
-            ══════════════════════════════════════════ */}
-        {result && myScore && (
-          <div style={{
-            flex:1, minHeight:0, overflowY:"auto", position:"relative", zIndex:1,
-            padding: isMobile ? "0.75rem 0.875rem 2rem" : "0.75rem 1.25rem 2.5rem",
-          }}>
-            {/* ── TOP BAR ── */}
-            <div style={{ display:"flex", alignItems:"center", gap:"0.625rem", marginBottom:"1.25rem" }}>
-              <button onClick={() => navigate("/")} className="btn-ghost" style={{ fontSize:"0.78rem", padding:"0.25rem 0.6rem", flexShrink:0 }}>← Home</button>
-              <span style={{ fontSize:"0.54rem", fontWeight:800, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--muted)", flexShrink:0 }}>Motion</span>
-              <span style={{ fontSize:"0.78rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:isMobile?"normal":"nowrap", flex:1, lineHeight:1.4 }}>{debate.topic}</span>
-
-              {/* XP + Level — top right */}
-              <div style={{ display:"flex", alignItems:"center", gap:"0.6rem", flexShrink:0, marginLeft:"0.5rem" }}>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{
-                    fontFamily:"'JetBrains Mono',monospace", fontSize:"1.05rem", fontWeight:900, lineHeight:1,
-                    background:scoreGradient(xpGained), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
-                  }}>+{xpGained}</div>
-                  <div style={{ fontSize:"0.46rem", fontWeight:700, color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.1em" }}>XP</div>
-                </div>
-                {(() => {
-                  const shownLevel  = displayedLevel  ?? levelInfo.current.level;
-                  const shownTitle  = displayedTitle  ?? levelInfo.current.title;
-                  const shownHasNext = displayedBarNext;
-                  const badgeIsNew  = leveledUp && shownLevel === levelInfo.current.level;
-                  return (
-                    <div style={{ display:"flex", flexDirection:"column", gap:"0.18rem", minWidth:90 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:"0.3rem" }}>
-                        <span className={levelBadgePop?"level-badge-pop":""} style={{
-                          fontFamily:"'JetBrains Mono',monospace", fontSize:"0.6rem", fontWeight:900,
-                          padding:"0.06rem 0.28rem", borderRadius:"0.3rem",
-                          background:badgeIsNew?"rgba(16,185,129,0.15)":"rgba(79,142,247,0.12)",
-                          border:`1px solid ${badgeIsNew?"rgba(16,185,129,0.4)":"rgba(79,142,247,0.3)"}`,
-                          color:badgeIsNew?"var(--for)":"var(--cyan)",
-                          transition:"background 0.3s,border-color 0.3s,color 0.3s",
-                        }}>Lv.{shownLevel}</span>
-                        <span style={{ fontSize:"0.62rem", fontWeight:700, color:"var(--text)" }}>{shownTitle}</span>
-                      </div>
-                      {shownHasNext ? (
-                        <div>
-                          <div className="score-bar-track" style={{ height:3 }}>
-                            <div className="xp-bar-fill" style={{ height:"100%", borderRadius:"9999px", width:`${barPct}%`, transition:barTransition?"width 0.85s cubic-bezier(.4,0,.2,1)":"none" }} />
-                          </div>
-                          <div style={{ fontSize:"0.45rem", color:"var(--muted)", marginTop:"0.08rem" }}>{levelInfo.progressXP}/{levelInfo.neededXP} XP</div>
-                        </div>
-                      ) : (
-                        <div style={{ fontSize:"0.48rem", color:"var(--for)", fontWeight:700 }}>MAX LEVEL</div>
-                      )}
-                    </div>
-                  );
-                })()}
+          {/* ── JUDGING ── */}
+          {isJudging && (
+            <div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <div className="ds-card fade-up" style={{ padding: isMobile ? "28px 20px" : "40px 48px", textAlign:"center", maxWidth:380, display:"flex", flexDirection:"column", alignItems:"center", gap:8 }}>
+                <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Judging…" className="logo-heartbeat" style={{ width:64, height:64, marginBottom:12 }} />
+                <h2 style={{ fontSize:20, fontWeight:800, color:"var(--ds-text)", margin:0 }}>AI Judge reviewing…</h2>
+                <p className="ds-sub" style={{ fontSize:14 }}>Scoring all speakers — 5–15 sec</p>
               </div>
             </div>
+          )}
 
-            {/* ── HERO — centred outcome ── */}
-            <div style={{ textAlign:"center", margin: isMobile ? "0.5rem 0 1.5rem" : "0.75rem 0 2rem" }}>
-              {outcome && (() => {
-                const heroGrad =
-                  myWon && myRank === 1 ? "linear-gradient(135deg,#f59e0b,#fbbf24,#fde68a)" :
-                  myWon               ? "linear-gradient(135deg,#059669,#10b981,#34d399)"  :
-                  myRank === 2        ? "linear-gradient(135deg,#4f8ef7,#22d3ee)"          :
-                                        "linear-gradient(135deg,#6b7280,#9ca3af)";
-                return (
-                  <>
-                    {/* Giant outcome word */}
-                    <div style={{
-                      fontSize: isMobile ? "3.75rem" : "6.5rem",
-                      fontWeight:900, letterSpacing:"-0.03em", lineHeight:1,
-                      background: heroGrad,
-                      WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
-                      marginBottom:"0.35rem",
-                    }} className={myWon ? (myRank===1 ? "shimmer-text" : "") : ""}>
-                      {myWon && myRank===1 ? "MVP" :
-                       myWon              ? "WINNER" :
-                       myRank===2         ? "RUNNER-UP" :
-                       `${ordinal(myRank)} PLACE`}
+          {/* ── JUDGE FAILED ── */}
+          {judgingError && !result && (
+            <div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <div style={{ padding:"24px 32px", background:"var(--ds-gold-bg)", border:"1px solid var(--ds-gold-line)", borderRadius:20, textAlign:"center", maxWidth:380 }}>
+                <p style={{ fontWeight:700, color:"var(--ds-gold-text)", margin:"0 0 4px" }}>Judge unavailable</p>
+                <p style={{ color:"var(--ds-muted)", fontSize:14, margin:0 }}>{judgingError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── NO SCORE FALLBACK ── */}
+          {result && !myScore && (
+            <div style={{ minHeight:"60vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <div className="ds-card" style={{ padding:32, textAlign:"center", maxWidth:360, display:"flex", flexDirection:"column", alignItems:"center", gap:16 }}>
+                <p className="ds-sub">Score not available — you may not have been in this debate.</p>
+                <button onClick={goHome} className="ds-btn ds-btn-primary">Back to Home</button>
+              </div>
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════
+              MAIN RESULT LAYOUT
+              ══════════════════════════════════════════ */}
+          {result && myScore && outcome && (() => {
+            const winSide   = result.winnerSide;
+            const winText   = winSide === "for" ? "FOR" : "AGAINST";
+            const sideAvg   = (side: "for" | "against") => {
+              const xs = rankedAll.filter((s) => s.side === side);
+              return xs.length ? Math.round(xs.reduce((a, s) => a + s.total, 0) / xs.length) : null;
+            };
+            const forAvg     = sideAvg("for");
+            const againstAvg = sideAvg("against");
+
+            // Rhetoric trait (strongest category) + achievement badges
+            const topCat   = CATS.reduce((a, b) => (myScore[a] > myScore[b] ? a : b));
+            const traitMap: Record<Cat, { label: string; icon: IconName }> = {
+              clarity:      { label:"Crystal Communicator", icon:"message" },
+              evidence:     { label:"Evidence Expert",      icon:"chart"   },
+              rebuttal:     { label:"Sharp Rebutter",       icon:"shield"  },
+              organization: { label:"Logical Thinker",      icon:"sliders" },
+            };
+            const trait    = traitMap[topCat];
+            const avgScore = rankedAll.length > 1 ? Math.round(rankedAll.reduce((s, x) => s + x.total, 0) / rankedAll.length) : null;
+            const aboveAvg = avgScore !== null ? myScore.total - avgScore : null;
+            const achiev: { label: string; icon: IconName; chip: string }[] = [];
+            if (myRank === 1 && rankedAll.length > 1) achiev.push({ label:"Top Scorer",       icon:"crown", chip:"ds-chip-gold"    });
+            if (myScore.total >= 85)                  achiev.push({ label:"Elite Debater",    icon:"bolt",  chip:"ds-chip-against" });
+            else if (myScore.total >= 70)             achiev.push({ label:"Strong Performer", icon:"star",  chip:"ds-chip-accent"  });
+
+            // Level badge — shows the OLD level until the level-up animation flips it
+            const shownLevel   = displayedLevel ?? levelInfo.current.level;
+            const shownTitle   = displayedTitle ?? levelInfo.current.title;
+            const shownHasNext = displayedBarNext;
+            const badgeIsNew   = leveledUp && shownLevel === levelInfo.current.level;
+
+            // Human judges: which side they favoured + how closely their ranking matched the AI's
+            const judgeRows = judgeScores.map((js) => {
+              const scored  = rankedAll.filter((s) => js.scores.some((x) => x.userId === s.userId));
+              const scoreOf = (id: string) => js.scores.find((x) => x.userId === id)?.score ?? 0;
+              const byJudge = scored.slice().sort((a, b) => scoreOf(b.userId) - scoreOf(a.userId));
+              const matched = byJudge.filter((s, i) => scored[i]?.userId === s.userId).length;
+              const avgFor  = scored.filter((s) => s.side === "for");
+              const avgAg   = scored.filter((s) => s.side === "against");
+              const mean    = (xs: ScoreBreakdown[]) => xs.length ? xs.reduce((a, s) => a + scoreOf(s.userId), 0) / xs.length : -1;
+              const pick    = avgFor.length && avgAg.length ? (mean(avgFor) >= mean(avgAg) ? "for" : "against") : null;
+              return { id: js.judgeId, name: js.judgeUsername, matched, of: scored.length, pick };
+            });
+
+            return (
+              <div style={{ maxWidth:1240, margin:"0 auto", display:"flex", flexDirection:"column", gap:20 }}>
+
+                {/* ── LEVEL-UP BANNER ── */}
+                {showLevelUp && (
+                  <div className="level-up-pop" role="status" style={{
+                    padding:"14px 20px", borderRadius:20,
+                    background:"var(--ds-for-bg)", border:"1px solid var(--ds-for-line)",
+                    display:"flex", alignItems:"center", gap:14,
+                  }}>
+                    <span style={{ color:"var(--ds-for-text)", display:"inline-flex" }}><Icon name="bolt" size={24} /></span>
+                    <div>
+                      <div style={{ fontSize:15, fontWeight:900, letterSpacing:"0.06em", color:"var(--ds-for-text)" }}>LEVEL UP!</div>
+                      <div style={{ fontSize:14, color:"var(--ds-text)", fontWeight:600 }}>
+                        You are now <span style={{ color:"var(--ds-for-text)", fontWeight:800 }}>Level {levelInfo.current.level}</span> — {newLevelTitle}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <section className="res-col" style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1.4fr) minmax(0,1fr)", gap:20 }}>
+
+                  {/* ── VERDICT ── */}
+                  <div style={{
+                    padding: isMobile ? "22px 20px" : 32, borderRadius:28,
+                    background:`var(--ds-${winSide}-bg)`, border:`1px solid var(--ds-${winSide}-line)`,
+                    display:"flex", flexDirection:"column", gap:20, minWidth:0,
+                  }}>
+                    <span className="ds-eyebrow" style={{ letterSpacing:"0.14em", color:`var(--ds-${winSide}-text)` }}>AI Judge verdict</span>
+                    <h1 style={{ margin:0, fontWeight:900, fontSize: isMobile ? 52 : 88, lineHeight:0.95, letterSpacing:"-0.04em", color:"var(--ds-text)" }}>
+                      <span style={{ color:`var(--ds-${winSide}-mid)` }}>{winText}</span> wins
+                    </h1>
+                    {forAvg !== null && againstAvg !== null && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", gap:12, fontSize:13, fontWeight:700 }}>
+                          <span style={{ color:"var(--ds-for-text)" }}>FOR · avg {forAvg}</span>
+                          <span style={{ color:"var(--ds-against-text)" }}>AGAINST · avg {againstAvg}</span>
+                        </div>
+                        <div role="img" aria-label={`FOR averaged ${forAvg}, AGAINST averaged ${againstAvg}`} style={{ display:"flex", height:12, borderRadius:99, overflow:"hidden", gap:3 }}>
+                          <span style={{ flex:`${Math.max(forAvg, 1)} 1 0%`, background:"var(--ds-for-mid)" }} />
+                          <span style={{ flex:`${Math.max(againstAvg, 1)} 1 0%`, background:"var(--ds-against-mid)" }} />
+                        </div>
+                      </div>
+                    )}
+                    {result.winningPoints.length > 0 && (
+                      <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:10 }}>
+                        {result.winningPoints.map((pt, i) => (
+                          <li key={i} style={{ display:"flex", gap:10, fontSize:15, lineHeight:1.5, color:"var(--ds-text2)" }}>
+                            <span style={{ color:`var(--ds-${winSide}-text)`, flexShrink:0, paddingTop:2, display:"inline-flex" }}><Icon name="check" size={16} /></span>
+                            <span>{pt}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* ── YOUR RESULT ── */}
+                  <div className="ds-card" style={{ padding: isMobile ? "22px 20px" : 32, borderRadius:28, display:"flex", flexDirection:"column", gap:18, minWidth:0 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+                      <span className="ds-eyebrow" style={{ letterSpacing:"0.14em" }}>Your result</span>
+                      <span className={`ds-chip ${outcome.chip}`}><Icon name={outcome.icon} size={14} /><span>{outcome.label}</span></span>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", gap:16 }}>
+                      <span style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+                        <span style={{ fontWeight:800, fontSize:72, lineHeight:1, letterSpacing:"-0.03em", ...gradText(scoreGradient(myScore.total)) }}>{myScore.total}</span>
+                        <span style={{ fontSize:16, color:"var(--ds-muted)" }}>/100</span>
+                      </span>
+                      <span style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, textAlign:"right" }}>
+                        <span style={{ fontWeight:700 }}>{ordinal(myRank)} of {rankedAll.length}</span>
+                        <span style={{ fontSize:13, color:"var(--ds-muted)" }}>{myWon ? "Won" : "Lost"} with {myScore.side === "for" ? "FOR" : "AGAINST"}</span>
+                      </span>
                     </div>
 
-                    {/* Score circle */}
-                    <div className={myWon?"mvp-glow":""} style={{
-                      display:"inline-flex", flexDirection:"column", alignItems:"center",
-                      margin:"0.5rem 0",
-                    }}>
-                      <div style={{
-                        fontFamily:"'JetBrains Mono',monospace",
-                        fontSize: isMobile ? "2.75rem" : "4rem",
-                        fontWeight:900, lineHeight:1,
-                        background:scoreGradient(myScore.total),
-                        WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text",
-                      }}>{myScore.total}</div>
-                      <div style={{ fontSize:"0.62rem", color:"var(--muted)", fontWeight:600, letterSpacing:"0.06em" }}>/ 100 pts</div>
+                    {/* Rhetoric trait + achievement badges */}
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                      <span className="ds-chip rhetor-badge" style={{ background:`${CAT_COLORS[topCat]}1f`, color:"var(--ds-text)", border:`1px solid ${CAT_COLORS[topCat]}59` }}>
+                        <span style={{ color:CAT_COLORS[topCat], display:"inline-flex" }}><Icon name={trait.icon} size={14} /></span>{trait.label}
+                      </span>
+                      {achiev.map((b, i) => (
+                        <span key={b.label} className={`ds-chip ${b.chip} rhetor-badge`} style={{ animationDelay:`${0.10 + i * 0.09}s` }}>
+                          <Icon name={b.icon} size={14} />{b.label}
+                        </span>
+                      ))}
+                      {aboveAvg !== null && aboveAvg > 0 && (
+                        <span className="ds-chip ds-chip-for rank-delta-chip"><Icon name="chart" size={14} />+{aboveAvg} above avg</span>
+                      )}
                     </div>
 
-                    {/* Winner side + badge */}
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"0.45rem", flexWrap:"wrap", marginTop:"0.25rem" }}>
-                      <span style={{
-                        fontSize:"0.78rem", fontWeight:900, letterSpacing:"0.06em",
-                        color:result.winnerSide==="for"?"var(--for)":"var(--against)",
-                      }}>{result.winnerSide==="for"?"FOR":"AGAINST"} WINS</span>
-                      <span style={{ color:"var(--muted)", fontSize:"0.7rem" }}>·</span>
-                      <span style={{ fontSize:"0.7rem", fontWeight:700, color:"var(--muted)", letterSpacing:"0.04em", textTransform:"uppercase" }}>{outcome.badge}</span>
-                    </div>
-
-                    {/* ── RHETORIC TRAITS + ACHIEVEMENT BADGES ── */}
-                    {(() => {
-                      type Cat = 'clarity'|'evidence'|'rebuttal'|'organization';
-                      const cats: Cat[] = ['clarity','evidence','rebuttal','organization'];
-                      const topCat = cats.reduce((a,b) => ((myScore[a] as number) > (myScore[b] as number) ? a : b));
-                      type TraitDef = { label:string; icon:string; bg:string; bd:string; color:string };
-                      const traitMap: Record<Cat,TraitDef> = {
-                        clarity:      { label:"Crystal Communicator", icon:"💬", bg:"rgba(34,211,238,0.12)",  bd:"rgba(34,211,238,0.35)",  color:"#22d3ee" },
-                        evidence:     { label:"Evidence Expert",       icon:"📊", bg:"rgba(16,185,129,0.12)",  bd:"rgba(16,185,129,0.35)",  color:"#10b981" },
-                        rebuttal:     { label:"Sharp Rebutter",        icon:"⚔️", bg:"rgba(244,63,94,0.12)",   bd:"rgba(244,63,94,0.35)",   color:"#f43f5e" },
-                        organization: { label:"Logical Thinker",       icon:"🧠", bg:"rgba(167,139,250,0.12)", bd:"rgba(167,139,250,0.35)", color:"#a78bfa" },
-                      };
-                      const trait = traitMap[topCat];
-                      const avgScore = rankedAll.length > 1 ? Math.round(rankedAll.reduce((s,x)=>s+x.total,0)/rankedAll.length) : null;
-                      const aboveAvg = avgScore !== null ? myScore.total - avgScore : null;
-                      const achiev: TraitDef[] = [];
-                      if (myRank===1 && rankedAll.length>1) achiev.push({ label:"Top Scorer",       icon:"👑", bg:"rgba(245,158,11,0.12)", bd:"rgba(245,158,11,0.40)", color:"#fbbf24" });
-                      if (myScore.total>=85)                achiev.push({ label:"Elite Debater",    icon:"🔥", bg:"rgba(239,68,68,0.10)",  bd:"rgba(239,68,68,0.35)",  color:"#f87171" });
-                      else if (myScore.total>=70)           achiev.push({ label:"Strong Performer", icon:"⭐", bg:"rgba(79,142,247,0.10)", bd:"rgba(79,142,247,0.30)", color:"#60a5fa" });
-                      return (
-                        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:"0.4rem", marginTop:"0.875rem" }}>
-                          {/* Rhetoric trait */}
-                          <div className="rhetor-badge" style={{ display:"inline-flex", alignItems:"center", gap:"0.3rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:trait.bg, border:`1px solid ${trait.bd}`, fontSize:"0.72rem", fontWeight:800, color:trait.color, letterSpacing:"0.02em" }}>
-                            <span>{trait.icon}</span><span>{trait.label}</span>
+                    {/* XP + level progress */}
+                    <div style={{ padding:16, borderRadius:18, background:"var(--ds-raised)", display:"flex", flexDirection:"column", gap:10 }}>
+                      <span style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+                        <span className="ds-mono" style={{ fontWeight:600, fontSize:22, color:"var(--ds-accent)" }}><span>+{xpGained}</span> XP</span>
+                        <span className={levelBadgePop ? "level-badge-pop" : ""} style={{
+                          fontSize:13, fontWeight: badgeIsNew ? 700 : 500,
+                          color: badgeIsNew ? "var(--ds-for-text)" : "var(--ds-muted)",
+                          transition:"color 0.3s",
+                        }}>Lv {shownLevel} · {shownTitle}</span>
+                      </span>
+                      {shownHasNext ? (
+                        <>
+                          <div className="ds-track" role="progressbar" aria-label="Level progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(barPct)}>
+                            <div style={{ width:`${barPct}%`, transition: barTransition ? "width 0.85s cubic-bezier(.4,0,.2,1)" : "none" }} />
                           </div>
-                          {/* Achievement badges */}
-                          {achiev.map((b,i)=>(
-                            <div key={i} className="rhetor-badge" style={{ display:"inline-flex", alignItems:"center", gap:"0.3rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:b.bg, border:`1px solid ${b.bd}`, fontSize:"0.72rem", fontWeight:800, color:b.color, animationDelay:`${0.10+i*0.09}s` }}>
-                              <span>{b.icon}</span><span>{b.label}</span>
-                            </div>
-                          ))}
-                          {/* Above-average chip */}
-                          {aboveAvg!==null && aboveAvg>0 && (
-                            <div className="rank-delta-chip" style={{ display:"inline-flex", alignItems:"center", gap:"0.25rem", padding:"0.3rem 0.75rem", borderRadius:"9999px", background:"rgba(16,185,129,0.1)", border:"1px solid rgba(16,185,129,0.35)", fontSize:"0.72rem", fontWeight:800, color:"#10b981" }}>
-                              <span>↑</span><span>+{aboveAvg} above avg</span>
+                          <span style={{ fontSize:13, color:"var(--ds-muted)" }}>
+                            {levelInfo.progressXP} / {levelInfo.neededXP}
+                            {levelInfo.next ? ` · ${Math.max(0, levelInfo.neededXP - levelInfo.progressXP)} XP to ${levelInfo.next.title}` : ""}
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize:13, fontWeight:700, color:"var(--ds-for-text)" }}>MAX LEVEL</span>
+                      )}
+                    </div>
+
+                    {/* Full analysis (Pro) / upgrade banner (Free) + actions */}
+                    <div style={{ display:"flex", flexDirection:"column", gap:10, marginTop:"auto" }}>
+                      {!isPro && ProUpgradeBanner}
+                      <div style={{ display:"flex", flexDirection: isMobile ? "column" : "row", gap:10 }}>
+                        {isPro && (
+                          <button
+                            type="button"
+                            className="ds-btn ds-btn-primary"
+                            style={{ flex:1, height:52 }}
+                            onClick={() => navigate(`/room/${code}/analysis/${debateId}`, { state: { debate, judgeScores } })}
+                          >
+                            <Icon name="chart" size={18} />Full analysis
+                          </button>
+                        )}
+                        <button type="button" className={`ds-btn ${isPro ? "ds-btn-secondary" : "ds-btn-primary"}`} style={{ flex:1, height:52 }} onClick={goHome}>
+                          <Icon name="refresh" size={18} />Play again
+                        </button>
+                        <button
+                          type="button"
+                          className="ds-btn ds-btn-secondary"
+                          style={{ height:52, flex: isMobile ? undefined : "0 0 auto" }}
+                          aria-label="Share result"
+                          onClick={() => {
+                            const txt = `I just debated "${debate.topic}" on Argumint${myWon ? " and WON" : ""}! Score: ${myScore.total}/100`;
+                            if (navigator.share) navigator.share({ title:"Argumint Result", text:txt, url:window.location.href });
+                            else navigator.clipboard?.writeText(txt);
+                          }}
+                        >
+                          <Icon name="message" size={18} />Share
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <div className="res-col" style={{ display:"grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1.6fr) minmax(0,1fr)", gap:20, alignItems:"start" }}>
+
+                  {/* ── STANDINGS ── */}
+                  <section className="ds-card" style={{ ...card, gap:10 }}>
+                    <h2 className="ds-eyebrow" style={{ margin:"0 0 6px" }}>Standings</h2>
+                    {(() => {
+                      const cols = isMobile ? "24px minmax(0,1fr) 48px" : "28px minmax(0,1fr) 52px 52px 52px 52px 60px";
+                      return (
+                        <>
+                          {!isMobile && (
+                            <div aria-hidden="true" style={{ display:"grid", gridTemplateColumns:cols, gap:8, padding:"0 12px", fontSize:11, fontWeight:700, letterSpacing:"0.08em", color:"var(--ds-faint)" }}>
+                              <span>#</span><span>DEBATER</span>
+                              {CATS.map((c) => <span key={c} style={{ textAlign:"right" }}>{CAT_SHORT[c]}</span>)}
+                              <span style={{ textAlign:"right" }}>TOTAL</span>
                             </div>
                           )}
-                        </div>
+                          {rankedAll.map((s, idx) => {
+                            const isMe = s.userId === user?.id;
+                            return (
+                              <div key={s.userId} style={{
+                                display:"grid", gridTemplateColumns:cols, gap:8, alignItems:"center",
+                                minHeight:60, padding:"0 12px", borderRadius:14,
+                                background: isMe ? "var(--ds-accent-soft)" : "var(--ds-raised)",
+                                border:`1px solid ${isMe ? "var(--ds-accent-line)" : "transparent"}`,
+                              }}>
+                                <span className="ds-mono" style={{ fontWeight:600, color:"var(--ds-muted)" }}>{idx + 1}</span>
+                                <span style={{ display:"flex", alignItems:"center", gap:10, minWidth:0 }}>
+                                  <span style={{ width:34, height:34, flexShrink:0, borderRadius:11, background:"var(--ds-panel)", border:"1px solid var(--ds-border)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700 }}>
+                                    {initials(s.username)}
+                                  </span>
+                                  <span style={{ display:"flex", flexDirection:"column", minWidth:0 }}>
+                                    <span style={{ fontWeight:700, fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{s.username}{isMe ? " (you)" : ""}</span>
+                                    <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.08em", color: s.side === "for" ? "var(--ds-for-text)" : "var(--ds-against-text)" }}>
+                                      {s.side === "for" ? "FOR" : "AGAINST"}
+                                    </span>
+                                  </span>
+                                </span>
+                                {!isMobile && CATS.map((c) => (
+                                  <span key={c} className="ds-mono" style={{ textAlign:"right", color:"var(--ds-text3)" }}>{s[c]}</span>
+                                ))}
+                                <span style={{ textAlign:"right", fontWeight:800, fontSize:18, ...gradText(scoreGradient(s.total)) }}>{s.total}</span>
+                              </div>
+                            );
+                          })}
+                        </>
                       );
                     })()}
-                  </>
-                );
-              })()}
-            </div>
+                  </section>
 
-            {/* ── LEVEL-UP BANNER ── */}
-            {showLevelUp && (
-              <div className="level-up-pop" style={{
-                marginBottom:"1rem", padding:"0.6rem 1.25rem", borderRadius:"0.875rem",
-                background:"rgba(16,185,129,0.08)", border:"1px solid rgba(16,185,129,0.4)",
-                display:"flex", alignItems:"center", gap:"0.75rem",
-                boxShadow:"0 0 24px rgba(16,185,129,0.18)",
-              }}>
-                <span style={{ fontSize:"1.5rem", flexShrink:0 }}>⬆</span>
-                <div>
-                  <div className="shimmer-text" style={{ fontSize:"0.95rem", fontWeight:900 }}>LEVEL UP!</div>
-                  <div style={{ fontSize:"0.75rem", color:"var(--text)", fontWeight:700 }}>
-                    You are now <span style={{ color:"var(--for)" }}>Level {levelInfo.current.level}</span> — {newLevelTitle}
+                  <div style={{ display:"flex", flexDirection:"column", gap:20, minWidth:0 }}>
+                    {/* ── YOUR PERFORMANCE (category breakdown) ── */}
+                    <section className="ds-card" style={card}>
+                      <h2 className="ds-eyebrow" style={{ margin:0 }}>Your performance</h2>
+                      {CATS.map((cat, ci) => {
+                        const val = myScore[cat];
+                        const pct = Math.round((val / 25) * 100);
+                        return (
+                          <div key={cat} style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                            <span style={{ display:"flex", justifyContent:"space-between", fontSize:14 }}>
+                              <span style={{ fontWeight:700 }}>{CAT_LABELS[cat]}</span>
+                              <span className="ds-mono" style={{ fontWeight:600 }}>{val} / 25</span>
+                            </span>
+                            <span className="ds-track" style={{ display:"block", height:8 }}>
+                              <span className="bar-fill-in" style={{ display:"block", height:"100%", borderRadius:99, background:CAT_COLORS[cat], width:`${pct}%`, animationDelay:`${0.45 + ci * 0.08}s` }} />
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </section>
+
+                    {/* ── JUDGES ── */}
+                    <section className="ds-card" style={card}>
+                      <h2 className="ds-eyebrow" style={{ margin:0 }}>Judges</h2>
+                      <div style={{ display:"flex", alignItems:"center", gap:12, padding:14, borderRadius:16, background:"var(--ds-raised)" }}>
+                        <span style={{ width:40, height:40, flexShrink:0, borderRadius:12, background:"var(--ds-accent-soft)", color:"var(--ds-accent)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          <Icon name="scale" size={20} />
+                        </span>
+                        <span style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column" }}>
+                          <span style={{ fontWeight:700 }}>AI judge</span>
+                          <span style={{ fontSize:13, color:"var(--ds-muted)" }}>Scored all {rankedAll.length} debaters</span>
+                        </span>
+                        <span style={{ fontSize:12, fontWeight:700, color:`var(--ds-${winSide}-text)` }}>{winText}</span>
+                      </div>
+                      {judgeRows.map((j) => (
+                        <div key={j.id} style={{ display:"flex", alignItems:"center", gap:12, padding:14, borderRadius:16, background:"var(--ds-raised)" }}>
+                          <span style={{ width:40, height:40, flexShrink:0, borderRadius:12, background:"var(--ds-panel)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, fontSize:13 }}>
+                            {initials(j.name)}
+                          </span>
+                          <span style={{ flex:1, minWidth:0, display:"flex", flexDirection:"column" }}>
+                            <span style={{ fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{j.name}</span>
+                            <span style={{ fontSize:13, color:"var(--ds-muted)" }}>Ranking matched the AI on {j.matched} of {j.of} places</span>
+                          </span>
+                          {j.pick && (
+                            <span style={{ fontSize:12, fontWeight:700, color:`var(--ds-${j.pick}-text)` }}>{j.pick === "for" ? "FOR" : "AGAINST"}</span>
+                          )}
+                        </div>
+                      ))}
+                      {judgeRows.length > 0 && (
+                        <p style={{ margin:0, fontSize:13, lineHeight:1.5, color:"var(--ds-muted)" }}>
+                          Human judge scores are shown for transparency. The AI judge decides the result.
+                        </p>
+                      )}
+                      <button type="button" className="ds-link" onClick={goHome} style={{ alignSelf:"flex-start", minHeight:44, display:"inline-flex", alignItems:"center", gap:6, fontSize:14 }}>
+                        <Icon name="home" size={16} />Back to home
+                      </button>
+                    </section>
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* ── centred content wrapper ── */}
-            <div style={{ maxWidth:640, margin:"0 auto", display:"flex", flexDirection:"column", gap:"0.75rem" }}>
-
-              {/* ── SCORE BREAKDOWN ── */}
-              <div className="glass res-col" style={{ padding:"0.875rem 1rem", borderRadius:"1rem" }}>
-                <div style={{ fontSize:"0.55rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--muted)", marginBottom:"0.7rem" }}>📊 Your Performance</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:"0.55rem" }}>
-                  {(["clarity","evidence","rebuttal","organization"] as const).map((cat, ci) => {
-                    const val = myScore[cat] as number;
-                    const pct = Math.round((val / 25) * 100);
-                    const catLabels: Record<string,string> = { clarity:"Clarity", evidence:"Evidence", rebuttal:"Rebuttal", organization:"Organization" };
-                    const catColors: Record<string,string> = { clarity:"#22d3ee", evidence:"#10b981", rebuttal:"#f43f5e", organization:"#a78bfa" };
-                    return (
-                      <div key={cat} style={{ display:"flex", alignItems:"center", gap:"0.65rem" }}>
-                        <span style={{ fontSize:"0.68rem", fontWeight:700, color:"var(--muted)", width:82, flexShrink:0 }}>{catLabels[cat]}</span>
-                        <div style={{ flex:1, height:5, borderRadius:"9999px", background:"var(--surface2)", overflow:"hidden" }}>
-                          <div className="bar-fill-in" style={{ height:"100%", borderRadius:"9999px", background:catColors[cat], width:`${pct}%`, animationDelay:`${0.45+ci*0.08}s` }} />
-                        </div>
-                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.72rem", fontWeight:900, color:catColors[cat], width:26, textAlign:"right", flexShrink:0 }}>{val}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ── STANDINGS (Leaderboard) ── */}
-              <div className="glass res-col" style={{ padding:"0.875rem 1rem", borderRadius:"1rem" }}>
-                <div style={{ fontSize:"0.55rem", fontWeight:800, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--cyan)", marginBottom:"0.6rem" }}>🏆 Standings</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:"0.32rem" }}>
-                  {rankedAll.map((s,idx) => {
-                    const isMe = s.userId===user?.id;
-                    const mc   = idx===0?"#f59e0b":idx===1?"#94a3b8":idx===2?"#b45309":"var(--muted)";
-                    const mbg  = idx===0?"rgba(245,158,11,0.1)":idx===1?"rgba(148,163,184,0.07)":idx===2?"rgba(180,83,9,0.09)":"var(--surface2)";
-                    return (
-                      <div key={s.userId} className="res-row" style={{
-                        display:"flex", alignItems:"center", gap:"0.5rem",
-                        padding:"0.55rem 0.75rem", borderRadius:"0.625rem",
-                        background:isMe?(s.side===result.winnerSide?"rgba(16,185,129,0.1)":"rgba(79,142,247,0.08)"):mbg,
-                        border:`1px solid ${isMe?(s.side===result.winnerSide?"rgba(16,185,129,0.38)":"rgba(79,142,247,0.28)"):`${mc}33`}`,
-                      }}>
-                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:"0.9rem", width:26, flexShrink:0, textAlign:"center" }}>
-                          {idx===0?"🥇":idx===1?"🥈":idx===2?"🥉":`#${idx+1}`}
-                        </span>
-                        <span style={{ flex:1, fontWeight:800, fontSize:"0.88rem", color:isMe?(s.side===result.winnerSide?"var(--for)":"var(--cyan)"):"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {s.username}{isMe?" 👤":""}
-                        </span>
-                        <span className={`badge ${s.side==="for"?"badge-for":"badge-against"}`} style={{ fontSize:"0.55rem" }}>{s.side==="for"?"FOR":"AGN"}</span>
-                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontWeight:900, fontSize:"1.1rem", background:scoreGradient(s.total), WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text", flexShrink:0, minWidth:32, textAlign:"right" }}>
-                          {s.total}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ── FULL ANALYSIS BUTTON (Pro) / UPGRADE BANNER (Free) ── */}
-              {isPro ? (
-                <button
-                  onClick={() => navigate(`/room/${code}/analysis/${debateId}`, { state: { debate, judgeScores } })}
-                  style={{
-                    width:"100%", padding:"0.875rem", borderRadius:"1rem",
-                    background:"linear-gradient(135deg,rgba(79,142,247,0.1),rgba(var(--violet-rgb),0.08))",
-                    border:"1.5px solid rgba(79,142,247,0.35)",
-                    color:"var(--text)", fontFamily:"inherit", cursor:"pointer",
-                    display:"flex", alignItems:"center", justifyContent:"center", gap:"0.6rem",
-                    fontSize:"0.9rem", fontWeight:800, letterSpacing:"0.01em",
-                    transition:"border-color 0.2s, box-shadow 0.2s",
-                  }}
-                  onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.borderColor="rgba(79,142,247,0.6)";(e.currentTarget as HTMLButtonElement).style.boxShadow="0 4px 20px rgba(79,142,247,0.15)";}}
-                  onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.borderColor="rgba(79,142,247,0.35)";(e.currentTarget as HTMLButtonElement).style.boxShadow="none";}}
-                >
-                  <span>🔬</span>
-                  <span>View Full Analysis</span>
-                  <span style={{ color:"var(--muted)", fontWeight:600 }}>→</span>
-                </button>
-              ) : (
-                <div>{ProUpgradeBanner}</div>
-              )}
-
-              {/* ── ACTION BUTTONS ── */}
-              <div style={{ display:"flex", gap:"0.5rem", marginTop:"0.25rem" }}>
-                <button className="play-btn" onClick={()=>navigate("/")} style={{
-                  flex:1, padding:"0.65rem", borderRadius:"0.75rem",
-                  background:"linear-gradient(160deg,var(--btn-primary-from),var(--btn-primary-to))",
-                  border:"none", color:"var(--btn-primary-text)", fontWeight:900, fontSize:"0.925rem",
-                  cursor:"pointer", fontFamily:"inherit",
-                  boxShadow:"0 4px 18px rgba(var(--btn-primary-rgb),0.35)",
-                  letterSpacing:"0.01em",
-                }}>⚔️ Play Again</button>
-                <button className="btn-ghost" style={{ padding:"0.65rem 0.9rem", fontSize:"0.85rem" }}
-                  onClick={()=>{
-                    const txt=`I just debated "${debate.topic}" on Argumint${myWon?" and WON":""}! Score: ${myScore.total}/100`;
-                    if(navigator.share)navigator.share({title:"Argumint Result",text:txt,url:window.location.href});
-                    else navigator.clipboard?.writeText(txt);
-                  }}>📤</button>
-              </div>
-
-            </div>{/* end centred wrapper */}
-          </div>
-        )}{/* end result && myScore */}
-
+            );
+          })()}
+        </main>
       </div>
     </>
   );

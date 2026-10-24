@@ -26,7 +26,8 @@ vi.mock("../../contexts/RoomContext", () => ({
 }));
 
 vi.mock("../../contexts/ThemeContext", () => ({
-  useTheme: () => ({ theme: "dark" }),
+  useTheme: () => ({ theme: "dark", meta: { id: "dark", label: "Dark", icon: "🌙", desc: "" } }),
+  THEMES: [],
 }));
 
 vi.mock("../../hooks/useIsMobile", () => ({
@@ -46,16 +47,31 @@ function topicInput() {
   return screen.getByPlaceholderText(/Social media does more harm/i);
 }
 
-/** Find the + button inside the Stepper identified by its unique hint text. */
-function stepperPlus(hintText: string) {
-  const hintEl = screen.getByText(hintText);
-  // hintEl is the <span> hint; parentElement is the outer Stepper <div>
-  return within(hintEl.parentElement!).getAllByRole("button")[1]; // [0]=minus [1]=plus
+/** The create form (the shell's sidebar also has a "Create room" nav button). */
+function form() {
+  return screen.getByRole("form", { name: /Create a room/i });
 }
-function stepperMinus(hintText: string) {
-  const hintEl = screen.getByText(hintText);
-  return within(hintEl.parentElement!).getAllByRole("button")[0];
+function createBtn() {
+  return within(form()).getByRole("button", { name: /Create room|Creating…/i });
 }
+function preview() {
+  return screen.getByRole("complementary", { name: /Room preview/i });
+}
+function votingSwitch() {
+  return screen.getByRole("switch", { name: /Topic voting/i });
+}
+
+/** −/+ buttons of a Stepper, found by their aria-labels ("Fewer rounds" / "More rounds"). */
+function stepperPlus(noun: string) {
+  return screen.getByRole("button", { name: `More ${noun}` });
+}
+function stepperMinus(noun: string) {
+  return screen.getByRole("button", { name: `Fewer ${noun}` });
+}
+function stepperValue(label: string) {
+  return within(screen.getByRole("group", { name: label })).getByRole("status");
+}
+
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -75,12 +91,25 @@ describe("CreateRoom", () => {
   describe("initial render", () => {
     it("renders the page heading", () => {
       renderForm();
-      expect(screen.getByText(/Host a Debate/i)).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /Create a room/i })).toBeInTheDocument();
     });
 
     it("renders the topic input", () => {
       renderForm();
       expect(topicInput()).toBeInTheDocument();
+    });
+
+    it("labels the motion field", () => {
+      renderForm();
+      expect(screen.getByLabelText("Motion")).toBe(topicInput());
+    });
+
+    it("renders the numbered sections", () => {
+      renderForm();
+      expect(screen.getByText(/01 · THE MOTION/)).toBeInTheDocument();
+      expect(screen.getByText(/02 · MODE/)).toBeInTheDocument();
+      expect(screen.getByText(/03 · TIMING & SIZE/)).toBeInTheDocument();
+      expect(screen.getByText(/04 · OPTIONS/)).toBeInTheDocument();
     });
 
     it("renders Cancel button", () => {
@@ -90,44 +119,51 @@ describe("CreateRoom", () => {
 
     it("renders Create button", () => {
       renderForm();
-      expect(screen.getByRole("button", { name: /Create →/i })).toBeInTheDocument();
+      expect(createBtn()).toHaveAttribute("type", "submit");
     });
 
-    it("renders back ← button", () => {
+    it("renders back button", () => {
       renderForm();
-      expect(screen.getByRole("button", { name: /←/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Back to home/i })).toBeInTheDocument();
     });
 
     it("shows Alternate mode card as selected by default", () => {
       renderForm();
-      expect(screen.getByText("SELECTED")).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /Alternate/i })).toHaveAttribute("aria-checked", "true");
     });
 
-    it("shows summary strip with default turn count", () => {
+    it("shows default turn count in the preview", () => {
       // totalRounds=2 → 4 turns
       renderForm();
-      expect(screen.getByText("4")).toBeInTheDocument();
+      expect(within(preview()).getByText("4")).toBeInTheDocument();
     });
 
-    it("shows summary strip with default total time", () => {
+    it("shows default total time in the preview", () => {
       // 4×60s + 30s = 270s = 4m 30s
       renderForm();
-      expect(screen.getByText("4m 30s")).toBeInTheDocument();
+      expect(within(preview()).getByText("4m 30s")).toBeInTheDocument();
     });
 
     it("shows Timing section with Rounds stepper", () => {
       renderForm();
-      expect(screen.getByText("Rounds")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Rounds" })).toBeInTheDocument();
     });
 
     it("shows Turn time stepper", () => {
       renderForm();
-      expect(screen.getByText("Turn time")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Turn time" })).toBeInTheDocument();
     });
 
-    it("shows Max Debaters stepper", () => {
+    it("shows Max debaters stepper", () => {
       renderForm();
-      expect(screen.getByText("Max Debaters")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Max debaters" })).toBeInTheDocument();
+    });
+
+    it("renders inside the app shell with Create room active", () => {
+      renderForm();
+      const current = screen.getAllByRole("button", { current: "page" });
+      expect(current.length).toBeGreaterThan(0);
+      current.forEach(el => expect(el).toHaveTextContent(/Create/));
     });
   });
 
@@ -140,10 +176,9 @@ describe("CreateRoom", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
 
-    it("← button navigates to /", () => {
+    it("back button navigates to /", () => {
       renderForm();
-      // First ← button (type=button, not submit)
-      fireEvent.click(screen.getAllByRole("button", { name: /←/i })[0]);
+      fireEvent.click(screen.getByRole("button", { name: /Back to home/i }));
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
   });
@@ -154,16 +189,16 @@ describe("CreateRoom", () => {
     it("shows error when submitting without a topic", async () => {
       renderForm();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
-      expect(screen.getByText(/Debate topic is required/i)).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(/Debate topic is required/i);
     });
 
     it("does not call API when topic is missing", async () => {
       renderForm();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
       expect(mockRoomApiCreateRoom).not.toHaveBeenCalled();
@@ -174,9 +209,9 @@ describe("CreateRoom", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
       // Toggle voting on
-      fireEvent.click(screen.getByText(/Let players vote on the topic/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
       expect(screen.getByText(/Add at least one voting topic/i)).toBeInTheDocument();
@@ -185,16 +220,15 @@ describe("CreateRoom", () => {
     it("clears error when a topic is typed after validation failure", async () => {
       renderForm();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
       expect(screen.getByText(/Debate topic is required/i)).toBeInTheDocument();
 
       fireEvent.change(topicInput(), { target: { value: "My topic" } });
-      // Error should clear when user types (re-submit clears it too, but typing alone won't)
-      // Just ensure the form re-submits successfully after adding a topic
+      // Re-submitting with a topic clears the error
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -209,7 +243,7 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "AI is good" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -218,11 +252,40 @@ describe("CreateRoom", () => {
       );
     });
 
+    it("sends the existing defaults in the payload", async () => {
+      renderForm();
+      fireEvent.change(topicInput(), { target: { value: "AI is good" } });
+      await act(async () => {
+        fireEvent.click(createBtn());
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockRoomApiCreateRoom).toHaveBeenCalledWith(expect.objectContaining({
+        debateMode: "alternate", maxParticipants: 10, maxJudges: 0, maxSpectators: 0,
+        votingEnabled: false, votingTopics: [], votingDuration: 30, prepDuration: 30,
+        turnDuration: 60, totalRounds: 2, transcriptionMode: "whisper",
+      }));
+    });
+
+    it("sends the optional context as description", async () => {
+      renderForm();
+      fireEvent.change(topicInput(), { target: { value: "AI is good" } });
+      fireEvent.change(screen.getByLabelText(/Context/), { target: { value: "Define AI broadly" } });
+      await act(async () => {
+        fireEvent.click(createBtn());
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mockRoomApiCreateRoom).toHaveBeenCalledWith(
+        expect.objectContaining({ description: "Define AI broadly" })
+      );
+    });
+
     it("calls setRoom with the returned room", async () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Test topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -233,7 +296,7 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Test topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -246,10 +309,10 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
-      expect(screen.getByRole("button", { name: /Creating…/i })).toBeInTheDocument();
+      expect(within(form()).getByRole("button", { name: /Creating…/i })).toBeInTheDocument();
       resolve({ _id: "r1", code: "ABCD" });
     });
 
@@ -259,10 +322,10 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
       });
-      expect(screen.getByRole("button", { name: /Creating…/i })).toBeDisabled();
+      expect(within(form()).getByRole("button", { name: /Creating…/i })).toBeDisabled();
       resolve({ _id: "r1", code: "ABCD" });
     });
   });
@@ -275,7 +338,7 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -287,42 +350,49 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Topic" } });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
-      expect(screen.getByRole("button", { name: /Create →/i })).not.toBeDisabled();
+      expect(createBtn()).not.toBeDisabled();
     });
   });
 
   // ── Debate mode selection ──────────────────────────────────────────────────
 
   describe("debate mode selection", () => {
-    it("Alternate is selected by default (shows SELECTED badge)", () => {
+    it("Alternate is selected by default", () => {
       renderForm();
-      expect(screen.getByText("SELECTED")).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /Alternate/i })).toHaveAttribute("aria-checked", "true");
+      expect(screen.getByRole("radio", { name: /Buzzer/i })).toHaveAttribute("aria-checked", "false");
     });
 
     it("clicking Buzzer as free user navigates to /pricing", () => {
       renderForm();
-      fireEvent.click(screen.getByText("Buzzer").closest("div")!);
+      fireEvent.click(screen.getByRole("radio", { name: /Buzzer/i }));
       expect(mockNavigate).toHaveBeenCalledWith("/pricing");
+      expect(screen.getByRole("radio", { name: /Alternate/i })).toHaveAttribute("aria-checked", "true");
     });
 
     it("clicking Buzzer as Pro user selects it", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
-      fireEvent.click(screen.getByText("Buzzer").closest("div")!);
-      // "Alternate" loses SELECTED; active mode shows "SELECTED" on Buzzer
-      // Check the active badge moved — just verify no navigation to pricing
+      fireEvent.click(screen.getByRole("radio", { name: /Buzzer/i }));
       expect(mockNavigate).not.toHaveBeenCalledWith("/pricing");
+      expect(screen.getByRole("radio", { name: /Buzzer/i })).toHaveAttribute("aria-checked", "true");
+      expect(within(preview()).getByText("Buzzer")).toBeInTheDocument();
     });
 
     it("shows PRO badge on Buzzer mode for free users", () => {
       renderForm();
-      // The Buzzer card has a PRO badge (inline span, not ProLock component)
-      const buzzerCard = screen.getByText("Buzzer").closest("div")!;
-      expect(within(buzzerCard).getByText("👑 PRO")).toBeInTheDocument();
+      const buzzerCard = screen.getByRole("radio", { name: /Buzzer/i });
+      expect(within(buzzerCard).getByText("PRO")).toBeInTheDocument();
+    });
+
+    it("no PRO badge on Buzzer for Pro users", () => {
+      mockUser = { ...mockUser, isPro: true };
+      renderForm();
+      expect(within(screen.getByRole("radio", { name: /Buzzer/i })).queryByText("PRO")).not.toBeInTheDocument();
     });
   });
 
@@ -331,14 +401,16 @@ describe("CreateRoom", () => {
   describe("voting toggle", () => {
     it("clicking toggle as free user navigates to /pricing", () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       expect(mockNavigate).toHaveBeenCalledWith("/pricing");
+      expect(votingSwitch()).toHaveAttribute("aria-checked", "false");
     });
 
     it("clicking toggle as Pro user enables voting mode", async () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
+      expect(votingSwitch()).toHaveAttribute("aria-checked", "true");
       // Topic input disappears, voting topics UI appears
       expect(screen.getByText(/Add 2–4 options/i)).toBeInTheDocument();
     });
@@ -347,10 +419,10 @@ describe("CreateRoom", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
       // Toggle on
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       expect(screen.getByText(/Add 2–4 options/i)).toBeInTheDocument();
       // Toggle off
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       expect(screen.queryByText(/Add 2–4 options/i)).not.toBeInTheDocument();
       expect(topicInput()).toBeInTheDocument();
     });
@@ -365,51 +437,51 @@ describe("CreateRoom", () => {
 
     it("Add option button adds a topic input", async () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
-      fireEvent.click(screen.getByText(/\+ Add option/i));
+      fireEvent.click(votingSwitch());
+      fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       expect(screen.getByPlaceholderText("Option 1")).toBeInTheDocument();
     });
 
     it("can add up to 4 topics", async () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       for (let i = 0; i < 4; i++) {
-        fireEvent.click(screen.getByText(/\+ Add option/i));
+        fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       }
       expect(screen.getAllByPlaceholderText(/Option \d/).length).toBe(4);
     });
 
     it("hides Add option button when 4 topics are added", async () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
+      fireEvent.click(votingSwitch());
       for (let i = 0; i < 4; i++) {
-        fireEvent.click(screen.getByText(/\+ Add option/i));
+        fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       }
-      expect(screen.queryByText(/\+ Add option/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Add option/i })).not.toBeInTheDocument();
     });
 
-    it("✕ button removes a topic", async () => {
+    it("remove button removes a topic", async () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
-      fireEvent.click(screen.getByText(/\+ Add option/i));
+      fireEvent.click(votingSwitch());
+      fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       expect(screen.getByPlaceholderText("Option 1")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "✕" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove option 1" }));
       expect(screen.queryByPlaceholderText("Option 1")).not.toBeInTheDocument();
     });
 
     it("submits with voting topics included in payload", async () => {
       renderForm();
-      fireEvent.click(screen.getByText(/Let players vote/i).closest("div")!);
-      fireEvent.click(screen.getByText(/\+ Add option/i));
+      fireEvent.click(votingSwitch());
+      fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       fireEvent.change(screen.getByPlaceholderText("Option 1"), {
         target: { value: "Topic A" },
       });
-      fireEvent.click(screen.getByText(/\+ Add option/i));
+      fireEvent.click(screen.getByRole("button", { name: /Add option/i }));
       fireEvent.change(screen.getByPlaceholderText("Option 2"), {
         target: { value: "Topic B" },
       });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: /Create →/i }));
+        fireEvent.click(createBtn());
         await Promise.resolve();
         await Promise.resolve();
       });
@@ -427,7 +499,7 @@ describe("CreateRoom", () => {
   describe("Pro vs Free feature gates", () => {
     it("free user sees Pro upsell banner", () => {
       renderForm();
-      expect(screen.getByText(/Pro/)).toBeInTheDocument();
+      expect(screen.getByText(/unlocks human judges/i)).toBeInTheDocument();
       expect(screen.getByText(/See plans →/)).toBeInTheDocument();
     });
 
@@ -437,33 +509,52 @@ describe("CreateRoom", () => {
       expect(mockNavigate).toHaveBeenCalledWith("/pricing");
     });
 
-    it("free user does NOT see Max Judges stepper", () => {
+    it("free user sees a locked Human judges switch that opens pricing", () => {
       renderForm();
-      expect(screen.queryByText("Max Judges")).not.toBeInTheDocument();
+      const sw = screen.getByRole("switch", { name: /Human judges \(Pro only\)/i });
+      expect(sw).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(sw);
+      expect(mockNavigate).toHaveBeenCalledWith("/pricing");
     });
 
-    it("free user does NOT see Max Spectators stepper", () => {
+    it("free user does NOT see Max judges stepper", () => {
       renderForm();
-      expect(screen.queryByText("Max Spectators")).not.toBeInTheDocument();
+      expect(screen.queryByRole("group", { name: "Max judges" })).not.toBeInTheDocument();
     });
 
-    it("Pro user sees Max Judges stepper", () => {
+    it("free user does NOT see Max spectators stepper", () => {
+      renderForm();
+      expect(screen.queryByRole("group", { name: "Max spectators" })).not.toBeInTheDocument();
+    });
+
+    it("Pro user sees Max judges stepper", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
-      expect(screen.getByText("Max Judges")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Max judges" })).toBeInTheDocument();
     });
 
-    it("Pro user sees Max Spectators stepper", () => {
+    it("Pro user sees Max spectators stepper", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
-      expect(screen.getByText("Max Spectators")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Max spectators" })).toBeInTheDocument();
     });
 
-    it("Pro user sees judges/spectators in summary strip", () => {
+    it("Pro user does not see the upsell", () => {
       mockUser = { ...mockUser, isPro: true };
       renderForm();
-      expect(screen.getByText("judges")).toBeInTheDocument();
-      expect(screen.getByText("spectators")).toBeInTheDocument();
+      expect(screen.queryByText(/See plans →/)).not.toBeInTheDocument();
+    });
+
+    it("Pro user sees judges/spectators in the preview", () => {
+      mockUser = { ...mockUser, isPro: true };
+      renderForm();
+      expect(within(preview()).getByText("Judges")).toBeInTheDocument();
+      expect(within(preview()).getByText("Spectators")).toBeInTheDocument();
+    });
+
+    it("free user does not see judges/spectators in the preview", () => {
+      renderForm();
+      expect(within(preview()).queryByText("Judges")).not.toBeInTheDocument();
     });
   });
 
@@ -472,38 +563,49 @@ describe("CreateRoom", () => {
   describe("Stepper component", () => {
     it("clicking + on Rounds stepper increments the round count", () => {
       renderForm();
-      // "turns per side" is the unique hint for Rounds stepper
-      fireEvent.click(stepperPlus("turns per side"));
+      fireEvent.click(stepperPlus("rounds"));
       // totalRounds goes 2→3, totalTurns goes 4→6
-      expect(screen.getByText("6")).toBeInTheDocument();
+      expect(stepperValue("Rounds")).toHaveTextContent("3");
+      expect(within(preview()).getByText("6")).toBeInTheDocument();
     });
 
     it("clicking − on Rounds stepper decrements when not at minimum", () => {
       renderForm();
       // rounds starts at 2 (min=1), decrement → 1, totalTurns=2
-      fireEvent.click(stepperMinus("turns per side"));
-      expect(screen.getByText("2")).toBeInTheDocument();
+      fireEvent.click(stepperMinus("rounds"));
+      expect(stepperValue("Rounds")).toHaveTextContent("1");
+      expect(within(preview()).getByText("2")).toBeInTheDocument();
     });
 
     it("− button is disabled when value is at minimum", () => {
       renderForm();
-      // Rounds min=1: click − once to reach min
-      fireEvent.click(stepperMinus("turns per side"));
-      // Now at min (1). The minus button should be disabled
-      const minusBtn = stepperMinus("turns per side");
-      expect(minusBtn).toBeDisabled();
+      fireEvent.click(stepperMinus("rounds"));
+      expect(stepperMinus("rounds")).toBeDisabled();
+    });
+
+    it("+ button is disabled at maximum (rounds max 10)", () => {
+      renderForm();
+      for (let i = 0; i < 12; i++) fireEvent.click(stepperPlus("rounds"));
+      expect(stepperValue("Rounds")).toHaveTextContent("10");
+      expect(stepperPlus("rounds")).toBeDisabled();
     });
 
     it("Turn time stepper displays formatted time", () => {
       renderForm();
       // Default turnDuration = 60 → displayed as "1m"
-      expect(screen.getByText("1m")).toBeInTheDocument();
+      expect(stepperValue("Turn time")).toHaveTextContent("1m");
+    });
+
+    it("Turn time steps by 15s", () => {
+      renderForm();
+      fireEvent.click(stepperPlus("seconds per turn"));
+      expect(stepperValue("Turn time")).toHaveTextContent("1m 15s");
     });
 
     it("Prep time stepper displays formatted time", () => {
       renderForm();
       // Default prepDuration = 30 → "30s"
-      expect(screen.getByText("30s")).toBeInTheDocument();
+      expect(stepperValue("Prep time")).toHaveTextContent("30s");
     });
   });
 
@@ -519,6 +621,12 @@ describe("CreateRoom", () => {
       renderForm();
       fireEvent.change(topicInput(), { target: { value: "Hello" } });
       expect(screen.getByText("5/500")).toBeInTheDocument();
+    });
+
+    it("mirrors the motion in the preview", () => {
+      renderForm();
+      fireEvent.change(topicInput(), { target: { value: "Cats beat dogs" } });
+      expect(within(preview()).getByText("Cats beat dogs")).toBeInTheDocument();
     });
   });
 });

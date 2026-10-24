@@ -5,6 +5,8 @@ import { useRoom } from "../contexts/RoomContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
+import { AppShell } from "../components/AppShell";
+import { Icon, type IconName } from "../components/Icon";
 import type { CreateRoomInput } from "@argumint/shared";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -21,6 +23,8 @@ function fmtTime(sec: number): string {
 
 interface StepperProps {
   label: string;
+  /** Used in the −/+ aria-labels: "Fewer rounds" / "More rounds" */
+  noun: string;
   hint: string;
   value: number;
   min: number;
@@ -30,62 +34,92 @@ interface StepperProps {
   onChange: (v: number) => void;
 }
 
-function Stepper({ label, hint, value, min, max, step, display, onChange }: StepperProps) {
+function Stepper({ label, noun, hint, value, min, max, step, display, onChange }: StepperProps) {
   const atMin = value <= min;
   const atMax = value >= max;
-  const btnBase: React.CSSProperties = {
-    width: 30, height: 30, borderRadius: "0.5rem",
-    border: "1.5px solid var(--border)", background: "var(--surface2)",
-    color: "var(--blue)", fontWeight: 900, fontSize: "1.05rem",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    flexShrink: 0, transition: "all 0.15s", cursor: "pointer",
+  const btn: React.CSSProperties = {
+    width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+    border: "1px solid var(--ds-border2)", background: "var(--ds-raised)", color: "var(--ds-text)",
+    font: "600 22px Outfit, sans-serif", display: "flex", alignItems: "center", justifyContent: "center",
+    cursor: "pointer", padding: 0,
   };
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-      <span style={{ fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--blue)" }}>
-        {label}
-      </span>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "0.75rem", padding: "0.3rem 0.5rem" }}>
-        <button type="button" onClick={() => onChange(Math.max(min, value - step))} disabled={atMin}
-          style={{ ...btnBase, opacity: atMin ? 0.35 : 1, cursor: atMin ? "not-allowed" : "pointer" }}>
+    <div role="group" aria-label={label} style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+      <span style={{ fontSize: 14, fontWeight: 600, color: "var(--ds-text)" }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button type="button" aria-label={`Fewer ${noun}`} onClick={() => onChange(Math.max(min, value - step))} disabled={atMin}
+          style={{ ...btn, opacity: atMin ? 0.4 : 1, cursor: atMin ? "not-allowed" : "pointer" }}>
           −
         </button>
-        <span style={{ flex: 1, textAlign: "center", fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: "0.88rem", color: "var(--text)" }}>
+        <output aria-live="polite" style={{
+          flex: 1, minWidth: 0, height: 48, boxSizing: "border-box", borderRadius: 12,
+          background: "var(--ds-deep)", border: "1px solid var(--ds-border2)", color: "var(--ds-text)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          font: "600 20px 'JetBrains Mono', monospace",
+        }}>
           {display ? display(value) : value}
-        </span>
-        <button type="button" onClick={() => onChange(Math.min(max, value + step))} disabled={atMax}
-          style={{ ...btnBase, opacity: atMax ? 0.35 : 1, cursor: atMax ? "not-allowed" : "pointer" }}>
+        </output>
+        <button type="button" aria-label={`More ${noun}`} onClick={() => onChange(Math.min(max, value + step))} disabled={atMax}
+          style={{ ...btn, opacity: atMax ? 0.4 : 1, cursor: atMax ? "not-allowed" : "pointer" }}>
           +
         </button>
       </div>
-      <span style={{ fontSize: "0.6rem", color: "var(--muted)", fontWeight: 600 }}>{hint}</span>
+      <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>{hint}</span>
     </div>
+  );
+}
+
+// ── Section card (numbered fieldset) ────────────────────────────────────────
+
+function Section({ n, title, gap = 16, isMobile, children }: {
+  n: string; title: string; gap?: number; isMobile: boolean; children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="ds-card" style={{
+      margin: 0, minWidth: 0, padding: isMobile ? 20 : 28,
+      display: "flex", flexDirection: "column", gap,
+    }}>
+      <legend style={{ float: "left", padding: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", color: "var(--ds-accent)" }}>
+        {n} · {title}
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+// ── Pro chip (gold; Glacier keeps its blue accent) ──────────────────────────
+
+function ProChip({ isGlacier }: { isGlacier: boolean }) {
+  return (
+    <span className={`ds-chip ${isGlacier ? "ds-chip-accent" : "ds-chip-gold"}`}
+      style={{ height: 22, padding: "0 8px", borderRadius: 6, fontSize: 10, letterSpacing: "0.08em", gap: 4 }}>
+      <Icon name="crown" size={12} />PRO
+    </span>
+  );
+}
+
+/** Switch shown to free users — looks off + locked, opens pricing. */
+function LockedSwitch({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={false} aria-disabled="true" aria-label={`${label} (Pro only)`} onClick={onClick}
+      style={{
+        width: 56, height: 32, flexShrink: 0, borderRadius: 99, boxSizing: "border-box",
+        border: "1px solid var(--ds-border2)", background: "var(--ds-raised)", padding: 3,
+        display: "flex", alignItems: "center", justifyContent: "flex-start", color: "var(--ds-muted)", cursor: "pointer",
+      }}>
+      <span style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--ds-border2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name="lock" size={13} />
+      </span>
+    </button>
   );
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-// ── Pro lock badge ────────────────────────────────────────────────────────────
-function ProLock({ onClick, isGlacier }: { onClick: () => void; isGlacier?: boolean }) {
-  return (
-    <span
-      onClick={e => { e.stopPropagation(); onClick(); }}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: "0.2rem",
-        fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.08em",
-        padding: "0.15rem 0.45rem", borderRadius: "9999px", cursor: "pointer",
-        background: isGlacier
-          ? "linear-gradient(135deg,rgba(2,132,199,0.22),rgba(3,105,161,0.55))"
-          : "linear-gradient(135deg,rgba(245,158,11,0.18),rgba(12,12,22,0.7))",
-        border: isGlacier ? "1px solid rgba(2,132,199,0.55)" : "1px solid rgba(245,158,11,0.5)",
-        color: isGlacier ? "#7dd3fc" : "#fbbf24",
-        boxShadow: isGlacier ? "0 0 8px rgba(2,132,199,0.15)" : "0 0 8px rgba(245,158,11,0.1)",
-      }}
-    >
-      👑 PRO
-    </span>
-  );
-}
+const MODES: { value: "alternate" | "buzzer"; icon: IconName; iconColor: string; label: string; desc: string; proOnly: boolean }[] = [
+  { value: "alternate", icon: "users", iconColor: "var(--ds-accent)",   label: "Alternate", desc: "Ordered turns with a countdown. FOR then AGAINST, each round.", proOnly: false },
+  { value: "buzzer",    icon: "bolt",  iconColor: "var(--ds-gold-mid)", label: "Buzzer",    desc: "Open floor. First to grab the mic holds it; a re-grab window opens on release.", proOnly: true },
+];
 
 export function CreateRoom() {
   const navigate  = useNavigate();
@@ -93,18 +127,11 @@ export function CreateRoom() {
   const { setRoom, setError } = useRoom();
   const { theme } = useTheme();
   const isMobile  = useIsMobile();
+  // Stack the preview under the form until there's room for the 360px column
+  const isNarrow  = useIsMobile(1100);
   const isPro      = (user as any)?.isPro ?? false;
   const isGlacier  = theme === "glacier";
 
-  // Accent palette: blue in glacier, gold everywhere else
-  const proColor   = isGlacier ? "#38bdf8"              : "#fbbf24";
-  const proDark    = isGlacier ? "#0369a1"              : "#d97706";
-  const proLockBg  = isGlacier
-    ? "linear-gradient(135deg,rgba(2,132,199,0.22),rgba(3,105,161,0.55))"
-    : "linear-gradient(135deg,rgba(245,158,11,0.18),rgba(12,12,22,0.7))";
-  const proLockBorder = isGlacier ? "rgba(2,132,199,0.55)" : "rgba(245,158,11,0.5)";
-  const proUpsellBg   = isGlacier ? "rgba(2,132,199,0.05)"  : "rgba(245,158,11,0.04)";
-  const proUpsellHoverBg = isGlacier ? "rgba(2,132,199,0.1)" : "rgba(245,158,11,0.09)";
   const [isLoading,   setIsLoading]   = useState(false);
   const [localError,  setLocalError]  = useState<string | null>(null);
 
@@ -127,6 +154,17 @@ export function CreateRoom() {
     set("votingTopics", (formData.votingTopics || []).filter((_, idx) => idx !== i));
   const handleTopicChange = (i: number, v: string) =>
     set("votingTopics", (formData.votingTopics || []).map((t, idx) => idx === i ? v : t));
+
+  const toggleVoting = () => {
+    if (!isPro) { navigate("/pricing"); return; }
+    const next = !formData.votingEnabled;
+    setFormData(prev => ({
+      ...prev,
+      votingEnabled: next,
+      // Clear leftover empty topic slots when voting is turned off.
+      votingTopics: next ? prev.votingTopics : [],
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,283 +189,283 @@ export function CreateRoom() {
 
   const totalTurns   = formData.totalRounds * 2;
   const totalTimeSec = totalTurns * formData.turnDuration + formData.prepDuration;
+  const votingTopics = formData.votingTopics || [];
+
+  const twoCol = isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))";
+  const rowDivider = "1px solid var(--ds-hair)";
+
+  const preview: { k: string; v: React.ReactNode }[] = [
+    { k: "Mode",   v: formData.debateMode === "buzzer" ? "Buzzer" : "Alternate" },
+    { k: "Rounds", v: formData.totalRounds },
+    { k: "Turn",   v: fmtTime(formData.turnDuration) },
+    { k: "Prep",   v: fmtTime(formData.prepDuration) },
+    { k: "Seats",  v: `Up to ${formData.maxParticipants}` },
+    { k: "Voting", v: formData.votingEnabled ? "On" : "Off" },
+    { k: "Turns",  v: totalTurns },
+    { k: "Length", v: <>≈ <span>{fmtTime(totalTimeSec)}</span></> },
+    ...(isPro ? [
+      { k: "Judges",     v: formData.maxJudges },
+      { k: "Spectators", v: formData.maxSpectators },
+    ] : []),
+  ];
+
+  const filledOptions = votingTopics.filter(t => t.trim()).length;
+  const motionPreview = formData.votingEnabled
+    ? (filledOptions
+        ? `Players vote between ${filledOptions} option${filledOptions !== 1 ? "s" : ""}`
+        : "Players vote on the motion in the lobby")
+    : formData.topic.trim();
 
   return (
-    <div className="bg-grid" style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)" }}>
+    <AppShell active="create">
+      <div className="ds-page" style={{ gap: isMobile ? 20 : 28 }}>
 
+        {/* ── Header ── */}
+        <header style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {!isMobile && (
+            <button type="button" onClick={() => navigate("/")} aria-label="Back to home"
+              style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 32, padding: 0, border: 0, background: "none", cursor: "pointer", font: "600 14px Outfit, sans-serif", color: "var(--ds-muted)" }}>
+              <Icon name="left" size={16} />Home
+            </button>
+          )}
+          <h1 className="ds-h1" style={{ fontSize: isMobile ? 24 : 34 }}>Create a room</h1>
+          <p className="ds-sub">You'll host. Sides are assigned at random when the debate starts.</p>
+        </header>
 
-      {/* ── MAIN ── */}
-      <main style={{ flex: 1, minHeight: 0, overflow: isMobile ? "auto" : "hidden", display: "flex", justifyContent: "center", padding: isMobile ? "1rem 0.75rem" : "1rem 1.25rem" }}>
-        <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: isMobile ? 640 : 940, display: "flex", flexDirection: "column", gap: "0.75rem", minHeight: isMobile ? undefined : 0 }}>
+        <form onSubmit={handleSubmit} aria-label="Create a room"
+          style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "minmax(0, 1fr) 360px", gap: 24, alignItems: "start" }}>
 
-          {/* ── PAGE HEADER ── */}
-          <div className="fade-up" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <button type="button" onClick={() => navigate("/")} className="btn-ghost"
-                style={{ padding: "0.4rem 0.7rem", fontSize: "0.82rem" }}>←</button>
-              <div>
-                <h1 style={{ fontSize: isMobile ? "1.2rem" : "1.4rem", fontWeight: 900, color: "var(--text)", margin: 0, letterSpacing: "-0.02em" }}>
-                  ⚔️ Host a Debate
-                </h1>
-                <p style={{ margin: "0.1rem 0 0", fontSize: "0.72rem", color: localError ? "var(--against)" : "var(--muted)", fontWeight: localError ? 700 : 400 }}>
-                  {localError ? `⚠ ${localError}` : "Set up your arena and invite players"}
-                </p>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button type="button" onClick={() => navigate("/")} className="btn-ghost"
-                style={{ padding: "0.45rem 1rem", fontSize: "0.82rem" }}>Cancel</button>
-              <button type="submit" className="btn-primary" disabled={isLoading}
-                style={{ padding: "0.45rem 1.25rem", fontSize: "0.82rem" }}>
-                {isLoading ? "Creating…" : "Create →"}
-              </button>
-            </div>
-          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
 
-          {/* ── CARDS: 2-col on desktop, stacked on mobile ── */}
-          <div style={{
-            flex: isMobile ? undefined : 1,
-            minHeight: isMobile ? undefined : 0,
-            display: isMobile ? "flex" : "grid",
-            flexDirection: "column",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "0.875rem",
-          }}>
-
-          {/* LEFT col (desktop) / top (mobile): Motion + Mode */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", minHeight: isMobile ? undefined : 0 }}>
-
-          {/* ── MOTION CARD ── */}
-          <div className="glass fade-up" style={{ padding: isMobile ? "1rem" : "1.25rem 1.5rem" }}>
-            <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.75rem" }}>
-              📋 Motion
-            </div>
-
-            {/* Voting toggle */}
-            <div
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "0.5rem 0.875rem",
-                background: formData.votingEnabled ? "rgba(14,165,233,0.07)" : "var(--surface2)",
-                border: `1px solid ${formData.votingEnabled ? "rgba(14,165,233,0.3)" : "var(--border)"}`,
-                borderRadius: "0.625rem", cursor: isPro ? "pointer" : "default", marginBottom: "0.75rem",
-                transition: "all 0.2s", opacity: isPro ? 1 : 0.7,
-              }}
-              onClick={() => {
-                if (!isPro) { navigate("/pricing"); return; }
-                const next = !formData.votingEnabled;
-                setFormData(prev => ({
-                  ...prev,
-                  votingEnabled: next,
-                  // Clear leftover empty topic slots when voting is turned off.
-                  votingTopics: next ? prev.votingTopics : [],
-                }));
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "var(--text)" }}>Let players vote on the topic</span>
-                {!isMobile && <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>— players choose in the lobby</span>}
-                {!isPro && <ProLock onClick={() => navigate("/pricing")} isGlacier={isGlacier} />}
-              </div>
-              <div style={{ width: 38, height: 20, borderRadius: 9999, background: formData.votingEnabled ? "var(--cyan)" : "var(--border2)", position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
-                <div style={{ position: "absolute", top: 2, left: formData.votingEnabled ? 19 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
-              </div>
-            </div>
-
-            {!formData.votingEnabled ? (
-              <div>
-                <input
-                  name="topic" type="text" className="input-dark"
-                  value={formData.topic}
-                  onChange={e => set("topic", e.target.value)}
-                  placeholder="e.g. Social media does more harm than good"
-                  maxLength={500}
-                />
-                <div style={{ fontSize: "0.62rem", color: "var(--muted)", marginTop: "0.3rem", textAlign: "right" }}>
-                  {formData.topic.length}/500
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600, marginBottom: "0.5rem" }}>
-                  Add 2–4 options for players to vote on:
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                  {(formData.votingTopics || []).map((topic, i) => (
-                    <div key={i} style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", fontWeight: 800, color: "var(--blue)", width: 20, flexShrink: 0 }}>
-                        #{i + 1}
-                      </span>
-                      <input type="text" value={topic} onChange={e => handleTopicChange(i, e.target.value)}
-                        placeholder={`Option ${i + 1}`} maxLength={200} className="input-dark"
-                        style={{ flex: 1, padding: "0.55rem 0.875rem" }} />
-                      <button type="button" onClick={() => handleRemoveTopic(i)} className="btn-danger"
-                        style={{ padding: "0.5rem 0.65rem", fontSize: "0.78rem", flexShrink: 0 }}>✕</button>
-                    </div>
-                  ))}
-                  {(formData.votingTopics || []).length < 4 && (
-                    <button type="button" onClick={handleAddTopic} className="btn-ghost"
-                      style={{ padding: "0.5rem", fontSize: "0.78rem", border: "1.5px dashed var(--border2)" }}>
-                      + Add option {(formData.votingTopics || []).length + 1} / 4
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── MODE CARD ── */}
-          <div className="glass fade-up" style={{ padding: isMobile ? "1rem" : "1.25rem 1.5rem" }}>
-            <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.75rem" }}>
-              🎮 Debate Mode
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.625rem" }}>
-              {[
-                { value: "alternate", icon: "🔄", label: "Alternate", desc: "Structured turns — FOR then AGAINST, each round.", proOnly: false },
-                { value: "buzzer",    icon: "🔔", label: "Buzzer",    desc: "Open floor — first to buzz grabs the mic.",       proOnly: true  },
-              ].map((mode) => {
-                const active  = formData.debateMode === mode.value;
-                const locked  = mode.proOnly && !isPro;
-                return (
-                  <div
-                    key={mode.value}
-                    onClick={() => locked ? navigate("/pricing") : set("debateMode", mode.value as "alternate" | "buzzer")}
-                    style={{
-                      padding: isMobile ? "0.75rem" : "0.875rem 1rem",
-                      borderRadius: "0.875rem",
-                      border: `2px solid ${active ? "var(--blue)" : locked ? (isGlacier ? "rgba(2,132,199,0.3)" : "rgba(245,158,11,0.3)") : "var(--border)"}`,
-                      background: active ? "rgba(var(--blue-rgb),0.07)" : locked ? (isGlacier ? "rgba(2,132,199,0.04)" : "rgba(245,158,11,0.03)") : "var(--surface2)",
-                      cursor: locked ? "pointer" : "pointer", transition: "all 0.2s",
-                      boxShadow: active ? "0 4px 16px rgba(var(--blue-rgb),0.14)" : "none",
-                      opacity: locked ? 0.75 : 1,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", marginBottom: "0.3rem" }}>
-                      <span style={{ fontSize: "1rem" }}>{mode.icon}</span>
-                      <span style={{ fontWeight: 800, fontSize: "0.85rem", color: active ? "var(--blue)" : "var(--text)" }}>
-                        {mode.label}
-                      </span>
-                      {locked && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.2rem", fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.08em", padding: "0.15rem 0.45rem", borderRadius: "9999px", background: proLockBg, border: `1px solid ${proLockBorder}`, color: proColor }}>
-                          👑 PRO
-                        </span>
-                      )}
-                      {active && !locked && (
-                        <span style={{ marginLeft: "auto", fontSize: "0.58rem", fontWeight: 800, color: "var(--blue)", background: "rgba(var(--blue-rgb),0.12)", padding: "0.1rem 0.45rem", borderRadius: "9999px" }}>
-                          SELECTED
-                        </span>
-                      )}
-                    </div>
-                    <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)", lineHeight: 1.45 }}>{mode.desc}</p>
+            {/* ── 01 · Motion ── */}
+            <Section n="01" title="THE MOTION" isMobile={isMobile}>
+              {!formData.votingEnabled ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <label htmlFor="cr-topic" style={{ fontSize: 14, fontWeight: 600 }}>Motion</label>
+                  <textarea
+                    id="cr-topic" name="topic" rows={2} className="ds-input"
+                    value={formData.topic}
+                    onChange={e => set("topic", e.target.value)}
+                    placeholder="e.g. Social media does more harm than good"
+                    maxLength={500}
+                    style={{ minHeight: 0, font: "500 18px/1.45 Outfit, sans-serif" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 12, color: "var(--ds-muted)" }}>
+                    <span>Phrase it so one side can argue FOR and the other AGAINST.</span>
+                    <span className="ds-mono" style={{ flexShrink: 0 }}>{formData.topic.length}/500</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          </div>{/* end LEFT col */}
-
-          {/* RIGHT col (desktop) / bottom (mobile): Settings */}
-          {/* ── SETTINGS CARD ── */}
-          <div className="glass fade-up" style={{ padding: isMobile ? "1rem" : "1.25rem 1.5rem" }}>
-            <div style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.875rem" }}>
-              ⚙️ Settings
-            </div>
-
-            {/* Timing + rounds */}
-            <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.5rem" }}>
-              Timing
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
-              <Stepper label="Rounds" hint="turns per side"
-                value={formData.totalRounds} min={1} max={10} step={1}
-                onChange={v => set("totalRounds", v)} />
-              <Stepper label="Prep time" hint="before debate starts"
-                value={formData.prepDuration} min={0} max={300} step={15}
-                display={fmtTime}
-                onChange={v => set("prepDuration", v)} />
-              <Stepper label="Turn time" hint="per speaker"
-                value={formData.turnDuration} min={15} max={600} step={15}
-                display={fmtTime}
-                onChange={v => set("turnDuration", v)} />
-            </div>
-
-            {/* Seat limits */}
-            <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.5rem" }}>
-              Seat Limits
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
-              <Stepper label="Max Debaters" hint="speakers in the debate"
-                value={formData.maxParticipants} min={2} max={20} step={1}
-                onChange={v => set("maxParticipants", v)} />
-
-              {/* Judges — Pro only, hidden for free users */}
-              {isPro && (
-                <Stepper label="Max Judges" hint="human scorers allowed"
-                  value={(formData as any).maxJudges} min={0} max={20} step={1}
-                  onChange={v => setFormData(prev => ({ ...prev, maxJudges: v }))} />
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>Topic options</span>
+                  <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>Add 2–4 options for players to vote on:</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {votingTopics.map((topic, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span className="ds-mono" style={{ fontSize: 13, fontWeight: 600, color: "var(--ds-accent)", width: 24, flexShrink: 0 }}>
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <input type="text" value={topic} onChange={e => handleTopicChange(i, e.target.value)}
+                          aria-label={`Option ${i + 1}`} placeholder={`Option ${i + 1}`} maxLength={200} className="ds-input"
+                          style={{ flex: 1, minWidth: 0, height: 48 }} />
+                        <button type="button" onClick={() => handleRemoveTopic(i)} aria-label={`Remove option ${i + 1}`}
+                          className="ds-btn ds-btn-danger" style={{ width: 48, height: 48, padding: 0, flexShrink: 0 }}>
+                          <Icon name="x" size={18} />
+                        </button>
+                      </div>
+                    ))}
+                    {votingTopics.length < 4 && (
+                      <button type="button" onClick={handleAddTopic} className="ds-btn ds-btn-ghost ds-btn-block"
+                        style={{ borderStyle: "dashed" }}>
+                        <Icon name="plus" size={16} />Add option {votingTopics.length + 1} / 4
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
-
-              {/* Spectators — Pro only, hidden for free users */}
-              {isPro && (
-                <Stepper label="Max Spectators" hint="listen-only observers"
-                  value={(formData as any).maxSpectators} min={0} max={100} step={5}
-                  onChange={v => setFormData(prev => ({ ...prev, maxSpectators: v }))} />
-              )}
-            </div>
-
-            {/* Pro upsell hint — shown only for free users */}
-            {!isPro && (
-              <div
-                onClick={() => navigate("/pricing")}
-                style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.5rem 0.75rem", borderRadius: "0.625rem", cursor: "pointer", background: proUpsellBg, marginBottom: "0.75rem", transition: "background 0.2s" }}
-                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = proUpsellHoverBg}
-                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = proUpsellBg}
-              >
-                <span style={{ fontSize: "0.8rem" }}>👑</span>
-                <span style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>
-                  <span style={{ color: proDark, fontWeight: 800 }}>Pro</span> unlocks Human Judges, Spectators, Buzzer mode & topic voting
-                </span>
-                <span style={{ marginLeft: "auto", fontSize: "0.65rem", fontWeight: 700, color: proDark, flexShrink: 0 }}>See plans →</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label htmlFor="cr-desc" style={{ fontSize: 14, fontWeight: 600 }}>
+                  Context <span style={{ fontWeight: 400, color: "var(--ds-muted)" }}>(optional)</span>
+                </label>
+                <textarea
+                  id="cr-desc" name="description" rows={2} className="ds-input"
+                  value={formData.description ?? ""}
+                  onChange={e => set("description", e.target.value)}
+                  placeholder="Background, definitions or ground rules for debaters"
+                  maxLength={2000}
+                  style={{ minHeight: 0, fontSize: 15 }}
+                />
               </div>
-            )}
+            </Section>
 
-            {/* Summary strip */}
-            <div style={{ marginTop: "0.25rem", padding: "0.55rem 0.875rem", borderRadius: "0.625rem", background: "rgba(var(--blue-rgb),0.05)", border: "1px solid rgba(var(--blue-rgb),0.11)", display: "flex", flexWrap: "wrap", gap: "0.5rem 1.25rem", alignItems: "center" }}>
-              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{totalTurns}</span>
-                {" "}turns
-              </span>
-              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                ≈ <span style={{ fontWeight: 800, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{fmtTime(totalTimeSec)}</span>
-              </span>
-              <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                <span style={{ fontWeight: 800, color: "var(--for)", fontFamily: "'JetBrains Mono', monospace" }}>{formData.maxParticipants}</span>
-                {" "}debaters
-              </span>
-              {isPro && (
+            {/* ── 02 · Mode ── */}
+            <Section n="02" title="MODE" isMobile={isMobile}>
+              <div role="radiogroup" aria-label="Debate mode" style={{ display: "grid", gridTemplateColumns: twoCol, gap: 14 }}>
+                {MODES.map(mode => {
+                  const active = formData.debateMode === mode.value;
+                  const locked = mode.proOnly && !isPro;
+                  return (
+                    <button
+                      key={mode.value} type="button" role="radio" aria-checked={active}
+                      aria-label={locked ? `${mode.label} (Pro only)` : mode.label}
+                      onClick={() => locked ? navigate("/pricing") : set("debateMode", mode.value)}
+                      style={{
+                        padding: 20, borderRadius: 18, textAlign: "left", cursor: "pointer",
+                        border: `2px solid ${active ? "var(--ds-accent-line)" : "var(--ds-border)"}`,
+                        background: active ? "var(--ds-accent-soft)" : "var(--ds-raised)",
+                        color: "var(--ds-text)", fontFamily: "inherit",
+                        display: "flex", flexDirection: "column", gap: 10,
+                        opacity: locked ? 0.85 : 1,
+                      }}
+                    >
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 18 }}>
+                          <span style={{ color: mode.iconColor }}><Icon name={mode.icon} size={22} /></span>
+                          {mode.label}
+                          {locked && <ProChip isGlacier={isGlacier} />}
+                        </span>
+                        <span aria-hidden="true" style={{
+                          width: 22, height: 22, boxSizing: "border-box", borderRadius: "50%", flexShrink: 0,
+                          border: active ? "7px solid var(--ds-accent-mid)" : "2px solid var(--ds-border2)",
+                          background: active ? "var(--ds-panel)" : "transparent",
+                        }} />
+                      </span>
+                      <span style={{ fontSize: 14, lineHeight: 1.5, color: "var(--ds-text3)" }}>{mode.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Section>
+
+            {/* ── 03 · Timing & size ── */}
+            <Section n="03" title="TIMING & SIZE" gap={18} isMobile={isMobile}>
+              <div style={{ display: "grid", gridTemplateColumns: twoCol, gap: 18 }}>
+                <Stepper label="Rounds" noun="rounds" hint="Turns per side"
+                  value={formData.totalRounds} min={1} max={10} step={1}
+                  onChange={v => set("totalRounds", v)} />
+                <Stepper label="Max debaters" noun="debaters" hint="Speakers in the debate"
+                  value={formData.maxParticipants} min={2} max={20} step={1}
+                  onChange={v => set("maxParticipants", v)} />
+                <Stepper label="Turn time" noun="seconds per turn" hint="Per speaker"
+                  value={formData.turnDuration} min={15} max={600} step={15}
+                  display={fmtTime}
+                  onChange={v => set("turnDuration", v)} />
+                <Stepper label="Prep time" noun="seconds of prep" hint="Before the debate starts"
+                  value={formData.prepDuration} min={0} max={300} step={15}
+                  display={fmtTime}
+                  onChange={v => set("prepDuration", v)} />
+
+                {/* Judges + spectators — Pro only, hidden for free users */}
+                {isPro && (
+                  <Stepper label="Max judges" noun="judges" hint="Human scorers allowed"
+                    value={formData.maxJudges} min={0} max={20} step={1}
+                    onChange={v => setFormData(prev => ({ ...prev, maxJudges: v }))} />
+                )}
+                {isPro && (
+                  <Stepper label="Max spectators" noun="spectators" hint="Listen-only observers"
+                    value={formData.maxSpectators} min={0} max={100} step={5}
+                    onChange={v => setFormData(prev => ({ ...prev, maxSpectators: v }))} />
+                )}
+              </div>
+            </Section>
+
+            {/* ── 04 · Options ── */}
+            <Section n="04" title="OPTIONS" gap={6} isMobile={isMobile}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: isPro ? undefined : rowDivider }}>
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 700 }}>
+                    Topic voting {!isPro && <ProChip isGlacier={isGlacier} />}
+                  </span>
+                  <span style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+                    Let players vote on the motion in the lobby before it's locked in.
+                  </span>
+                </div>
+                {isPro ? (
+                  <button type="button" role="switch" className="ds-toggle" aria-checked={!!formData.votingEnabled}
+                    aria-label="Topic voting" onClick={toggleVoting} />
+                ) : (
+                  <LockedSwitch label="Topic voting" onClick={toggleVoting} />
+                )}
+              </div>
+
+              {!isPro && (
                 <>
-                  <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-                  <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                    <span style={{ fontWeight: 800, color: "#a78bfa", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxJudges}</span>
-                    {" "}judges
-                  </span>
-                  <span style={{ color: "var(--border2)", fontSize: "0.6rem" }}>|</span>
-                  <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
-                    <span style={{ fontWeight: 800, color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{(formData as any).maxSpectators}</span>
-                    {" "}spectators
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 0", borderBottom: rowDivider }}>
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 700 }}>
+                        Human judges &amp; spectators <ProChip isGlacier={isGlacier} />
+                      </span>
+                      <span style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+                        Seat human judges alongside the AI, plus listen-only spectators.
+                      </span>
+                    </div>
+                    <LockedSwitch label="Human judges" onClick={() => navigate("/pricing")} />
+                  </div>
+
+                  {/* Pro upsell — shown only for free users */}
+                  <button type="button" onClick={() => navigate("/pricing")}
+                    style={{
+                      marginTop: 10, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 14,
+                      border: `1px solid ${isGlacier ? "var(--ds-accent-line)" : "var(--ds-gold-line)"}`,
+                      background: isGlacier ? "var(--ds-accent-soft)" : "var(--ds-gold-bg)",
+                      color: "var(--ds-text3)", textAlign: "left", cursor: "pointer", font: "500 13px/1.45 Outfit, sans-serif",
+                    }}>
+                    <span style={{ color: isGlacier ? "var(--ds-accent)" : "var(--ds-gold-text)", display: "inline-flex" }}><Icon name="crown" size={16} /></span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <strong style={{ color: isGlacier ? "var(--ds-accent)" : "var(--ds-gold-text)" }}>Pro</strong> unlocks human judges, spectators, Buzzer mode &amp; topic voting
+                    </span>
+                    <span style={{ flexShrink: 0, fontWeight: 700, color: isGlacier ? "var(--ds-accent)" : "var(--ds-gold-text)" }}>See plans →</span>
+                  </button>
                 </>
               )}
-            </div>
+            </Section>
           </div>
 
-          </div>{/* end 2-col grid */}
+          {/* ── Room preview + submit ── */}
+          <aside className="ds-card" aria-label="Room preview" style={{
+            padding: isMobile ? 20 : 28, display: "flex", flexDirection: "column", gap: 18, minWidth: 0,
+            ...(isNarrow ? {} : { position: "sticky", top: 24 }),
+          }}>
+            <span className="ds-eyebrow">ROOM PREVIEW</span>
+            <p style={{
+              margin: 0, fontWeight: 800, fontSize: 20, lineHeight: 1.3, letterSpacing: "-0.01em", overflowWrap: "anywhere",
+              color: motionPreview ? "var(--ds-text)" : "var(--ds-faint)",
+            }}>
+              {motionPreview || "Your motion will appear here"}
+            </p>
+            <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+              {preview.map(({ k, v }) => (
+                <div key={k} style={{ padding: 12, borderRadius: 14, background: "var(--ds-raised)", minWidth: 0 }}>
+                  <dt style={{ fontSize: 12, color: "var(--ds-muted)", fontWeight: 600 }}>{k}</dt>
+                  <dd style={{ margin: "4px 0 0", fontWeight: 700 }}>{v}</dd>
+                </div>
+              ))}
+            </dl>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+              A 6-character room code is generated when you create the room. Share it to invite people.
+            </p>
 
+            {localError && (
+              <div role="alert" style={{
+                padding: "12px 14px", borderRadius: 14, fontSize: 14, fontWeight: 600,
+                background: "var(--ds-against-bg)", border: "1px solid var(--ds-against-line)", color: "var(--ds-against-text)",
+              }}>
+                {localError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button type="submit" className="ds-btn ds-btn-primary ds-btn-block" disabled={isLoading}
+                style={{ height: 56, borderRadius: 16, fontSize: 16 }}>
+                {isLoading ? "Creating…" : <>Create room<Icon name="right" size={18} /></>}
+              </button>
+              <button type="button" onClick={() => navigate("/")} className="ds-btn ds-btn-ghost ds-btn-block">
+                Cancel
+              </button>
+            </div>
+          </aside>
         </form>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

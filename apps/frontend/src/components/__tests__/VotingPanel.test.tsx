@@ -8,8 +8,8 @@
  *   – Host vs guest initial UI
  *   – handleStartVoting (host): optimistic state + socket emit
  *   – handleVote: blocked before start / after end, fires socket emit when active
- *   – Countdown timer and red-color threshold (≤10 s)
- *   – Host auto-ends voting when timer hits 0
+ *   – Countdown timer (m:ss ring) and red-color threshold (≤10 s)
+ *   – Host auto-ends voting when timer hits 0, or early via "End voting now"
  *   – Live vote percentages and counts
  *   – Socket events: voting-started, voting-update, voting-ended
  *   – Selected-topic banner after voting ends
@@ -95,9 +95,9 @@ describe("VotingPanel — initial UI (voting not yet started)", () => {
     expect(screen.getByText("No net change")).toBeInTheDocument();
   });
 
-  it("shows 'Choose the motion' heading", () => {
+  it("shows 'What should we debate?' heading", () => {
     render(<VotingPanel {...makeProps()} />);
-    expect(screen.getByText(/Choose the motion/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /What should we debate\?/i })).toBeInTheDocument();
   });
 
   it("shows 'Waiting for host' message for non-host guests", () => {
@@ -105,7 +105,7 @@ describe("VotingPanel — initial UI (voting not yet started)", () => {
     expect(screen.getByText(/Waiting for host to start voting/i)).toBeInTheDocument();
   });
 
-  it("shows '⚡ Start Voting' button for the host", () => {
+  it("shows 'Start Voting' button for the host", () => {
     render(<VotingPanel {...makeProps({ isHost: true })} />);
     expect(screen.getByText(/Start Voting/i)).toBeInTheDocument();
   });
@@ -145,7 +145,7 @@ describe("VotingPanel — host starts voting", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ isHost: true, socket: socket as any, votingDuration: 30 })} />);
     fireEvent.click(screen.getByText(/Start Voting/i));
-    expect(screen.getByText("30")).toBeInTheDocument();
+    expect(screen.getByText("0:30")).toBeInTheDocument();
   });
 
   it("calls onVotingStatusChange(true) when host starts voting", () => {
@@ -183,8 +183,8 @@ describe("VotingPanel — voting (active state)", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any })} />);
     act(() => startVotingViaSocket(socket, TOPICS, 45));
-    expect(screen.getByText("45")).toBeInTheDocument();
-    expect(screen.getByText(/seconds/i)).toBeInTheDocument();
+    expect(screen.getByText("0:45")).toBeInTheDocument();
+    expect(screen.getByRole("timer", { name: /45 seconds left/i })).toBeInTheDocument();
   });
 
   it("shows vote percentages once voting starts", () => {
@@ -236,15 +236,17 @@ describe("VotingPanel — handleVote", () => {
     );
   });
 
-  it("shows a ✓ checkmark next to the voted topic after successful vote", () => {
+  it("shows a 'Your vote' tag on the voted topic after successful vote", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 60, votingTopics: TOPICS }); });
     fireEvent.click(screen.getByText("AI will replace jobs"));
-    expect(screen.getByText("✓")).toBeInTheDocument();
+    expect(screen.getByText("Your vote")).toBeInTheDocument();
+    const voted = screen.getAllByRole("button").find(b => b.textContent?.includes("AI will replace jobs"));
+    expect(voted).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("does not show ✓ if socket returns failure for the vote", () => {
+  it("does not show 'Your vote' if socket returns failure for the vote", () => {
     const socket = createMockSocket();
     // Override emit to return failure for vote-topic
     socket.emit.mockImplementation((event: string, _p: any, cb?: Function) => {
@@ -254,7 +256,7 @@ describe("VotingPanel — handleVote", () => {
     render(<VotingPanel {...makeProps({ socket: socket as any })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 60, votingTopics: TOPICS }); });
     fireEvent.click(screen.getByText("AI will replace jobs"));
-    expect(screen.queryByText("✓")).not.toBeInTheDocument();
+    expect(screen.queryByText("Your vote")).not.toBeInTheDocument();
   });
 });
 
@@ -268,34 +270,34 @@ describe("VotingPanel — countdown timer", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any, votingDuration: 10 })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 10, votingTopics: TOPICS }); });
-    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("0:10")).toBeInTheDocument();
 
     // Advance 1 second at a time inside separate act() calls so React re-renders
     // (and re-registers the next setTimeout) between each tick.
     act(() => { vi.advanceTimersByTime(1000); });
     act(() => { vi.advanceTimersByTime(1000); });
     act(() => { vi.advanceTimersByTime(1000); });
-    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("0:07")).toBeInTheDocument();
   });
 
   it("timer colour is NOT red when timer > 10", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any, votingDuration: 60 })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 60, votingTopics: TOPICS }); });
-    const timerEl = screen.getByText("60");
-    // var(--against) is the red color
-    expect(timerEl.style.color).not.toBe("var(--against)");
-    expect(timerEl.style.color).toBe("var(--gold)");
+    const timerEl = screen.getByText("1:00");
+    // var(--ds-against-text) is the red color
+    expect(timerEl.style.color).not.toBe("var(--ds-against-text)");
+    expect(timerEl.style.color).toBe("var(--ds-text)");
   });
 
-  it("timer colour turns red (var(--against)) at exactly 10 seconds", () => {
+  it("timer colour turns red (var(--ds-against-text)) at exactly 10 seconds", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any, votingDuration: 13 })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 13, votingTopics: TOPICS }); });
     // Tick 1s at a time so React re-renders and re-registers each timeout
     for (let i = 0; i < 3; i++) act(() => { vi.advanceTimersByTime(1000); });
-    const timerEl = screen.getByText("10");
-    expect(timerEl.style.color).toBe("var(--against)");
+    const timerEl = screen.getByText("0:10");
+    expect(timerEl.style.color).toBe("var(--ds-against-text)");
   });
 
   it("host emits room:end-voting when timer reaches 0", () => {
@@ -307,6 +309,23 @@ describe("VotingPanel — countdown timer", () => {
     act(() => { vi.advanceTimersByTime(1000); });
     act(() => { vi.advanceTimersByTime(1000); });
     expect(socket.emit).toHaveBeenCalledWith("room:end-voting", { roomId: "room-1" }, expect.any(Function));
+  });
+
+  it("host can end voting early with 'End voting now'", () => {
+    const socket = createMockSocket();
+    render(<VotingPanel {...makeProps({ isHost: true, socket: socket as any, votingDuration: 30 })} />);
+    act(() => { socket._emit("room:voting-started", { votingDuration: 30, votingTopics: TOPICS }); });
+    fireEvent.click(screen.getByRole("button", { name: /End voting now/i }));
+    expect(socket.emit).toHaveBeenCalledWith("room:end-voting", { roomId: "room-1" }, expect.any(Function));
+    // Success callback closes the vote locally
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+  });
+
+  it("non-host does not see 'End voting now'", () => {
+    const socket = createMockSocket();
+    render(<VotingPanel {...makeProps({ isHost: false, socket: socket as any })} />);
+    act(() => { socket._emit("room:voting-started", { votingDuration: 30, votingTopics: TOPICS }); });
+    expect(screen.queryByRole("button", { name: /End voting now/i })).not.toBeInTheDocument();
   });
 
   it("non-host does NOT emit room:end-voting when timer reaches 0", () => {
@@ -344,8 +363,10 @@ describe("VotingPanel — vote percentages and counts", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any, votingTopics: topicsWithVotes })} />);
     act(() => { socket._emit("room:voting-started", { votingDuration: 60, votingTopics: topicsWithVotes }); });
-    // Vote count "5" should appear
-    expect(screen.getByText("5")).toBeInTheDocument();
+    // Vote counts appear under each option
+    expect(screen.getByText("5 votes")).toBeInTheDocument();
+    expect(screen.getByText("No votes")).toBeInTheDocument();
+    expect(screen.getByText(/votes? cast/)).toHaveTextContent("5 votes cast");
   });
 
   it("updates percentages when room:voting-update is received", () => {
@@ -390,13 +411,14 @@ describe("VotingPanel — voting ended (room:voting-ended event)", () => {
     expect(screen.getAllByText("AI will replace jobs").length).toBeGreaterThan(0);
   });
 
-  it("shows 🏆 trophy on the winning topic button", () => {
+  it("shows a Winner tag on the winning topic button", () => {
     const socket = createMockSocket();
     render(<VotingPanel {...makeProps({ socket: socket as any })} />);
     act(() => {
       socket._emit("room:voting-ended", { votingTopics: endedTopics, selectedTopic: "t1" });
     });
-    expect(screen.getByText("🏆")).toBeInTheDocument();
+    const winner = screen.getAllByRole("button").find(b => b.textContent?.includes("AI will replace jobs"));
+    expect(winner).toHaveTextContent("Winner");
   });
 
   it("disables topic buttons after voting ends", () => {
@@ -504,7 +526,7 @@ describe("VotingPanel — socket lifecycle", () => {
     });
     render(<VotingPanel {...makeProps({ socket: socket as any, votingTopics: inProgressTopics })} />);
     // Timer should be visible because voting was already in progress
-    expect(screen.getByText("45")).toBeInTheDocument();
+    expect(screen.getByText("0:45")).toBeInTheDocument();
   });
 
   it("does not restore state from room:get-state when votingInProgress=false", () => {
@@ -516,7 +538,7 @@ describe("VotingPanel — socket lifecycle", () => {
     });
     render(<VotingPanel {...makeProps({ socket: socket as any })} />);
     // No timer shown
-    expect(screen.queryByText(/seconds/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
   });
 });
 

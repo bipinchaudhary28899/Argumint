@@ -1,15 +1,18 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useRoom } from "../contexts/RoomContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
+import { AppShell } from "../components/AppShell";
+import { Icon, type IconName } from "../components/Icon";
 import type { Room } from "@argumint/shared";
 
 type JoinRole = "participant" | "judge" | "spectator";
 
 interface RoleOption {
   role: JoinRole;
-  icon: string;
+  icon: IconName;
   label: string;
   desc: string;
 }
@@ -17,23 +20,36 @@ interface RoleOption {
 const ROLE_OPTIONS: RoleOption[] = [
   {
     role: "participant",
-    icon: "🎤",
+    icon: "mic",
     label: "Participant",
     desc: "Debate live — your voice shapes the outcome",
   },
   {
     role: "judge",
-    icon: "⚖️",
+    icon: "scale",
     label: "Judge",
     desc: "Listen, then score participants after the debate",
   },
   {
     role: "spectator",
-    icon: "👁️",
+    icon: "eye",
     label: "Spectator",
     desc: "Watch and listen — no scoring or speaking",
   },
 ];
+
+const CODE_LENGTH = 6;
+
+const HELP_STEPS = [
+  "Enter the lobby and check your mic.",
+  "Ready up. The host starts when everyone is set.",
+  "You're assigned FOR or AGAINST at random.",
+];
+
+/** Uppercase, drop spaces/dashes/etc. and cap at 6 — codes are [A-Z0-9]{6}. */
+function sanitizeCode(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CODE_LENGTH);
+}
 
 /**
  * Returns capacity info for a role given the fetched room.
@@ -80,16 +96,51 @@ function getRoleCapacity(role: JoinRole, room: Room): {
   return { max: -1, used: 0, full: false, slotsLeft: 99, label: "Open" };
 }
 
+// ── Shared bits ──────────────────────────────────────────────────────────────
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div role="alert" style={{
+      padding: "12px 14px", borderRadius: 14, fontSize: 14, fontWeight: 600,
+      background: "var(--ds-against-bg)", border: "1px solid var(--ds-against-line)", color: "var(--ds-against-text)",
+    }}>
+      {message}
+    </div>
+  );
+}
+
+function PageHead({ icon, title, isMobile, children }: { icon: IconName; title: string; isMobile: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, textAlign: "center", alignItems: "center" }}>
+      <span style={{ width: 64, height: 64, borderRadius: 20, background: "var(--ds-accent-soft)", color: "var(--ds-accent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name={icon} size={30} />
+      </span>
+      <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 28 : 40, letterSpacing: "-0.02em", color: "var(--ds-text)" }}>{title}</h1>
+      <p style={{ margin: 0, fontSize: 16, lineHeight: 1.5, color: "var(--ds-muted)" }}>{children}</p>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
 export function JoinRoom() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { setRoom, error, setError } = useRoom();
+  const isMobile = useIsMobile();
   const [isLoading, setIsLoading]   = useState(false);
-  const [roomCode, setRoomCode]     = useState("");
+  // Home's "Join with a code" tile hands the code over in router state
+  const [roomCode, setRoomCode]     = useState(() => {
+    const passed = (location.state as { code?: unknown } | null)?.code;
+    return typeof passed === "string" ? sanitizeCode(passed) : "";
+  });
   const [step, setStep]             = useState<"code" | "role">("code");
   const [selectedRole, setSelectedRole] = useState<JoinRole>("participant");
   // Store the fetched room so step 2 can read capacity data
   const [fetchedRoom, setFetchedRoom]   = useState<Room | null>(null);
+  const [codeFocused, setCodeFocused]   = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
 
   // Suppress unused-variable lint for `user` — it's read by the auth context
   void user;
@@ -143,79 +194,136 @@ export function JoinRoom() {
     }
   };
 
-  return (
-    <div className="bg-grid" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
-      <div style={{ position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)", width: 500, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const code = sanitizeCode(text);
+      if (code) setRoomCode(code);
+    } catch {
+      // Clipboard blocked/unsupported — fall through so the user can paste manually
+    }
+    codeInputRef.current?.focus();
+  };
 
-      <main style={{ flex: 1, overflow: "auto", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
-        <div className="fade-up w-full" style={{ maxWidth: 460 }}>
-          <button
-            onClick={() => step === "role" ? setStep("code") : navigate("/")}
-            className="btn-ghost"
-            style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem", marginBottom: "1rem" }}
-          >
-            ← {step === "role" ? "Back" : "Home"}
-          </button>
+  const backBtn = (
+    <button
+      type="button"
+      onClick={() => step === "role" ? setStep("code") : navigate("/")}
+      aria-label={step === "role" ? "Back to room code" : "Back to home"}
+      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 32, padding: 0, border: 0, background: "none", cursor: "pointer", font: "600 14px Outfit, sans-serif", color: "var(--ds-muted)" }}
+    >
+      <Icon name="left" size={16} />{step === "role" ? "Back" : "Home"}
+    </button>
+  );
+
+  const cardStyle: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box", padding: isMobile ? "22px 18px" : 32, borderRadius: 28,
+    display: "flex", flexDirection: "column", gap: 22,
+  };
+  const activeBox = codeFocused ? Math.min(roomCode.length, CODE_LENGTH - 1) : -1;
+  const selectedLabel = ROLE_OPTIONS.find(r => r.role === selectedRole)?.label;
+
+  return (
+    <AppShell active="join">
+      <div style={{
+        // Centre in the viewport on desktop (shell main has 40px + 56px vertical padding)
+        minHeight: isMobile ? undefined : "calc(100vh - 96px)", display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: isMobile ? "flex-start" : "center", gap: isMobile ? 24 : 32,
+        paddingTop: isMobile ? 8 : 16,
+      }}>
+        <div style={{ width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
+          {backBtn}
 
           {/* ── Step 1: Enter room code ── */}
           {step === "code" && (
             <>
-              <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🎯</div>
-                <h1 style={{ fontSize: "2rem", fontWeight: 900, margin: "0 0 0.4rem", color: "var(--text)" }}>Join a Debate</h1>
-                <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>Enter the 6-character room code to jump in</p>
-              </div>
+              <PageHead icon="join" title="Join a room" isMobile={isMobile}>
+                Enter the 6-character code from your host.
+              </PageHead>
 
-              <div className="glass" style={{ padding: "2.25rem" }}>
-                {error && (
-                  <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.5rem", fontWeight: 500 }}>{error}</div>
-                )}
-                <form onSubmit={handleCodeSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-                  <div>
-                    <label className="label" style={{ textAlign: "center", display: "block" }}>Room Code</label>
+              <form onSubmit={handleCodeSubmit} aria-label="Join a room" className="ds-card" style={cardStyle}>
+                {error && <ErrorBanner message={error} />}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <label htmlFor="join-code" className="ds-label" style={{ letterSpacing: "0.12em", paddingBottom: 12 }}>
+                    Room code
+                  </label>
+                  {/* One real input (handles typing, paste, backspace, arrows) laid over six display boxes */}
+                  <div style={{ position: "relative" }}>
+                    <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: `repeat(${CODE_LENGTH}, minmax(0, 1fr))`, gap: isMobile ? 8 : 12 }}>
+                      {Array.from({ length: CODE_LENGTH }).map((_, i) => {
+                        const ch = roomCode[i] ?? "";
+                        const isActive = i === activeBox;
+                        return (
+                          <div key={i} data-code-box="" style={{
+                            height: isMobile ? 58 : 76, boxSizing: "border-box", borderRadius: 14,
+                            border: `2px solid ${isActive ? "var(--ds-accent-line)" : ch ? "var(--ds-border2)" : "var(--ds-border)"}`,
+                            boxShadow: isActive ? "0 0 0 4px var(--ds-accent-soft)" : "none",
+                            background: "var(--ds-deep)", color: "var(--ds-text)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            font: `600 ${isMobile ? 24 : 32}px 'JetBrains Mono', monospace`,
+                            transition: "border-color .15s, box-shadow .15s",
+                          }}>
+                            {ch}
+                          </div>
+                        );
+                      })}
+                    </div>
                     <input
+                      ref={codeInputRef}
+                      id="join-code"
                       type="text"
                       value={roomCode}
-                      onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                      placeholder="ABC123"
-                      maxLength={6}
-                      className="input-dark"
-                      style={{ textAlign: "center", fontSize: "2rem", fontWeight: 800, letterSpacing: "0.3em", fontFamily: "'JetBrains Mono', monospace", padding: "1rem" }}
+                      onChange={(e) => setRoomCode(sanitizeCode(e.target.value))}
+                      onFocus={() => setCodeFocused(true)}
+                      onBlur={() => setCodeFocused(false)}
+                      aria-describedby="join-code-hint"
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      inputMode="text"
+                      style={{
+                        position: "absolute", inset: 0, width: "100%", height: "100%", boxSizing: "border-box",
+                        opacity: 0, border: 0, padding: 0, margin: 0, cursor: "text",
+                        fontSize: 16, // ≥16px stops iOS zooming on focus
+                      }}
                     />
                   </div>
-
-                  {/* char indicators */}
-                  <div style={{ display: "flex", justifyContent: "center", gap: "0.5rem" }}>
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div key={i} style={{ width: 32, height: 4, borderRadius: 9999, background: i < roomCode.length ? "var(--for)" : "var(--border2)", transition: "background 0.2s", boxShadow: i < roomCode.length ? "0 0 8px rgba(16,185,129,0.5)" : "none" }} />
-                    ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, fontSize: 13, color: "var(--ds-muted)" }}>
+                    <span id="join-code-hint">Letters and numbers, not case-sensitive</span>
+                    <button type="button" onClick={handlePaste} className="ds-btn ds-btn-secondary"
+                      style={{ minHeight: 44, height: 44, padding: "0 12px", borderRadius: 10, fontSize: 13, fontWeight: 600, gap: 6, flexShrink: 0 }}>
+                      <Icon name="copy" size={15} />Paste
+                    </button>
                   </div>
+                </div>
 
-                  <button type="submit" className="btn-for" disabled={isLoading || roomCode.length !== 6} style={{ width: "100%", padding: "0.9rem", fontSize: "1rem" }}>
-                    {isLoading ? "Checking…" : "Continue →"}
-                  </button>
-                </form>
-              </div>
+                <button type="submit" className="ds-btn ds-btn-primary ds-btn-block"
+                  disabled={isLoading || roomCode.length !== CODE_LENGTH}
+                  style={{ height: 56, borderRadius: 16, fontSize: 16 }}>
+                  {isLoading ? "Checking…" : <>Join room<Icon name="right" size={18} /></>}
+                </button>
+
+                <p style={{ margin: 0, textAlign: "center", fontSize: 14, color: "var(--ds-muted)" }}>
+                  No code?{" "}
+                  <button type="button" className="ds-link" onClick={() => navigate("/create-room")}>Host your own room</button>
+                </p>
+              </form>
             </>
           )}
 
           {/* ── Step 2: Choose role ── */}
           {step === "role" && (
             <>
-              <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🎭</div>
-                <h1 style={{ fontSize: "1.9rem", fontWeight: 900, margin: "0 0 0.4rem", color: "var(--text)" }}>Choose Your Role</h1>
-                <p style={{ color: "var(--muted)", fontSize: "0.9rem", margin: 0 }}>
-                  Joining room <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "var(--cyan)", fontWeight: 800 }}>{roomCode}</span>
-                </p>
-              </div>
+              <PageHead icon="users" title="Choose your role" isMobile={isMobile}>
+                Joining room <span className="ds-mono" style={{ color: "var(--ds-accent)", fontWeight: 600, letterSpacing: "0.08em" }}>{roomCode}</span>
+              </PageHead>
 
-              <div className="glass" style={{ padding: "1.75rem" }}>
-                {error && (
-                  <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.5rem", fontWeight: 500 }}>{error}</div>
-                )}
+              <div className="ds-card" style={cardStyle}>
+                {error && <ErrorBanner message={error} />}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.5rem" }}>
+                <div role="radiogroup" aria-label="Role" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {ROLE_OPTIONS.map(({ role, icon, label, desc }) => {
                     const cap     = fetchedRoom ? getRoleCapacity(role, fetchedRoom) : null;
                     const disabled = cap?.full ?? false;
@@ -224,58 +332,52 @@ export function JoinRoom() {
                     return (
                       <button
                         key={role}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
                         onClick={() => !disabled && setSelectedRole(role)}
                         disabled={disabled}
                         style={{
-                          display: "flex", alignItems: "center", gap: "1rem",
-                          padding: "1rem 1.25rem",
-                          borderRadius: "0.75rem",
-                          border: active
-                            ? "2px solid var(--for)"
-                            : disabled
-                            ? "2px solid var(--border)"
-                            : "2px solid var(--border)",
-                          background: active
-                            ? "rgba(16,185,129,0.08)"
-                            : disabled
-                            ? "rgba(0,0,0,0.04)"
-                            : "rgba(255,255,255,0.03)",
+                          display: "flex", alignItems: "center", gap: 16,
+                          padding: isMobile ? 16 : "18px 20px", borderRadius: 18, width: "100%",
+                          border: `2px solid ${active ? "var(--ds-accent-line)" : "var(--ds-border)"}`,
+                          background: active ? "var(--ds-accent-soft)" : "var(--ds-raised)",
+                          color: "var(--ds-text)", fontFamily: "inherit", textAlign: "left",
                           cursor: disabled ? "not-allowed" : "pointer",
-                          textAlign: "left",
-                          width: "100%",
-                          transition: "all 0.18s",
-                          boxShadow: active ? "0 0 0 3px rgba(16,185,129,0.15)" : "none",
                           opacity: disabled ? 0.55 : 1,
+                          transition: "border-color .15s, background .15s",
                         }}
                       >
-                        <span style={{ fontSize: "1.75rem", flexShrink: 0 }}>{icon}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
-                            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: active ? "var(--for)" : disabled ? "var(--muted)" : "var(--text)" }}>{label}</span>
+                        <span style={{
+                          width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                          background: active ? "var(--ds-panel)" : "var(--ds-deep)", color: active ? "var(--ds-accent)" : "var(--ds-muted)",
+                        }}>
+                          <Icon name={icon} size={22} />
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 800, fontSize: 16, color: disabled ? "var(--ds-muted)" : "var(--ds-text)" }}>{label}</span>
                             {disabled && (
-                              <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "0.1rem 0.45rem", borderRadius: 9999, background: "rgba(244,63,94,0.12)", color: "var(--against)", letterSpacing: "0.05em" }}>
+                              <span className="ds-chip ds-chip-against" style={{ height: 22, fontSize: 10, letterSpacing: "0.08em" }}>
                                 {cap?.max === 0 ? "DISABLED" : "FULL"}
                               </span>
                             )}
-                          </div>
-                          <div style={{ fontSize: "0.8rem", color: "var(--muted)", lineHeight: 1.4 }}>{desc}</div>
+                          </span>
+                          <span style={{ fontSize: 14, lineHeight: 1.45, color: "var(--ds-text3)" }}>{desc}</span>
                           {/* Slot availability indicator */}
-                          {cap && !disabled && role !== "participant" && (
-                            <div style={{ marginTop: "0.3rem", fontSize: "0.7rem", color: cap.slotsLeft <= 1 ? "var(--gold)" : "var(--for)", fontWeight: 600 }}>
+                          {cap && role !== "participant" && (
+                            <span style={{
+                              fontSize: 12, fontWeight: 600,
+                              color: disabled ? "var(--ds-against-text)" : cap.slotsLeft <= 1 ? "var(--ds-gold-text)" : "var(--ds-for-text)",
+                            }}>
                               {cap.label}
-                            </div>
+                            </span>
                           )}
-                          {cap && disabled && role !== "participant" && (
-                            <div style={{ marginTop: "0.3rem", fontSize: "0.7rem", color: "var(--against)", fontWeight: 600 }}>
-                              {cap.label}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{
-                          width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
-                          border: active ? "5px solid var(--for)" : disabled ? "2px solid var(--border)" : "2px solid var(--border2)",
-                          background: active ? "var(--for)" : "transparent",
-                          transition: "all 0.18s",
+                        </span>
+                        <span aria-hidden="true" style={{
+                          width: 22, height: 22, boxSizing: "border-box", borderRadius: "50%", flexShrink: 0,
+                          border: active ? "7px solid var(--ds-accent-mid)" : "2px solid var(--ds-border2)",
+                          background: active ? "var(--ds-panel)" : "transparent",
                         }} />
                       </button>
                     );
@@ -283,18 +385,32 @@ export function JoinRoom() {
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleRoleConfirm}
                   disabled={isLoading || (fetchedRoom ? getRoleCapacity(selectedRole, fetchedRoom).full : false)}
-                  className="btn-for"
-                  style={{ width: "100%", padding: "0.9rem", fontSize: "1rem" }}
+                  className="ds-btn ds-btn-primary ds-btn-block"
+                  style={{ height: 56, borderRadius: 16, fontSize: 16 }}
                 >
-                  {isLoading ? "Joining…" : `Join as ${ROLE_OPTIONS.find(r => r.role === selectedRole)?.label} →`}
+                  {isLoading ? "Joining…" : <>Join as {selectedLabel}<Icon name="right" size={18} /></>}
                 </button>
               </div>
             </>
           )}
         </div>
-      </main>
-    </div>
+
+        {/* ── What happens next ── */}
+        <ol style={{
+          width: "100%", maxWidth: 760, margin: 0, padding: 0, listStyle: "none",
+          display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 14,
+        }}>
+          {HELP_STEPS.map((text, i) => (
+            <li key={i} style={{ padding: 18, borderRadius: 18, background: "var(--ds-panel)", border: "1px solid var(--ds-border)", display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <span className="ds-mono" style={{ fontWeight: 600, color: "var(--ds-accent)" }}>{String(i + 1).padStart(2, "0")}</span>
+              <span style={{ fontSize: 14, lineHeight: 1.5, color: "var(--ds-text3)" }}>{text}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </AppShell>
   );
 }

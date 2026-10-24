@@ -41,10 +41,10 @@ async function fillAndSubmit(email: string, password: string) {
   fireEvent.change(screen.getByPlaceholderText("you@example.com"), {
     target: { name: "email", value: email },
   });
-  fireEvent.change(screen.getByPlaceholderText("••••••••"), {
+  fireEvent.change(screen.getByPlaceholderText("Your password"), {
     target: { name: "password", value: password },
   });
-  fireEvent.click(screen.getByText("Enter the Arena →"));
+  fireEvent.click(screen.getByRole("button", { name: "Enter the arena" }));
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -65,19 +65,30 @@ describe("Login", () => {
       expect(screen.getByText("Welcome back")).toBeInTheDocument();
     });
 
-    it("renders 'Sign in to your arena account' subtitle", () => {
+    it("renders 'Sign in to your arena account.' subtitle", () => {
       renderPage();
-      expect(screen.getByText("Sign in to your arena account")).toBeInTheDocument();
+      expect(screen.getByText("Sign in to your arena account.")).toBeInTheDocument();
     });
 
-    it("renders 'Debate Arena' label", () => {
+    it("renders the hero headline", () => {
       renderPage();
-      expect(screen.getByText("Debate Arena")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: /Make your case\./ })).toBeInTheDocument();
     });
 
-    it("renders Argumint logo image", () => {
+    it("renders Argumint logo", () => {
       renderPage();
-      expect(screen.getByAltText("Argumint")).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: "Argumint" })).toBeInTheDocument();
+    });
+
+    it("labels the email and password inputs", () => {
+      renderPage();
+      expect(screen.getByLabelText("Email")).toHaveAttribute("name", "email");
+      expect(screen.getByLabelText("Password")).toHaveAttribute("name", "password");
+    });
+
+    it("renders the one-active-session note", () => {
+      renderPage();
+      expect(screen.getByText(/One active session per account/)).toBeInTheDocument();
     });
 
     it("renders email input with placeholder", () => {
@@ -87,12 +98,12 @@ describe("Login", () => {
 
     it("renders password input with placeholder", () => {
       renderPage();
-      expect(screen.getByPlaceholderText("••••••••")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Your password")).toBeInTheDocument();
     });
 
-    it("renders 'Enter the Arena →' submit button", () => {
+    it("renders 'Enter the arena' submit button", () => {
       renderPage();
-      expect(screen.getByText("Enter the Arena →")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Enter the arena" })).toHaveAttribute("type", "submit");
     });
 
     it("renders 'Create one' link to /register", () => {
@@ -233,23 +244,23 @@ describe("Login", () => {
       );
     });
 
-    it("shows 'Sign in here →' button in conflict state", async () => {
+    it("shows 'Sign in here' button in conflict state", async () => {
       const err = { response: { status: 409, data: { error: "active_session" } } };
       mockLogin.mockRejectedValue(err);
       renderPage();
       await fillAndSubmit("alice@example.com", "pass");
       await waitFor(() =>
-        expect(screen.getByText("Sign in here →")).toBeInTheDocument()
+        expect(screen.getByText("Sign in here")).toBeInTheDocument()
       );
     });
 
-    it("clicking 'Sign in here →' calls authApi.login with force:true", async () => {
+    it("clicking 'Sign in here' calls authApi.login with force:true", async () => {
       const err = { response: { status: 409, data: { error: "active_session" } } };
       mockLogin.mockRejectedValue(err);
       renderPage();
       await fillAndSubmit("alice@example.com", "pass");
-      await waitFor(() => screen.getByText("Sign in here →"));
-      fireEvent.click(screen.getByText("Sign in here →"));
+      await waitFor(() => screen.getByText("Sign in here"));
+      fireEvent.click(screen.getByText("Sign in here"));
       await waitFor(() =>
         expect(mockAuthApiLogin).toHaveBeenCalledWith(
           expect.objectContaining({ force: true })
@@ -262,8 +273,8 @@ describe("Login", () => {
       mockLogin.mockRejectedValue(err);
       renderPage();
       await fillAndSubmit("alice@example.com", "pass");
-      await waitFor(() => screen.getByText("Sign in here →"));
-      fireEvent.click(screen.getByText("Sign in here →"));
+      await waitFor(() => screen.getByText("Sign in here"));
+      fireEvent.click(screen.getByText("Sign in here"));
       await waitFor(() =>
         expect(mockNavigate).toHaveBeenCalledWith("/")
       );
@@ -274,20 +285,16 @@ describe("Login", () => {
   describe("password visibility toggle", () => {
     it("password input is type=password by default", () => {
       renderPage();
-      const passInput = screen.getByPlaceholderText("••••••••") as HTMLInputElement;
+      const passInput = screen.getByPlaceholderText("Your password") as HTMLInputElement;
       expect(passInput.type).toBe("password");
     });
 
     it("toggles to type=text when eye icon is clicked", async () => {
       renderPage();
-      const toggleBtn = screen.getByRole("button", { name: "" }); // eye button has no text
-      // Find the eye button — it's a button with tabIndex=-1 inside password area
-      const allBtns = screen.getAllByRole("button");
-      const eyeBtn = allBtns.find(b => b.getAttribute("tabindex") === "-1");
-      expect(eyeBtn).toBeDefined();
-      if (eyeBtn) fireEvent.click(eyeBtn);
-      const passInput = screen.getByPlaceholderText("••••••••") as HTMLInputElement;
+      fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+      const passInput = screen.getByPlaceholderText("Your password") as HTMLInputElement;
       expect(passInput.type).toBe("text");
+      expect(screen.getByRole("button", { name: "Hide password" })).toHaveAttribute("aria-pressed", "true");
     });
   });
 });

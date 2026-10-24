@@ -49,7 +49,7 @@ function fillForm(opts: {
     });
   }
   if (password !== undefined) {
-    fireEvent.change(screen.getByPlaceholderText("Min 8 chars, 1 uppercase, 1 number"), {
+    fireEvent.change(screen.getByPlaceholderText("Create a password"), {
       target: { name: "password", value: password },
     });
   }
@@ -61,7 +61,7 @@ function fillForm(opts: {
 }
 
 function submit() {
-  fireEvent.click(screen.getByText("Create Account →"));
+  fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -74,24 +74,49 @@ describe("Register", () => {
 
   // ── Page structure ─────────────────────────────────────────────────────────
   describe("page structure", () => {
-    it("renders 'Join the arena' heading", () => {
+    it("renders 'Create your account' heading", () => {
       renderPage();
-      expect(screen.getByText("Join the arena")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Create your account" })).toBeInTheDocument();
     });
 
-    it("renders 'Pick a callsign and start debating' subtitle", () => {
+    it("renders 'Pick a name other debaters will see.' subtitle", () => {
       renderPage();
-      expect(screen.getByText("Pick a callsign and start debating")).toBeInTheDocument();
+      expect(screen.getByText("Pick a name other debaters will see.")).toBeInTheDocument();
     });
 
     it("renders Argumint logo", () => {
       renderPage();
-      expect(screen.getByAltText("Argumint")).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: "Argumint" })).toBeInTheDocument();
     });
 
-    it("renders 'Create your account' label", () => {
+    it("renders the hero headline", () => {
       renderPage();
-      expect(screen.getByText("Create your account")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: /Start as a Novice/ })).toBeInTheDocument();
+    });
+
+    it("labels every input", () => {
+      renderPage();
+      expect(screen.getByLabelText("Username")).toHaveAttribute("name", "username");
+      expect(screen.getByLabelText("Email")).toHaveAttribute("name", "email");
+      expect(screen.getByLabelText("Password")).toHaveAttribute("name", "password");
+      expect(screen.getByLabelText("Confirm Password")).toHaveAttribute("name", "confirmPassword");
+    });
+
+    it("shows the password rules hint until a password error replaces it", () => {
+      renderPage();
+      const hint = "At least 8 characters, with an uppercase letter and a number.";
+      expect(screen.getByText(hint)).toBeInTheDocument();
+      fillForm({ password: "Ab1", confirmPassword: "Ab1" });
+      submit();
+      expect(screen.queryByText(hint)).not.toBeInTheDocument();
+      expect(screen.getByText("At least 8 characters")).toBeInTheDocument();
+    });
+
+    it("toggles password visibility per field", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+      expect((screen.getByPlaceholderText("Create a password") as HTMLInputElement).type).toBe("text");
+      expect((screen.getByPlaceholderText("Repeat password") as HTMLInputElement).type).toBe("password");
     });
 
     it("renders username input", () => {
@@ -106,7 +131,7 @@ describe("Register", () => {
 
     it("renders password input", () => {
       renderPage();
-      expect(screen.getByPlaceholderText("Min 8 chars, 1 uppercase, 1 number")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Create a password")).toBeInTheDocument();
     });
 
     it("renders confirm password input", () => {
@@ -114,25 +139,25 @@ describe("Register", () => {
       expect(screen.getByPlaceholderText("Repeat password")).toBeInTheDocument();
     });
 
-    it("renders 'Create Account →' submit button", () => {
+    it("renders 'Create account' submit button", () => {
       renderPage();
-      expect(screen.getByText("Create Account →")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Create account" })).toHaveAttribute("type", "submit");
     });
 
-    it("renders '← Back' navigation button", () => {
+    it("renders 'Back' navigation button", () => {
       renderPage();
-      expect(screen.getByText("← Back")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
     });
 
-    it("'← Back' navigates to /", () => {
+    it("'Back' navigates to /", () => {
       renderPage();
-      fireEvent.click(screen.getByText("← Back"));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
 
-    it("renders 'Sign in' link to /login", () => {
+    it("renders 'Log in' link to /login", () => {
       renderPage();
-      const link = screen.getByText("Sign in");
+      const link = screen.getByText("Log in");
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute("href", "/login");
     });

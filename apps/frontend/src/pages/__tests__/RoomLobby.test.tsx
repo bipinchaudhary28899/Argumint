@@ -204,9 +204,10 @@ describe("RoomLobby", () => {
       expect(screen.getAllByText("ABCD").length).toBeGreaterThan(0);
     });
 
-    it("displays the room topic", async () => {
+    it("displays the room topic in the room header", async () => {
       await renderPage();
-      expect(screen.getByText("AI is good for humanity")).toBeInTheDocument();
+      // RoomHeader renders the motion in a desktop and a mobile slot
+      expect(screen.getAllByText("AI is good for humanity").length).toBeGreaterThan(0);
     });
 
     it("lists both participant usernames", async () => {
@@ -215,9 +216,42 @@ describe("RoomLobby", () => {
       expect(screen.getByText("Bob")).toBeInTheDocument();
     });
 
-    it("shows player count in the Players heading", async () => {
+    it("shows debater count against the seat cap in the Debaters heading", async () => {
       await renderPage();
-      expect(screen.getByText(/Players — 2/)).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: /Debaters 2\/4/ })).toBeInTheDocument();
+    });
+
+    it("renders open-seat placeholders up to maxParticipants", async () => {
+      await renderPage();
+      // 2 debaters, max 4 → 2 open seats
+      expect(screen.getAllByText("Open seat")).toHaveLength(2);
+    });
+
+    it("lists judges and spectators in their own row", async () => {
+      mockRoom = makeRoom({
+        participants: [
+          { userId: "user-1", username: "Alice", role: "moderator",   status: "joined" },
+          { userId: "user-2", username: "Bob",   role: "participant", status: "joined" },
+          { userId: "user-3", username: "Kiran", role: "judge",       status: "joined" },
+          { userId: "user-4", username: "Dev",   role: "spectator",   status: "disconnected" },
+        ],
+      });
+      await renderPage();
+      expect(screen.getByText("Kiran")).toBeInTheDocument();
+      expect(screen.getByText("Judge")).toBeInTheDocument();
+      expect(screen.getByText("Spectator · offline")).toBeInTheDocument();
+      expect(screen.getByText("1 judging · 1 watching")).toBeInTheDocument();
+    });
+
+    it("shows the lobby status pill in the room header", async () => {
+      await renderPage();
+      expect(screen.getByText("Lobby · waiting")).toBeInTheDocument();
+    });
+
+    it("shows the Topic vote status pill while voting", async () => {
+      mockRoom = makeRoom({ status: "voting", votingEnabled: true });
+      await renderPage();
+      expect(screen.getByText("Topic vote")).toBeInTheDocument();
     });
 
     it("shows Copy button", async () => {
@@ -225,7 +259,7 @@ describe("RoomLobby", () => {
       expect(screen.getByRole("button", { name: /Copy/i })).toBeInTheDocument();
     });
 
-    it("shows Leave Room button", async () => {
+    it("shows Leave Room button (room header)", async () => {
       await renderPage();
       expect(screen.getByRole("button", { name: /Leave Room/i })).toBeInTheDocument();
     });
@@ -259,7 +293,7 @@ describe("RoomLobby", () => {
     it("shows voting-in-progress placeholder when topic is empty", async () => {
       mockRoom = makeRoom({ topic: "" });
       await renderPage();
-      expect(screen.getByText(/Voting in progress/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Voting in progress/i).length).toBeGreaterThan(0);
     });
 
     it("shows description when present", async () => {
@@ -375,9 +409,23 @@ describe("RoomLobby", () => {
       await renderPage();
       fireEvent.click(screen.getAllByTitle("Manage")[0]);
       expect(screen.getByText("Change Role")).toBeInTheDocument();
-      // Click on the outer bg-grid container
-      fireEvent.click(screen.getByText("AI is good for humanity"));
+      // Click elsewhere on the page (the motion in the room header)
+      fireEvent.click(screen.getAllByText("AI is good for humanity")[0]);
       expect(screen.queryByText("Change Role")).not.toBeInTheDocument();
+    });
+
+    it("Transfer host opens a picker that emits room:transfer-host", async () => {
+      mockSocket.emit.mockImplementation(
+        (_ev: string, _payload: any, cb?: Function) => { if (cb) cb({ success: true }); }
+      );
+      await renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Transfer host" }));
+      fireEvent.click(screen.getByRole("button", { name: /Make Bob the host/i }));
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        "room:transfer-host",
+        { roomId: "room-1", targetUserId: "user-2" },
+        expect.any(Function)
+      );
     });
 
     it("does not show ⋯ button for yourself", async () => {
@@ -507,10 +555,10 @@ describe("RoomLobby", () => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("ABCD");
     });
 
-    it("shows ✓ Copied! feedback after clicking", async () => {
+    it("writes the code to the clipboard exactly once per click", async () => {
       await renderPage();
       fireEvent.click(screen.getByRole("button", { name: /Copy/i }));
-      expect(screen.getByText(/Copied!/i)).toBeInTheDocument();
+      expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
     });
   });
 

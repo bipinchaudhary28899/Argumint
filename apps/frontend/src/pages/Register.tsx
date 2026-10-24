@@ -1,10 +1,26 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { BrandLogo } from "../components/BrandLogo";
+import { Icon, type IconName } from "../components/Icon";
 import type { RegisterInput } from "@argumint/shared";
+
+// Eye-with-slash glyph for the "password visible" state (no Icon equivalent)
+const EyeOff = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+);
+
+// Product facts shown in the desktop hero (modes, judge rubric, level ladder)
+const FEATURES: { icon: IconName; title: string; copy: string }[] = [
+  { icon: "users", title: "Two modes",    copy: "Ordered turns, or grab-the-mic Buzzer." },
+  { icon: "scale", title: "Fair scoring", copy: "AI judge on four axes, 0–100 per speaker." },
+  { icon: "star",  title: "Climb tiers",  copy: "Novice to Grand Master, plus a judge score." },
+];
 
 export function Register() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { register, isLoading } = useAuth();
   const [formData, setFormData] = useState<RegisterInput>({ username: "", email: "", password: "", confirmPassword: "" });
   const [error, setError] = useState<string | null>(null);
@@ -48,65 +64,112 @@ export function Register() {
   const fields = [
     { name: "username", label: "Username", type: "text", placeholder: "Pick a callsign", autoComplete: "username" },
     { name: "email", label: "Email", type: "email", placeholder: "you@example.com", autoComplete: "email" },
-    { name: "password", label: "Password", type: "password", placeholder: "Min 8 chars, 1 uppercase, 1 number", autoComplete: "new-password" },
+    { name: "password", label: "Password", type: "password", placeholder: "Create a password", autoComplete: "new-password",
+      hint: "At least 8 characters, with an uppercase letter and a number." },
     { name: "confirmPassword", label: "Confirm Password", type: "password", placeholder: "Repeat password", autoComplete: "new-password" },
   ] as const;
 
   return (
-    <div className="bg-grid" style={{ minHeight: "100vh", overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", padding: "2rem 1rem", background: "var(--bg)" }}>
-      <div style={{ position: "fixed", top: "15%", left: "50%", transform: "translateX(-50%)", width: 600, height: 300, background: "radial-gradient(ellipse, rgba(16,185,129,0.06) 0%, transparent 70%)", pointerEvents: "none" }} />
-      <button onClick={() => navigate("/")} className="btn-ghost" style={{ position: "fixed", top: "1rem", left: "1rem", fontSize: "0.82rem", padding: "0.35rem 0.75rem", zIndex: 10 }}>← Back</button>
-      <div className="fade-up w-full" style={{ maxWidth: 440, width: "100%" }}>
-        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-          <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Argumint" style={{ width: 96, height: 96, borderRadius: "1.25rem", objectFit: "contain", display: "block", margin: "0 auto" }} />
-          <div style={{ marginTop: "0.75rem", color: "var(--muted)", fontSize: "0.8rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 600 }}>Create your account</div>
+    <div style={{
+      minHeight: "100vh", boxSizing: "border-box", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "stretch",
+      backgroundColor: "var(--ds-bg)", backgroundImage: "radial-gradient(var(--ds-dots) 1px, transparent 1px)", backgroundSize: "24px 24px",
+      color: "var(--ds-text)", fontFamily: "Outfit, 'Segoe UI', system-ui, sans-serif",
+    }}>
+      {/* ── Hero ── */}
+      <section style={{
+        flex: isMobile ? "0 0 auto" : "1.15 1 0", minWidth: 0, boxSizing: "border-box",
+        padding: isMobile ? "28px 20px 12px" : "56px clamp(32px, 5vw, 72px)",
+        display: "flex", flexDirection: "column", gap: isMobile ? 24 : 48, justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <BrandLogo height={32} />
+          <button type="button" onClick={() => navigate("/")} className="ds-btn ds-btn-ghost ds-btn-sm">
+            <Icon name="left" size={16} /> Back
+          </button>
         </div>
-        <div className="glass" style={{ padding: "2.25rem" }}>
-          <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--text)", margin: "0 0 0.35rem" }}>Join the arena</h1>
-          <p style={{ color: "var(--muted)", fontSize: "0.875rem", margin: "0 0 1.75rem" }}>Pick a callsign and start debating</p>
-          {error && (
-            <div style={{ padding: "0.75rem 1rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.625rem", color: "#f43f5e", fontSize: "0.875rem", marginBottom: "1.25rem", fontWeight: 500 }}>{error}</div>
-          )}
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
-            {fields.map(({ name, label, type, placeholder, autoComplete }) => {
-              const isPassword = type === "password";
-              const visible    = showPwd[name] ?? false;
-              const EyeIcon = visible ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              );
-              return (
-                <div key={name}>
-                  <label className="label">{label}</label>
-                  <div style={{ position: "relative" }}>
-                    <input name={name} type={isPassword ? (visible ? "text" : "password") : type}
-                      autoComplete={autoComplete} className="input-dark" placeholder={placeholder}
-                      value={(formData as any)[name]} onChange={handleChange}
-                      style={{ ...(((fieldErrors as any)[name]) ? { borderColor: "var(--against)" } : {}), ...(isPassword ? { paddingRight: "2.5rem" } : {}) }} />
-                    {isPassword && (
-                      <button type="button" tabIndex={-1}
-                        onClick={() => setShowPwd(p => ({ ...p, [name]: !p[name] }))}
-                        style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 0, color: "var(--muted)", display: "flex", alignItems: "center" }}>
-                        {EyeIcon}
-                      </button>
-                    )}
-                  </div>
-                  {(fieldErrors as any)[name] && <p style={{ color: "var(--against)", fontSize: "0.75rem", marginTop: "0.3rem" }}>{(fieldErrors as any)[name]}</p>}
-                </div>
-              );
-            })}
-            <button type="submit" className="btn-primary" disabled={isLoading} style={{ width: "100%", marginTop: "0.5rem", padding: "0.875rem", fontSize: "1rem" }}>
-              {isLoading ? "Creating account…" : "Create Account →"}
-            </button>
-          </form>
-          <div className="divider" />
-          <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.875rem" }}>
-            Already have an account?{" "}
-            <Link to="/login" style={{ color: "var(--cyan)", fontWeight: 700, textDecoration: "none" }}>Sign in</Link>
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 32 : "clamp(40px, 4.2vw, 60px)", lineHeight: 1.04, letterSpacing: "-0.03em", maxWidth: 620, textWrap: "balance" } as React.CSSProperties}>
+            Start as a Novice. Leave a <span style={{ color: "var(--ds-accent)" }}>Grand Master.</span>
+          </h1>
+          <p style={{ margin: 0, fontSize: isMobile ? 16 : 18, lineHeight: 1.55, color: "var(--ds-muted)", maxWidth: 480 }}>
+            Every debate earns XP. Ten tiers stand between your first argument and the top of the ladder.
           </p>
         </div>
-      </div>
+        {!isMobile && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, maxWidth: 640 }}>
+            {FEATURES.map(f => (
+              <div key={f.title} className="ds-card" style={{ padding: 18, borderRadius: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+                <span style={{ color: "var(--ds-accent)", display: "inline-flex" }}><Icon name={f.icon} size={22} /></span>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>{f.title}</span>
+                <span style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ds-muted)" }}>{f.copy}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ── Form card ── */}
+      <section style={{
+        flex: isMobile ? "1 1 auto" : "1 1 0", minWidth: 0, boxSizing: "border-box",
+        padding: isMobile ? "12px 20px 32px" : "56px clamp(24px, 4vw, 56px)",
+        display: "flex", alignItems: isMobile ? "flex-start" : "center", justifyContent: "center",
+      }}>
+        <form onSubmit={handleSubmit} className="ds-card fade-up" style={{ width: "100%", maxWidth: 420, boxSizing: "border-box", padding: isMobile ? "24px 20px" : 36, display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <h2 style={{ margin: 0, fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em" }}>Create your account</h2>
+            <p className="ds-sub">Pick a name other debaters will see.</p>
+          </div>
+
+          {error && (
+            <div role="alert" style={{ padding: "12px 14px", borderRadius: 12, background: "var(--ds-against-bg)", border: "1px solid var(--ds-against-line)", color: "var(--ds-against-text)", fontSize: 14, fontWeight: 600 }}>{error}</div>
+          )}
+
+          {fields.map((field) => {
+            const { name, label, type, placeholder, autoComplete } = field;
+            const hint       = "hint" in field ? field.hint : undefined;
+            const isPassword = type === "password";
+            const visible    = showPwd[name] ?? false;
+            const fieldError = fieldErrors[name];
+            const id         = `reg-${name}`;
+            const describedBy = fieldError ? `${id}-error` : hint ? `${id}-hint` : undefined;
+            return (
+              <div key={name} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label htmlFor={id} className="ds-label">{label}</label>
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <input
+                    id={id} name={name} type={isPassword ? (visible ? "text" : "password") : type}
+                    autoComplete={autoComplete} className="ds-input" placeholder={placeholder}
+                    value={formData[name] ?? ""} onChange={handleChange}
+                    aria-invalid={!!fieldError} aria-describedby={describedBy}
+                    style={{ ...(fieldError ? { borderColor: "var(--ds-against-mid)" } : {}), ...(isPassword ? { paddingRight: 52 } : {}) }}
+                  />
+                  {isPassword && (
+                    <button
+                      type="button" tabIndex={-1}
+                      onClick={() => setShowPwd(p => ({ ...p, [name]: !p[name] }))}
+                      aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`} aria-pressed={visible}
+                      style={{ position: "absolute", right: 4, width: 44, height: 44, border: 0, borderRadius: 10, background: "transparent", color: "var(--ds-muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}
+                    >
+                      {visible ? EyeOff : <Icon name="eye" size={18} />}
+                    </button>
+                  )}
+                </div>
+                {fieldError
+                  ? <p id={`${id}-error`} style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--ds-against-text)" }}>{fieldError}</p>
+                  : hint && <span id={`${id}-hint`} style={{ fontSize: 12, color: "var(--ds-muted)" }}>{hint}</span>}
+              </div>
+            );
+          })}
+
+          <button type="submit" className="ds-btn ds-btn-primary ds-btn-block" disabled={isLoading} style={{ height: 54, fontSize: 16 }}>
+            {isLoading ? "Creating account…" : <>Create account <Icon name="right" size={18} /></>}
+          </button>
+
+          <p style={{ margin: 0, textAlign: "center", fontSize: 14, color: "var(--ds-muted)" }}>
+            Already debating? <Link to="/login" className="ds-link">Log in</Link>
+          </p>
+        </form>
+      </section>
     </div>
   );
 }

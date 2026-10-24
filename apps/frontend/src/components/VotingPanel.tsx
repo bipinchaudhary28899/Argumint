@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { VotingTopic } from "@argumint/shared";
 import type { Socket } from "socket.io-client";
+import { Icon } from "./Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 interface VotingPanelProps {
   votingTopics: VotingTopic[];
@@ -19,6 +21,7 @@ export function VotingPanel({
   socket,
   onVotingStatusChange,
 }: VotingPanelProps) {
+  const isMobile = useIsMobile();
   // All voting state is local — nothing outside VotingPanel needs it.
   const [userVote, setUserVote]           = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -102,6 +105,17 @@ export function VotingPanel({
     });
   };
 
+  // Host closes the vote early — same event the countdown fires at zero.
+  const handleEndVoting = () => {
+    if (!isHost || !isVotingStarted || votingEnded) return;
+    socket?.emit("room:end-voting", { roomId }, (res: any) => {
+      if (res.success) {
+        setVotingEnded(true);
+        setIsVotingStarted(false);
+      }
+    });
+  };
+
   const handleStartVoting = () => {
     if (!isHost) return;
     setIsVotingStarted(true);
@@ -121,79 +135,163 @@ export function VotingPanel({
   if (!votingTopics || votingTopics.length === 0) return null;
 
   const totalVotes = currentTopics.reduce((s, t) => s + t.votes, 0);
+  const showResults = isVotingStarted || votingEnded;
+  const isUrgent = votingTimer <= 10;
+
+  // Countdown ring geometry (r=44 in a 100×100 viewBox)
+  const circumference = 2 * Math.PI * 44;
+  const ringPct = votingDuration > 0 ? Math.max(0, Math.min(1, votingTimer / votingDuration)) : 0;
+  const clock = `${Math.floor(Math.max(0, votingTimer) / 60)}:${String(Math.max(0, votingTimer) % 60).padStart(2, "0")}`;
+  const ringSize = isMobile ? 84 : 112;
 
   return (
-    <div className="glass" style={{ padding: "1.75rem", marginBottom: "1.25rem" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-        <div>
-          <div style={{ fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.25rem" }}>Topic Vote</div>
-          <h2 style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--text)", margin: 0 }}>Choose the motion</h2>
+    <section style={{
+      padding: isMobile ? 16 : 24, borderRadius: isMobile ? 20 : 24, boxSizing: "border-box",
+      background: "var(--ds-panel)", border: `1px solid ${isVotingStarted ? "var(--ds-accent-line)" : "var(--ds-border)"}`,
+      boxShadow: "var(--ds-shadow)", display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20,
+    }}>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ds-accent)" }}>
+            {isVotingStarted ? "Voting open" : votingEnded ? "Voting closed" : "Topic vote"}
+          </span>
+          <h2 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 22 : 28, lineHeight: 1.1, letterSpacing: "-0.02em", color: "var(--ds-text)" }}>
+            What should we debate?
+          </h2>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--ds-muted)" }}>Most votes wins. Ties go to the option listed first.</p>
         </div>
         {isVotingStarted && (
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: "2rem", fontWeight: 900, fontFamily: "'JetBrains Mono', monospace", color: votingTimer <= 10 ? "var(--against)" : "var(--gold)", lineHeight: 1, textShadow: votingTimer <= 10 ? "0 0 16px rgba(244,63,94,0.6)" : "0 0 16px rgba(245,158,11,0.5)" }}>{votingTimer}</div>
-            <div style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>seconds</div>
+          <div role="timer" aria-label={`${votingTimer} seconds left`} style={{ position: "relative", width: ringSize, height: ringSize, flexShrink: 0 }}>
+            <svg width="100%" height="100%" viewBox="0 0 100 100" aria-hidden="true">
+              <circle cx="50" cy="50" r="44" fill="none" stroke="var(--ds-track)" strokeWidth="8" />
+              <circle
+                cx="50" cy="50" r="44" fill="none"
+                stroke={isUrgent ? "var(--ds-against-mid)" : "var(--ds-accent-mid)"}
+                strokeWidth="8" strokeLinecap="round"
+                strokeDasharray={circumference} strokeDashoffset={circumference * (1 - ringPct)}
+                transform="rotate(-90 50 50)"
+                style={{ transition: "stroke-dashoffset 1s linear, stroke .3s" }}
+              />
+            </svg>
+            <span style={{
+              position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, fontSize: isMobile ? 20 : 26,
+              color: isUrgent ? "var(--ds-against-text)" : "var(--ds-text)",
+            }}>
+              {clock}
+            </span>
           </div>
         )}
-      </div>
+      </header>
 
       {votingEnded && selectedTopic && (
-        <div style={{ padding: "0.75rem 1rem", background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "0.625rem", marginBottom: "1.25rem" }}>
-          <span style={{ color: "var(--for)", fontWeight: 700, fontSize: "0.875rem" }}>✓ Motion selected: </span>
-          <span style={{ color: "var(--text)", fontSize: "0.875rem" }}>{currentTopics.find((t) => t.id === selectedTopic)?.text}</span>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderRadius: 14, background: "var(--ds-for-bg)", border: "1px solid var(--ds-for-line)", fontSize: 14, lineHeight: 1.45 }}>
+          <span style={{ color: "var(--ds-for-text)", display: "inline-flex", marginTop: 1 }}><Icon name="check" size={18} /></span>
+          <span>
+            <span style={{ color: "var(--ds-for-text)", fontWeight: 700 }}>Motion selected: </span>
+            <span style={{ color: "var(--ds-text)" }}>{currentTopics.find((t) => t.id === selectedTopic)?.text}</span>
+          </span>
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem", marginBottom: "1.25rem" }}>
+      <div role="group" aria-label="Motion options" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {currentTopics.map((topic) => {
           const pct = totalVotes > 0 ? Math.round((topic.votes / totalVotes) * 100) : 0;
           const isMyVote = userVote === topic.id;
           const isWinner = votingEnded && selectedTopic === topic.id;
+          const canVote  = isVotingStarted && !votingEnded;
           return (
             <button
               key={topic.id}
+              type="button"
               onClick={() => handleVote(topic.id)}
               disabled={!isVotingStarted || votingEnded}
-              style={{ position: "relative", padding: "0.875rem 1rem", border: `1px solid ${isMyVote ? "rgba(34,211,238,0.5)" : isWinner ? "rgba(16,185,129,0.5)" : "var(--border)"}`, borderRadius: "0.75rem", background: isMyVote ? "rgba(34,211,238,0.08)" : isWinner ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.02)", cursor: isVotingStarted && !votingEnded ? "pointer" : "default", transition: "all 0.2s", textAlign: "left", overflow: "hidden" }}
+              aria-pressed={isMyVote}
+              style={{
+                width: "100%", boxSizing: "border-box", textAlign: "left", font: "inherit", color: "var(--ds-text)",
+                padding: isMobile ? 16 : "18px 22px", borderRadius: 20,
+                border: `2px solid ${isMyVote ? "var(--ds-accent-line)" : isWinner ? "var(--ds-for-line)" : "var(--ds-border)"}`,
+                background: isMyVote ? "var(--ds-accent-soft)" : isWinner ? "var(--ds-for-bg)" : "var(--ds-deep)",
+                display: "flex", flexDirection: "column", gap: 14,
+                cursor: canVote ? "pointer" : "default", transition: "border-color .2s, background .2s",
+              }}
             >
-              {(isVotingStarted || votingEnded) && (
-                <div style={{ position: "absolute", inset: 0, width: `${pct}%`, background: isMyVote ? "rgba(34,211,238,0.06)" : "rgba(255,255,255,0.03)", transition: "width 0.5s ease", borderRadius: "0.75rem" }} />
-              )}
-              <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.625rem" }}>
-                  {isMyVote && <span style={{ color: "var(--cyan)", fontWeight: 800, fontSize: "0.875rem" }}>✓</span>}
-                  {isWinner && <span style={{ color: "var(--for)", fontWeight: 800, fontSize: "0.875rem" }}>🏆</span>}
-                  <span style={{ fontSize: "0.875rem", fontWeight: isMyVote ? 700 : 500, color: "var(--text)" }}>{topic.text}</span>
-                </div>
-                {(isVotingStarted || votingEnded) && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                    <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{topic.votes}</span>
-                    <span style={{ fontSize: "0.75rem", color: isMyVote ? "var(--cyan)" : "var(--muted)", fontWeight: 700 }}>{pct}%</span>
-                  </div>
+              <span style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                {/* Radio-style marker */}
+                <span aria-hidden="true" style={{
+                  width: 22, height: 22, marginTop: 1, flexShrink: 0, borderRadius: "50%", boxSizing: "border-box",
+                  border: `2px solid ${isMyVote ? "var(--ds-accent-mid)" : "var(--ds-border2)"}`,
+                  display: "flex", alignItems: "center", justifyContent: "center", opacity: canVote || isMyVote ? 1 : 0.6,
+                }}>
+                  {isMyVote && <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--ds-accent-mid)" }} />}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: isMobile ? 15 : 17, fontWeight: 600, lineHeight: 1.4, overflowWrap: "anywhere" }}>{topic.text}</span>
+                {showResults && (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, fontSize: 18, flexShrink: 0 }}>{pct}%</span>
                 )}
-              </div>
+              </span>
+              {showResults && (
+                <span style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, paddingLeft: 36 }}>
+                  <span style={{ flex: "1 1 120px", height: 8, borderRadius: 99, background: "var(--ds-track)", overflow: "hidden" }}>
+                    <span style={{
+                      display: "block", height: 8, width: `${pct}%`, borderRadius: 99, transition: "width 0.5s ease",
+                      background: isMyVote ? "var(--ds-accent-mid)" : isWinner ? "var(--ds-for-mid)" : "var(--ds-neutral-text)",
+                    }} />
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--ds-muted)", whiteSpace: "nowrap" }}>
+                    {topic.votes === 0 ? "No votes" : `${topic.votes} vote${topic.votes === 1 ? "" : "s"}`}
+                  </span>
+                  {isMyVote && (
+                    <span style={{ height: 24, padding: "0 8px", borderRadius: 6, background: "var(--ds-primary-fill)", color: "var(--ds-on-primary)", display: "inline-flex", alignItems: "center", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      Your vote
+                    </span>
+                  )}
+                  {isWinner && (
+                    <span className="ds-chip ds-chip-for" style={{ height: 24 }}>
+                      <Icon name="trophy" size={14} />Winner
+                    </span>
+                  )}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
+      {showResults && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 14, padding: isMobile ? "14px 16px" : "14px 18px", borderRadius: 16, background: "var(--ds-raised)" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--ds-text3)" }}>
+            <span style={{ color: "var(--ds-muted)", display: "inline-flex" }}><Icon name="users" size={18} /></span>
+            <span><strong style={{ color: "var(--ds-text)" }}>{totalVotes}</strong> vote{totalVotes === 1 ? "" : "s"} cast</span>
+          </span>
+          {isHost && isVotingStarted && !votingEnded && (
+            <button type="button" onClick={handleEndVoting} className="ds-btn ds-btn-secondary ds-btn-sm" style={{ height: 44 }}>
+              <span style={{ color: "var(--ds-gold-mid)", display: "inline-flex" }}><Icon name="crown" size={16} /></span>
+              End voting now
+            </button>
+          )}
+        </div>
+      )}
+
       {isHost && !isVotingStarted && !votingEnded && (
-        <button onClick={handleStartVoting} className="btn-primary" style={{ width: "100%" }}>⚡ Start Voting</button>
+        <button type="button" onClick={handleStartVoting} className="ds-btn ds-btn-primary ds-btn-block" style={{ height: 52 }}>
+          <Icon name="vote" size={18} />Start voting
+        </button>
       )}
       {isHost && votingEnded && (
         <button
+          type="button"
           onClick={() => { setVotingEnded(false); setIsVotingStarted(false); setVotingTimer(votingDuration); setUserVote(null); setCurrentTopics(votingTopics); }}
-          className="btn-ghost"
-          style={{ width: "100%" }}
+          className="ds-btn ds-btn-ghost ds-btn-block"
         >
-          Run another vote
+          <Icon name="refresh" size={18} />Run another vote
         </button>
       )}
       {!isHost && !isVotingStarted && !votingEnded && (
-        <div style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.8rem", padding: "0.5rem" }}>
+        <p style={{ margin: 0, textAlign: "center", color: "var(--ds-muted)", fontSize: 13 }}>
           Waiting for host to start voting…
-        </div>
+        </p>
       )}
-    </div>
+    </section>
   );
 }

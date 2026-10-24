@@ -6,36 +6,66 @@ const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
 
 vi.mock("react-router-dom", () => ({ useNavigate: () => mockNavigate }));
 
+let mockUser: any = null;
+vi.mock("../../contexts/AuthContext", () => ({
+  useAuth: () => ({ user: mockUser }),
+}));
+
 import { SubscriptionCancel } from "../SubscriptionCancel";
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockUser = { id: "user-1", username: "alice", isPro: false };
+});
 
 describe("SubscriptionCancel", () => {
-  it("renders the heading", () => {
-    render(<SubscriptionCancel />);
-    expect(screen.getByText("Subscription cancelled")).toBeInTheDocument();
+  describe("free user (checkout closed)", () => {
+    it("renders the Checkout cancelled heading", () => {
+      render(<SubscriptionCancel />);
+      expect(screen.getByText("Checkout cancelled")).toBeInTheDocument();
+    });
+
+    it("says no payment was taken", () => {
+      render(<SubscriptionCancel />);
+      expect(screen.getByText(/No payment was taken/)).toBeInTheDocument();
+    });
+
+    it("navigates to /pricing when Try again is clicked", () => {
+      render(<SubscriptionCancel />);
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/pricing");
+    });
+
+    it("navigates to / when Back to home is clicked", () => {
+      render(<SubscriptionCancel />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+    });
   });
 
-  it("shows a message about continued Pro access", () => {
-    render(<SubscriptionCancel />);
-    expect(screen.getByText(/Pro access continues/i)).toBeInTheDocument();
-  });
+  describe("Pro user (subscription cancelled)", () => {
+    beforeEach(() => { mockUser = { id: "user-1", username: "alice", isPro: true }; });
 
-  it("renders View pricing and Go home buttons", () => {
-    render(<SubscriptionCancel />);
-    expect(screen.getByText("View pricing")).toBeInTheDocument();
-    expect(screen.getByText("Go home")).toBeInTheDocument();
-  });
+    it("renders the Subscription cancelled heading", () => {
+      render(<SubscriptionCancel />);
+      expect(screen.getByText("Subscription cancelled")).toBeInTheDocument();
+    });
 
-  it("navigates to /pricing when View pricing is clicked", () => {
-    render(<SubscriptionCancel />);
-    fireEvent.click(screen.getByText("View pricing"));
-    expect(mockNavigate).toHaveBeenCalledWith("/pricing");
-  });
+    it("shows a message about continued Pro access", () => {
+      render(<SubscriptionCancel />);
+      expect(screen.getByText(/Pro access continues/i)).toBeInTheDocument();
+    });
 
-  it("navigates to / when Go home is clicked", () => {
-    render(<SubscriptionCancel />);
-    fireEvent.click(screen.getByText("Go home"));
-    expect(mockNavigate).toHaveBeenCalledWith("/");
+    it("navigates to /pricing when View pricing is clicked", () => {
+      render(<SubscriptionCancel />);
+      fireEvent.click(screen.getByRole("button", { name: "View pricing" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/pricing");
+    });
+
+    it("navigates to / when Back to home is clicked", () => {
+      render(<SubscriptionCancel />);
+      fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+    });
   });
 });

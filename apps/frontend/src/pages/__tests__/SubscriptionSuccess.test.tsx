@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import React from "react";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
@@ -9,8 +9,9 @@ const { mockNavigate, mockCheckAuth } = vi.hoisted(() => ({
 }));
 
 vi.mock("react-router-dom", () => ({ useNavigate: () => mockNavigate }));
+let mockUser: any = null;
 vi.mock("../../contexts/AuthContext", () => ({
-  useAuth: () => ({ checkAuth: mockCheckAuth }),
+  useAuth: () => ({ user: mockUser, checkAuth: mockCheckAuth }),
 }));
 
 import { SubscriptionSuccess } from "../SubscriptionSuccess";
@@ -18,6 +19,7 @@ import { SubscriptionSuccess } from "../SubscriptionSuccess";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  mockUser = null;
   mockCheckAuth.mockResolvedValue(undefined);
 });
 
@@ -31,10 +33,21 @@ describe("SubscriptionSuccess", () => {
     render(<SubscriptionSuccess />);
   });
 
-  it("shows PRO UNLOCKED heading (visible after 400 ms)", async () => {
+  it("shows the You're Pro heading (visible after 400 ms)", async () => {
     render(<SubscriptionSuccess />);
     await act(async () => { vi.advanceTimersByTime(500); });
-    expect(screen.getByText("PRO UNLOCKED")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("You're Pro");
+  });
+
+  it("shows the renewal date when the user has one", () => {
+    mockUser = { currentPeriodEnd: "2024-12-31T00:00:00.000Z" };
+    render(<SubscriptionSuccess />);
+    expect(screen.getByText(/renews on 31 December 2024/)).toBeInTheDocument();
+  });
+
+  it("falls back to a generic confirmation without a renewal date", () => {
+    render(<SubscriptionSuccess />);
+    expect(screen.getByText(/All Pro features are now active/)).toBeInTheDocument();
   });
 
   it("renders all 5 Pro perk labels", async () => {
@@ -82,5 +95,22 @@ describe("SubscriptionSuccess", () => {
     await act(async () => { vi.advanceTimersByTime(3000); });
     expect(mockCheckAuth).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("'Create a room' refreshes the user then goes to /create-room — once", async () => {
+    render(<SubscriptionSuccess />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create a room" })); });
+    expect(mockCheckAuth).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/create-room", { replace: true });
+    // The auto-redirect must not fire afterwards
+    await act(async () => { vi.advanceTimersByTime(3100); });
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("'Back to home' refreshes the user then goes to /", async () => {
+    render(<SubscriptionSuccess />);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Back to home" })); });
+    expect(mockCheckAuth).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
   });
 });

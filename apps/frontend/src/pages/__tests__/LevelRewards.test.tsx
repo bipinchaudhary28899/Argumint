@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
-const { mockNavigate, mockGetHistory, mockGetLevelInfo, MOCK_LEVEL_TABLE } = vi.hoisted(() => {
+const { mockGetHistory, mockGetLevelInfo, MOCK_LEVEL_TABLE } = vi.hoisted(() => {
   const MOCK_LEVEL_TABLE = [
     { level: 1,  title: "Novice",      minXP: 0,    maxXP: 100  },
     { level: 2,  title: "Debater",     minXP: 100,  maxXP: 300  },
@@ -16,7 +16,6 @@ const { mockNavigate, mockGetHistory, mockGetLevelInfo, MOCK_LEVEL_TABLE } = vi.
     { level: 10, title: "Grand Master",minXP: 7400, maxXP: 7400 },
   ];
   return {
-    mockNavigate: vi.fn(),
     mockGetHistory: vi.fn(),
     mockGetLevelInfo: vi.fn(),
     MOCK_LEVEL_TABLE,
@@ -24,21 +23,9 @@ const { mockNavigate, mockGetHistory, mockGetLevelInfo, MOCK_LEVEL_TABLE } = vi.
 });
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
-vi.mock("react-router-dom", () => ({
-  useNavigate: () => mockNavigate,
-}));
-
 let mockUser: any = { username: "alice", xp: 500, isPro: false };
 vi.mock("../../contexts/AuthContext", () => ({
   useAuth: () => ({ user: mockUser }),
-}));
-
-let mockTheme = "dark";
-vi.mock("../../contexts/ThemeContext", () => ({
-  useTheme: () => ({
-    theme: mockTheme,
-    meta: { icon: "🌙" },
-  }),
 }));
 
 let mockIsMobile = false;
@@ -58,9 +45,10 @@ vi.mock("@argumint/shared", () => ({
   LEVEL_TABLE:  MOCK_LEVEL_TABLE,
 }));
 
-vi.mock("../../components/NavLogo", () => ({
-  NavLogo: ({ isPro }: { isPro: boolean }) => (
-    <div data-testid="nav-logo" data-is-pro={String(isPro)}>NavLogo</div>
+// AppShell owns nav / theme / Pro chrome — render children only
+vi.mock("../../components/AppShell", () => ({
+  AppShell: ({ active, children }: { active: string; children: React.ReactNode }) => (
+    <div data-testid="app-shell" data-active={active}>{children}</div>
   ),
 }));
 
@@ -69,7 +57,7 @@ vi.mock("../../services/api", () => ({
 }));
 
 // ─── Import after mocks ────────────────────────────────────────────────────────
-import { LevelRewards } from "../LevelRewards";
+import { LevelRewards, _resetCacheForTests } from "../LevelRewards";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const MOCK_HISTORY = [
@@ -122,8 +110,8 @@ function renderPage() {
 describe("LevelRewards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetCacheForTests();
     mockUser    = { username: "alice", xp: 500, isPro: false };
-    mockTheme   = "dark";
     mockIsMobile = false;
     // Default level info
     mockGetLevelInfo.mockReturnValue(DEFAULT_LEVEL_INFO);
@@ -133,18 +121,11 @@ describe("LevelRewards", () => {
 
   // ── Loading state ──────────────────────────────────────────────────────────
   describe("loading state", () => {
-    it("shows 'Loading history…' while fetching", async () => {
-      // Use a never-resolving promise so we stay in loading state
+    it("shows 'Loading history…' while fetching", () => {
+      // Never-resolving promise keeps us in the loading state
       mockGetHistory.mockReturnValue(new Promise(() => {}));
-
-      // Re-import to get fresh module with null cache
-      // Since cache may be set from previous tests, we test this differently:
-      // We check that getHistory is called (if cache is null) or skip loading test
-      // In practice the first render of the test suite hits the loading state
       renderPage();
-
-      // Whether loading or not, the page renders without crashing
-      expect(document.body).toBeTruthy();
+      expect(screen.getByText("Loading history…")).toBeInTheDocument();
     });
   });
 
@@ -155,46 +136,23 @@ describe("LevelRewards", () => {
       await waitFor(() => expect(screen.getByText("Level Rewards")).toBeInTheDocument());
     });
 
-    it("renders the '🗺️ Your Journey' badge", async () => {
-      renderPage();
-      await waitFor(() => expect(screen.getByText(/Your Journey/)).toBeInTheDocument());
-    });
-
-    it("renders the subtitle tagline", async () => {
+    it("renders the subtitle tagline with the tier range", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText(/Debate, earn XP, unlock rewards/)).toBeInTheDocument()
+        expect(screen.getByText(/Every debate you finish earns XP\. 10 tiers from Novice to Grand Master/)).toBeInTheDocument()
       );
     });
 
-    it("renders NavLogo component", async () => {
+    it("renders inside AppShell with the rewards nav item active", async () => {
       renderPage();
-      await waitFor(() => expect(screen.getByTestId("nav-logo")).toBeInTheDocument());
-    });
-
-    it("renders ← Home button", async () => {
-      renderPage();
-      await waitFor(() => expect(screen.getByText("← Home")).toBeInTheDocument());
-    });
-  });
-
-  // ── Navigation ────────────────────────────────────────────────────────────
-  describe("navigation", () => {
-    it("clicking ← Home navigates to /", async () => {
-      renderPage();
-      await waitFor(() => screen.getByText("← Home"));
-      fireEvent.click(screen.getByText("← Home"));
-      expect(mockNavigate).toHaveBeenCalledWith("/");
+      await waitFor(() =>
+        expect(screen.getByTestId("app-shell")).toHaveAttribute("data-active", "rewards")
+      );
     });
   });
 
   // ── XP Card ──────────────────────────────────────────────────────────────
   describe("XPCard", () => {
-    it("displays username initial avatar", async () => {
-      renderPage();
-      await waitFor(() => expect(screen.getByText("A")).toBeInTheDocument()); // "alice" → "A"
-    });
-
     it("displays username", async () => {
       renderPage();
       await waitFor(() => expect(screen.getByText("alice")).toBeInTheDocument());
@@ -210,17 +168,21 @@ describe("LevelRewards", () => {
 
     it("displays current XP total and unit label", async () => {
       renderPage();
-      // XP and value are rendered as inline text nodes inside a div: "Apprentice · 500 XP"
-      await waitFor(() =>
-        expect(screen.getByText(/Apprentice.*500.*XP/)).toBeInTheDocument()
-      );
+      await waitFor(() => expect(screen.getByText("500 XP")).toBeInTheDocument());
+    });
+
+    it("shows XP remaining to the next level", async () => {
+      renderPage();
+      // next.minXP (800) − xp (500)
+      await waitFor(() => expect(screen.getByText(/to Level 4/)).toBeInTheDocument());
+      expect(screen.getByText("300 XP", { selector: "strong" })).toBeInTheDocument();
+      expect(screen.getByText("Contender at 800")).toBeInTheDocument();
     });
 
     it("shows level number badge", async () => {
       renderPage();
-      // "Lv.3" appears in nav and/or XP card
       await waitFor(() =>
-        expect(screen.getAllByText(/Lv\.3/).length).toBeGreaterThan(0)
+        expect(screen.getAllByText("Lv 3").length).toBeGreaterThan(0)
       );
     });
 
@@ -250,7 +212,7 @@ describe("LevelRewards", () => {
       expect(gmTexts.length).toBe(0);
     });
 
-    it("shows 👑 Max Level message for max level user", async () => {
+    it("shows Max Level message for max level user", async () => {
       mockUser = { username: "godmode", xp: 99999, isPro: true };
       mockGetLevelInfo.mockReturnValue({
         current: { level: 10, title: "Grand Master", minXP: 7400, maxXP: 7400 },
@@ -261,14 +223,13 @@ describe("LevelRewards", () => {
 
       renderPage();
       await waitFor(() => screen.getByText("Level Rewards"));
-      // The max level display shows "👑 Max Level" text
-      expect(screen.getByText(/👑 Max Level/)).toBeInTheDocument();
+      expect(screen.getByText(/Max Level — Grand Master/)).toBeInTheDocument();
     });
   });
 
   // ── Roadmap ──────────────────────────────────────────────────────────────
   describe("Roadmap", () => {
-    it("renders '🛤️ Your Roadmap' section header", async () => {
+    it("renders 'Your Roadmap' section header", async () => {
       renderPage();
       await waitFor(() =>
         expect(screen.getByText(/Your Roadmap/)).toBeInTheDocument()
@@ -279,36 +240,27 @@ describe("LevelRewards", () => {
       renderPage();
       await waitFor(() => screen.getByText(/Your Roadmap/));
       // Milestone levels: 1, 2, 3, 5, 7, 10
-      expect(screen.getByText("Lv.1")).toBeInTheDocument();
-      expect(screen.getByText("Lv.5")).toBeInTheDocument();
-      expect(screen.getByText("Lv.10")).toBeInTheDocument();
+      expect(screen.getByText("Lv 1")).toBeInTheDocument();
+      expect(screen.getByText("Lv 5")).toBeInTheDocument();
+      expect(screen.getByText("Lv 10")).toBeInTheDocument();
     });
   });
 
-  // ── Desktop nav level pill ────────────────────────────────────────────────
-  describe("desktop nav", () => {
-    it("shows level pill with Lv.N in desktop mode", async () => {
-      mockIsMobile = false;
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getAllByText(/Lv\.3/).length).toBeGreaterThan(0)
-      );
-    });
-
-    it("does not show level pill in mobile mode", async () => {
-      mockIsMobile = true;
+  // ── All-levels grid ───────────────────────────────────────────────────────
+  describe("levels grid", () => {
+    it("marks reached, current, next and locked tiers", async () => {
       renderPage();
       await waitFor(() => screen.getByText("Level Rewards"));
-      // In mobile mode the level pill div is not rendered; "Lv.3" might still appear
-      // in the roadmap but the nav pill specifically is hidden — no assertions here
-      // beyond it rendering without crash
-      expect(screen.getByText("Level Rewards")).toBeInTheDocument();
+      expect(screen.getAllByText("Reached")).toHaveLength(2);   // Lv 1–2
+      expect(screen.getByText("Current")).toBeInTheDocument(); // Lv 3
+      expect(screen.getByText("300 to go")).toBeInTheDocument(); // Lv 4
+      expect(screen.getAllByText("Locked")).toHaveLength(6);    // Lv 5–10
     });
   });
 
   // ── History section ──────────────────────────────────────────────────────
   describe("history section header", () => {
-    it("renders '📜 Debate History' label", async () => {
+    it("renders 'Debate History' label", async () => {
       renderPage();
       await waitFor(() =>
         expect(screen.getByText(/Debate History/)).toBeInTheDocument()
@@ -394,35 +346,35 @@ describe("LevelRewards", () => {
     it("shows won indicator for winner", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("✓ Won")).toBeInTheDocument()
+        expect(screen.getByText("Won")).toBeInTheDocument()
       );
     });
 
     it("shows lost indicator for loser", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("✗ Lost")).toBeInTheDocument()
+        expect(screen.getByText("Lost")).toBeInTheDocument()
       );
     });
 
-    it("shows 🥇 1st for rank 1", async () => {
+    it("shows 1st for rank 1", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("🥇 1st")).toBeInTheDocument()
+        expect(screen.getByText("1st")).toBeInTheDocument()
       );
     });
 
-    it("shows 🥈 2nd for rank 2", async () => {
+    it("shows 2nd for rank 2", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("🥈 2nd")).toBeInTheDocument()
+        expect(screen.getByText("2nd")).toBeInTheDocument()
       );
     });
 
-    it("shows 🥉 3rd for rank 3", async () => {
+    it("shows 3rd for rank 3", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("🥉 3rd")).toBeInTheDocument()
+        expect(screen.getByText("3rd")).toBeInTheDocument()
       );
     });
 
@@ -473,53 +425,12 @@ describe("LevelRewards", () => {
   });
 
   // ── Empty history ─────────────────────────────────────────────────────────
-  // Note: LevelRewards uses a module-level _historyCache. Once any test resolves
-  // history data the cache is set for the rest of the run, so these tests only
-  // reliably see the empty-state UI if the cache hasn't been populated yet.
-  // The empty-state UI is covered by a loading-state test at the top instead.
-  describe("empty history (smoke)", () => {
-    it("component renders without crashing when getHistory resolves empty", async () => {
-      // We can't guarantee empty state once cache is set, but we verify the
-      // component renders fine with the current (possibly cached) data.
+  describe("empty history", () => {
+    it("shows the empty state when getHistory resolves empty", async () => {
+      mockGetHistory.mockResolvedValue([]);
       renderPage();
-      await waitFor(() => screen.getByText("Level Rewards"));
-      expect(screen.getByText("Level Rewards")).toBeInTheDocument();
-    });
-  });
-
-  // ── Pro user ──────────────────────────────────────────────────────────────
-  describe("pro user", () => {
-    it("passes isPro=true to NavLogo for pro user", async () => {
-      mockUser = { username: "prouser", xp: 1000, isPro: true };
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByTestId("nav-logo")).toHaveAttribute("data-is-pro", "true")
-      );
-    });
-
-    it("passes isPro=false to NavLogo for free user", async () => {
-      mockUser = { username: "freeuser", xp: 100, isPro: false };
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByTestId("nav-logo")).toHaveAttribute("data-is-pro", "false")
-      );
-    });
-  });
-
-  // ── Theme variants ────────────────────────────────────────────────────────
-  describe("theme variants", () => {
-    it("renders without crashing in glacier theme", async () => {
-      mockTheme = "glacier";
-      renderPage();
-      await waitFor(() => screen.getByText("Level Rewards"));
-      expect(screen.getByText("Level Rewards")).toBeInTheDocument();
-    });
-
-    it("renders without crashing in light theme", async () => {
-      mockTheme = "light";
-      renderPage();
-      await waitFor(() => screen.getByText("Level Rewards"));
-      expect(screen.getByText("Level Rewards")).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByText("No debates yet")).toBeInTheDocument());
+      expect(screen.getByText(/Join or create a room to start earning XP/)).toBeInTheDocument();
     });
   });
 
@@ -569,12 +480,19 @@ describe("LevelRewards", () => {
   // ── getHistory API call ───────────────────────────────────────────────────
   describe("API behavior", () => {
     it("calls historyApi.getHistory on mount when no cache", async () => {
-      // We can verify it was called (may have been called by prior tests too)
       renderPage();
-      await waitFor(() => screen.getByText("Level Rewards"));
-      // getHistory may or may not be called depending on cache state;
-      // component renders correctly regardless
-      expect(screen.getByText("Level Rewards")).toBeInTheDocument();
+      await waitFor(() => screen.getByText("AI will replace human creativity"));
+      expect(mockGetHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it("reuses the module cache on remount (no refetch, no loading flash)", async () => {
+      const { unmount } = renderPage();
+      await waitFor(() => screen.getByText("AI will replace human creativity"));
+      unmount();
+      renderPage();
+      expect(screen.queryByText("Loading history…")).not.toBeInTheDocument();
+      expect(screen.getByText("AI will replace human creativity")).toBeInTheDocument();
+      expect(mockGetHistory).toHaveBeenCalledTimes(1);
     });
   });
 });

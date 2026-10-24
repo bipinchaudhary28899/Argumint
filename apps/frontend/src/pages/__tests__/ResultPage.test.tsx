@@ -334,7 +334,7 @@ describe("ResultPage", () => {
     it("shows FOR WINS when winner side is for", async () => {
       setupDebateLoad(makeDebate({ result: makeResult({ winnerSide: "for" }) }));
       await renderPage();
-      expect(screen.getByText("FOR WINS")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "FOR wins" })).toBeInTheDocument();
     });
 
     it("shows AGAINST WINS when winner side is against", async () => {
@@ -347,7 +347,7 @@ describe("ResultPage", () => {
       });
       setupDebateLoad(makeDebate({ result }));
       await renderPage();
-      expect(screen.getByText("AGAINST WINS")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "AGAINST wins" })).toBeInTheDocument();
     });
 
     it("shows WINNER (not MVP) when user won but is rank 2+", async () => {
@@ -406,15 +406,36 @@ describe("ResultPage", () => {
       expect(screen.getByText(/Standings/i)).toBeInTheDocument();
     });
 
-    it("shows the debate topic in the top bar", async () => {
+    it("shows the debate topic in the room header", async () => {
       setupDebateLoad(
         makeDebate({ result: makeResult(), topic: "AI will do more good than harm" })
       );
       await renderPage();
-      expect(screen.getByText("AI will do more good than harm")).toBeInTheDocument();
+      // RoomHeader renders the motion twice (desktop row + mobile line)
+      expect(screen.getAllByText("AI will do more good than harm").length).toBeGreaterThan(0);
     });
 
-    it("shows XP gained amount in the top bar", async () => {
+    it("shows the room code and a Results status in the room header", async () => {
+      setupDebateLoad(makeDebate({ result: makeResult() }));
+      await renderPage();
+      expect(screen.getByRole("button", { name: "Copy room code TEST1" })).toBeInTheDocument();
+      expect(screen.getByText("Results")).toBeInTheDocument();
+    });
+
+    it("shows rank among all debaters", async () => {
+      setupDebateLoad(makeDebate({ result: makeResult() }));
+      await renderPage();
+      expect(screen.getByText("1st of 2")).toBeInTheDocument();
+    });
+
+    it("shows the winning points from the verdict", async () => {
+      setupDebateLoad(makeDebate({ result: makeResult() }));
+      await renderPage();
+      expect(screen.getByText("Point A")).toBeInTheDocument();
+      expect(screen.getByText("Point B")).toBeInTheDocument();
+    });
+
+    it("shows XP gained amount", async () => {
       // xpGained = myScore.total = 81 (no myXPAward set yet)
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
@@ -435,14 +456,21 @@ describe("ResultPage", () => {
     it("Play Again button navigates to /", async () => {
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      fireEvent.click(screen.getByText(/Play Again/));
+      fireEvent.click(screen.getByRole("button", { name: /Play again/i }));
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
 
-    it("← Home button navigates to /", async () => {
+    it("room header Leave button navigates to /", async () => {
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      fireEvent.click(screen.getByText(/← Home/));
+      fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+    });
+
+    it("Back to home link navigates to /", async () => {
+      setupDebateLoad(makeDebate({ result: makeResult() }));
+      await renderPage();
+      fireEvent.click(screen.getByRole("button", { name: /Back to home/i }));
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
   });
@@ -450,42 +478,48 @@ describe("ResultPage", () => {
   // ── Pro / Free feature gating ─────────────────────────────────────────────
 
   describe("Pro / Free feature gating", () => {
-    it("shows View Full Analysis button for Pro users", async () => {
+    it("shows Full analysis button for Pro users", async () => {
       mockUser = { ...mockUser, isPro: true };
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      expect(screen.getByText(/View Full Analysis/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Full analysis/i })).toBeInTheDocument();
     });
 
-    it("View Full Analysis navigates to analysis route", async () => {
+    it("Full analysis navigates to analysis route", async () => {
       mockUser = { ...mockUser, isPro: true };
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      fireEvent.click(screen.getByText(/View Full Analysis/));
+      fireEvent.click(screen.getByRole("button", { name: /Full analysis/i }));
       expect(mockNavigate).toHaveBeenCalledWith(
         "/room/TEST1/analysis/debate-id-1",
         expect.any(Object)
       );
     });
 
-    it("shows ProUpgradeBanner lock icon for free users", async () => {
+    it("shows ProUpgradeBanner for free users", async () => {
       // mockUser.isPro = false (default)
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      expect(screen.getByText("🔒")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Go Pro/i })).toBeInTheDocument();
     });
 
-    it("hides View Full Analysis for free users", async () => {
+    it("hides Full analysis for free users", async () => {
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      expect(screen.queryByText(/View Full Analysis/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Full analysis/i })).not.toBeInTheDocument();
+    });
+
+    it("hides ProUpgradeBanner for Pro users", async () => {
+      mockUser = { ...mockUser, isPro: true };
+      setupDebateLoad(makeDebate({ result: makeResult() }));
+      await renderPage();
+      expect(screen.queryByRole("button", { name: /Go Pro/i })).not.toBeInTheDocument();
     });
 
     it("ProUpgradeBanner click navigates to /pricing", async () => {
       setupDebateLoad(makeDebate({ result: makeResult() }));
       await renderPage();
-      // Click the lock emoji — event bubbles to the parent div's onClick
-      fireEvent.click(screen.getByText("🔒"));
+      fireEvent.click(screen.getByRole("button", { name: /Go Pro/i }));
       expect(mockNavigate).toHaveBeenCalledWith("/pricing");
     });
   });
@@ -585,6 +619,29 @@ describe("ResultPage", () => {
       expect(screen.getByAltText("Judging…")).toBeInTheDocument();
     });
 
+    it("debate:result-ready judge scores show in the Judges card", async () => {
+      setupDebateLoad(makeDebate({ result: null }));
+      await renderPage();
+
+      await act(async () => {
+        mockSocket._emit("debate:result-ready", {
+          result: makeResult(),
+          xpAwards: [],
+          judgeScores: [
+            {
+              judgeId: "j1", judgeUsername: "Kiran",
+              scores: [{ userId: "user-1", score: 80 }, { userId: "user-2", score: 60 }],
+              submittedAt: new Date(),
+            },
+          ],
+        });
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("Kiran")).toBeInTheDocument();
+      expect(screen.getByText("Ranking matched the AI on 2 of 2 places")).toBeInTheDocument();
+    });
+
     it("socket listeners are cleaned up on unmount", async () => {
       setupDebateLoad(makeDebate({ result: null }));
       const { unmount } = await act(async () => {
@@ -642,7 +699,7 @@ describe("ResultPage", () => {
         await Promise.resolve();
         await Promise.resolve();
       });
-      expect(screen.getByText("FOR WINS")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 1, name: "FOR wins" })).toBeInTheDocument();
     });
   });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
 const { mockNavigate, mockGetRoomByCode, mockJoinRoom } = vi.hoisted(() => ({
@@ -9,8 +9,10 @@ const { mockNavigate, mockGetRoomByCode, mockJoinRoom } = vi.hoisted(() => ({
 }));
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
+let mockLocationState: any = null;
 vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: "/join-room", search: "", hash: "", state: mockLocationState, key: "k" }),
 }));
 
 let mockUser: any = { id: "user-1", username: "alice" };
@@ -50,11 +52,23 @@ function makeRoom(overrides: Record<string, any> = {}) {
   };
 }
 
+function codeInput() {
+  return screen.getByLabelText("Room code") as HTMLInputElement;
+}
+
+/** The code form's submit button (the shell's sidebar also has a "Join room" nav button). */
+function joinBtn() {
+  return within(screen.getByRole("form", { name: /Join a room/i })).getByRole("button", { name: /Join room|Checking…/ });
+}
+
+function roleRadio(name: string) {
+  return screen.getByRole("radio", { name: new RegExp(`^${name}`) });
+}
+
 async function fillCodeAndSubmit(code: string = "ABCD12") {
-  const input = screen.getByPlaceholderText("ABC123");
-  fireEvent.change(input, { target: { value: code } });
-  fireEvent.click(screen.getByText("Continue →"));
-  await waitFor(() => screen.getByText("Choose Your Role"));
+  fireEvent.change(codeInput(), { target: { value: code } });
+  fireEvent.click(joinBtn());
+  await waitFor(() => screen.getByRole("heading", { name: "Choose your role" }));
 }
 
 function renderPage() {
@@ -67,76 +81,113 @@ describe("JoinRoom", () => {
     vi.clearAllMocks();
     mockUser  = { id: "user-1", username: "alice" };
     mockError = null;
+    mockLocationState = null;
     mockGetRoomByCode.mockResolvedValue(makeRoom());
     mockJoinRoom.mockResolvedValue({ ...makeRoom(), code: "ABCD12" });
   });
 
   // ── Step 1: Code entry ─────────────────────────────────────────────────────
   describe("step 1 — code entry", () => {
-    it("renders 'Join a Debate' heading", () => {
+    it("renders 'Join a room' heading", () => {
       renderPage();
-      expect(screen.getByText("Join a Debate")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Join a room" })).toBeInTheDocument();
     });
 
-    it("renders the room code input with placeholder", () => {
+    it("renders the labelled room code input", () => {
       renderPage();
-      expect(screen.getByPlaceholderText("ABC123")).toBeInTheDocument();
+      expect(codeInput()).toBeInTheDocument();
+      expect(codeInput()).toHaveAccessibleDescription(/Letters and numbers/);
     });
 
-    it("renders 'Room Code' label", () => {
-      renderPage();
-      expect(screen.getByText("Room Code")).toBeInTheDocument();
+    it("renders 6 code boxes", () => {
+      const { container } = renderPage();
+      expect(container.querySelectorAll("[data-code-box]")).toHaveLength(6);
     });
 
-    it("renders 'Continue →' submit button", () => {
-      renderPage();
-      expect(screen.getByText("Continue →")).toBeInTheDocument();
+    it("shows typed characters in the boxes", () => {
+      const { container } = renderPage();
+      fireEvent.change(codeInput(), { target: { value: "k7q" } });
+      const boxes = Array.from(container.querySelectorAll("[data-code-box]")).map(b => b.textContent);
+      expect(boxes).toEqual(["K", "7", "Q", "", "", ""]);
     });
 
-    it("renders '← Home' back button", () => {
+    it("renders 'Join room' submit button", () => {
       renderPage();
-      expect(screen.getByText("← Home")).toBeInTheDocument();
+      expect(joinBtn()).toHaveAttribute("type", "submit");
     });
 
-    it("'← Home' navigates to / on step 1", () => {
+    it("renders back-to-home button", () => {
       renderPage();
-      fireEvent.click(screen.getByText("← Home"));
+      expect(screen.getByRole("button", { name: "Back to home" })).toBeInTheDocument();
+    });
+
+    it("back button navigates to / on step 1", () => {
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Back to home" }));
       expect(mockNavigate).toHaveBeenCalledWith("/");
     });
 
-    it("'Continue →' is disabled when code is empty", () => {
+    it("'Host your own room' navigates to /create-room", () => {
       renderPage();
-      expect(screen.getByText("Continue →")).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Host your own room" }));
+      expect(mockNavigate).toHaveBeenCalledWith("/create-room");
     });
 
-    it("'Continue →' is disabled when code is less than 6 chars", () => {
+    it("renders the three help tiles", () => {
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123");
-      fireEvent.change(input, { target: { value: "ABC" } });
-      expect(screen.getByText("Continue →")).toBeDisabled();
+      expect(screen.getByText(/check your mic/)).toBeInTheDocument();
+      expect(screen.getByText(/Ready up/)).toBeInTheDocument();
+      expect(screen.getByText(/FOR or AGAINST at random/)).toBeInTheDocument();
     });
 
-    it("'Continue →' is enabled when exactly 6 chars entered", () => {
+    it("Join button is disabled when code is empty", () => {
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123");
-      fireEvent.change(input, { target: { value: "ABCDEF" } });
-      expect(screen.getByText("Continue →")).not.toBeDisabled();
+      expect(joinBtn()).toBeDisabled();
+    });
+
+    it("Join button is disabled when code is less than 6 chars", () => {
+      renderPage();
+      fireEvent.change(codeInput(), { target: { value: "ABC" } });
+      expect(joinBtn()).toBeDisabled();
+    });
+
+    it("Join button is enabled when exactly 6 chars entered", () => {
+      renderPage();
+      fireEvent.change(codeInput(), { target: { value: "ABCDEF" } });
+      expect(joinBtn()).not.toBeDisabled();
     });
 
     it("uppercases typed room code", () => {
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123") as HTMLInputElement;
-      fireEvent.change(input, { target: { value: "abcdef" } });
-      expect(input.value).toBe("ABCDEF");
+      fireEvent.change(codeInput(), { target: { value: "abcdef" } });
+      expect(codeInput().value).toBe("ABCDEF");
+    });
+
+    it("cleans a pasted code (spaces/dashes stripped, capped at 6)", () => {
+      renderPage();
+      fireEvent.change(codeInput(), { target: { value: " abc-123xyz " } });
+      expect(codeInput().value).toBe("ABC123");
+    });
+
+    it("Paste button reads the clipboard into the code", async () => {
+      const readText = vi.fn().mockResolvedValue("  xy9-z12 ");
+      Object.defineProperty(navigator, "clipboard", { value: { readText }, configurable: true });
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: "Paste" }));
+      await waitFor(() => expect(codeInput().value).toBe("XY9Z12"));
+      expect(joinBtn()).not.toBeDisabled();
+    });
+
+    it("prefills the code from router state", () => {
+      mockLocationState = { code: "qw12er" };
+      renderPage();
+      expect(codeInput().value).toBe("QW12ER");
+      expect(joinBtn()).not.toBeDisabled();
     });
 
     it("shows validation error when code is blank and form is submitted", async () => {
       renderPage();
-      // Submit with empty code — button is disabled, so use form submit workaround:
-      // Since button is disabled there's no standard way; instead test setError call.
-      // Trigger by setting an empty code then submitting via form
-      const form = screen.getByPlaceholderText("ABC123").closest("form")!;
-      fireEvent.submit(form);
+      fireEvent.submit(screen.getByRole("form", { name: /Join a room/i }));
       await waitFor(() =>
         expect(mockSetError).toHaveBeenCalledWith("Room code is required")
       );
@@ -144,9 +195,8 @@ describe("JoinRoom", () => {
 
     it("calls getRoomByCode with uppercased code on submit", async () => {
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123");
-      fireEvent.change(input, { target: { value: "abcd12" } });
-      fireEvent.click(screen.getByText("Continue →"));
+      fireEvent.change(codeInput(), { target: { value: "abcd12" } });
+      fireEvent.click(joinBtn());
       await waitFor(() =>
         expect(mockGetRoomByCode).toHaveBeenCalledWith("ABCD12")
       );
@@ -155,9 +205,8 @@ describe("JoinRoom", () => {
     it("shows 'Checking…' while loading", async () => {
       mockGetRoomByCode.mockReturnValue(new Promise(() => {})); // never resolves
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123");
-      fireEvent.change(input, { target: { value: "ABCD12" } });
-      fireEvent.click(screen.getByText("Continue →"));
+      fireEvent.change(codeInput(), { target: { value: "ABCD12" } });
+      fireEvent.click(joinBtn());
       await waitFor(() =>
         expect(screen.getByText("Checking…")).toBeInTheDocument()
       );
@@ -168,9 +217,9 @@ describe("JoinRoom", () => {
       // Pre-set mockError so context returns it
       mockError = "Room not found";
       renderPage();
-      const input = screen.getByPlaceholderText("ABC123");
-      fireEvent.change(input, { target: { value: "ABCD12" } });
-      fireEvent.click(screen.getByText("Continue →"));
+      expect(screen.getByRole("alert")).toHaveTextContent("Room not found");
+      fireEvent.change(codeInput(), { target: { value: "ABCD12" } });
+      fireEvent.click(joinBtn());
       await waitFor(() =>
         expect(mockSetError).toHaveBeenCalledWith("Room not found")
       );
@@ -179,10 +228,10 @@ describe("JoinRoom", () => {
 
   // ── Step 2: Role selection ─────────────────────────────────────────────────
   describe("step 2 — role selection", () => {
-    it("shows 'Choose Your Role' heading after valid code", async () => {
+    it("shows 'Choose your role' heading after valid code", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      expect(screen.getByText("Choose Your Role")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Choose your role" })).toBeInTheDocument();
     });
 
     it("shows the room code in the subtitle", async () => {
@@ -194,9 +243,9 @@ describe("JoinRoom", () => {
     it("shows all three role options", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      expect(screen.getByText("Participant")).toBeInTheDocument();
-      expect(screen.getByText("Judge")).toBeInTheDocument();
-      expect(screen.getByText("Spectator")).toBeInTheDocument();
+      expect(roleRadio("Participant")).toBeInTheDocument();
+      expect(roleRadio("Judge")).toBeInTheDocument();
+      expect(roleRadio("Spectator")).toBeInTheDocument();
     });
 
     it("shows role descriptions", async () => {
@@ -207,42 +256,45 @@ describe("JoinRoom", () => {
       expect(screen.getByText(/Watch and listen/)).toBeInTheDocument();
     });
 
-    it("shows 'Join as Participant →' confirm button by default", async () => {
+    it("Participant is selected and the confirm button reads 'Join as Participant' by default", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      expect(screen.getByText("Join as Participant →")).toBeInTheDocument();
+      expect(roleRadio("Participant")).toHaveAttribute("aria-checked", "true");
+      expect(screen.getByRole("button", { name: "Join as Participant" })).toBeInTheDocument();
     });
 
-    it("shows '← Back' button on step 2", async () => {
+    it("shows a Back button on step 2", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      expect(screen.getByText("← Back")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Back to room code" })).toBeInTheDocument();
     });
 
-    it("'← Back' returns to step 1", async () => {
+    it("Back returns to step 1 with the code kept", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("← Back"));
+      fireEvent.click(screen.getByRole("button", { name: "Back to room code" }));
       await waitFor(() =>
-        expect(screen.getByText("Join a Debate")).toBeInTheDocument()
+        expect(screen.getByRole("heading", { name: "Join a room" })).toBeInTheDocument()
       );
+      expect(codeInput().value).toBe("ABCD12");
     });
 
     it("selecting Judge role updates the confirm button label", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Judge"));
+      fireEvent.click(roleRadio("Judge"));
       await waitFor(() =>
-        expect(screen.getByText("Join as Judge →")).toBeInTheDocument()
+        expect(screen.getByRole("button", { name: "Join as Judge" })).toBeInTheDocument()
       );
+      expect(roleRadio("Judge")).toHaveAttribute("aria-checked", "true");
     });
 
     it("selecting Spectator role updates the confirm button label", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Spectator"));
+      fireEvent.click(roleRadio("Spectator"));
       await waitFor(() =>
-        expect(screen.getByText("Join as Spectator →")).toBeInTheDocument()
+        expect(screen.getByRole("button", { name: "Join as Spectator" })).toBeInTheDocument()
       );
     });
 
@@ -258,6 +310,7 @@ describe("JoinRoom", () => {
       renderPage();
       await fillCodeAndSubmit("ABCD12");
       expect(screen.getByText("DISABLED")).toBeInTheDocument();
+      expect(roleRadio("Judge")).toBeDisabled();
     });
 
     it("marks Judge as FULL when all judge slots used", async () => {
@@ -289,8 +342,9 @@ describe("JoinRoom", () => {
       mockGetRoomByCode.mockResolvedValue(room);
       renderPage();
       await fillCodeAndSubmit();
+      fireEvent.click(roleRadio("Judge"));
       // Participant is default and has slots → confirm button is enabled
-      expect(screen.getByText("Join as Participant →")).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: "Join as Participant" })).not.toBeDisabled();
     });
   });
 
@@ -299,7 +353,7 @@ describe("JoinRoom", () => {
     it("calls joinRoom with code and selected role", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Join as Participant →"));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Participant" }));
       await waitFor(() =>
         expect(mockJoinRoom).toHaveBeenCalledWith(
           expect.objectContaining({ code: "ABCD12", role: "participant" })
@@ -310,7 +364,7 @@ describe("JoinRoom", () => {
     it("calls setRoom after successful join", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Join as Participant →"));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Participant" }));
       await waitFor(() =>
         expect(mockSetRoom).toHaveBeenCalled()
       );
@@ -319,7 +373,7 @@ describe("JoinRoom", () => {
     it("navigates to lobby with role query param after join", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Join as Participant →"));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Participant" }));
       await waitFor(() =>
         expect(mockNavigate).toHaveBeenCalledWith("/room/ABCD12/lobby?role=participant")
       );
@@ -328,9 +382,9 @@ describe("JoinRoom", () => {
     it("joins as judge when judge role is selected", async () => {
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Judge"));
-      await waitFor(() => screen.getByText("Join as Judge →"));
-      fireEvent.click(screen.getByText("Join as Judge →"));
+      fireEvent.click(roleRadio("Judge"));
+      await waitFor(() => screen.getByRole("button", { name: "Join as Judge" }));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Judge" }));
       await waitFor(() =>
         expect(mockJoinRoom).toHaveBeenCalledWith(
           expect.objectContaining({ role: "judge" })
@@ -342,7 +396,7 @@ describe("JoinRoom", () => {
       mockJoinRoom.mockReturnValue(new Promise(() => {}));
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Join as Participant →"));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Participant" }));
       await waitFor(() =>
         expect(screen.getByText("Joining…")).toBeInTheDocument()
       );
@@ -352,25 +406,13 @@ describe("JoinRoom", () => {
       mockJoinRoom.mockRejectedValue(new Error("Room is full"));
       renderPage();
       await fillCodeAndSubmit();
-      fireEvent.click(screen.getByText("Join as Participant →"));
+      fireEvent.click(screen.getByRole("button", { name: "Join as Participant" }));
       await waitFor(() =>
         expect(mockSetError).toHaveBeenCalledWith("Room is full")
       );
       await waitFor(() =>
-        expect(screen.getByText("Join a Debate")).toBeInTheDocument()
+        expect(screen.getByRole("heading", { name: "Join a room" })).toBeInTheDocument()
       );
-    });
-  });
-
-  // ── Char indicators ────────────────────────────────────────────────────────
-  describe("character indicator dots", () => {
-    it("renders 6 indicator dots", () => {
-      renderPage();
-      // 6 fixed-width divs for the character indicators
-      const indicators = document.querySelectorAll(
-        "[style*='width: 32px'][style*='height: 4px']"
-      );
-      expect(indicators).toHaveLength(6);
     });
   });
 });

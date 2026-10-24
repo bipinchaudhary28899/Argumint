@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { useTheme, THEMES } from "../contexts/ThemeContext";
 import { getLevelInfo } from "@argumint/shared";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { NavLogo } from "../components/NavLogo";
-import { Icon, type IconName } from "../components/Icon";
+import { AppShell, initials } from "../components/AppShell";
+import { Icon } from "../components/Icon";
 import { ProWelcomeModal } from "../components/ProWelcomeModal";
-import { platformApi } from "../services/api";
+import { platformApi, historyApi, type DebateHistoryEntry } from "../services/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +18,8 @@ interface LeaderboardEntry {
   totalDebates: number;
 }
 
+type PlatformStats = { activeRooms: number; liveDebates: number; totalDebates: number };
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function winRate(won: number, total: number): string {
@@ -26,100 +27,103 @@ function winRate(won: number, total: number): string {
   return `${Math.round((won / total) * 100)}%`;
 }
 
-const AVATAR_PALETTES = [
-  { bg: "#eef9c8", color: "#3b5200", border: "#c8f135" },
-  { bg: "#d1fae5", color: "#047857", border: "#6ee7b7" },
-  { bg: "#e0f2fe", color: "#0369a1", border: "#7dd3fc" },
-  { bg: "#fce7f3", color: "#be185d", border: "#f9a8d4" },
-  { bg: "#fef3c7", color: "#92400e", border: "#fde68a" },
-  { bg: "#fee2e2", color: "#b91c1c", border: "#fca5a5" },
-];
-function avatarPalette(username: string) {
-  return AVATAR_PALETTES[username.charCodeAt(0) % AVATAR_PALETTES.length];
+function greeting(date = new Date()): string {
+  const h = date.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
 }
 
-// ─── Sidebar links — existing routes only ─────────────────────────────────────
-const SIDEBAR_LINKS: { id: string; label: string; icon: IconName; path: string | null }[] = [
-  { id: "home",    label: "Home",          icon: "home",  path: null },
-  { id: "create",  label: "Create room",   icon: "plus",  path: "/create-room" },
-  { id: "join",    label: "Join room",     icon: "join",  path: "/join-room" },
-  { id: "rewards", label: "Level rewards", icon: "star",  path: "/level-rewards" },
-  { id: "pro",     label: "Pro",           icon: "crown", path: "/pricing" },
-];
-
-// ─── Stat box ─────────────────────────────────────────────────────────────────
-function StatBox({ label, value, color }: { label: string; value: string | number; color?: string }) {
-  return (
-    <div style={{ textAlign: "center", flex: 1 }}>
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "1.2rem", fontWeight: 900, color: color ?? "var(--text)", lineHeight: 1 }}>
-        {value}
-      </div>
-      <div style={{ fontSize: "0.58rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: "0.2rem" }}>
-        {label}
-      </div>
-    </div>
-  );
+/** "Orator" → "an Orator", "Debater" → "a Debater" */
+function withArticle(title: string): string {
+  return `${/^[aeiou]/i.test(title) ? "an" : "a"} ${title}`;
 }
 
-
-// ─── Feature card ─────────────────────────────────────────────────────────────
-function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc: string }) {
-  return (
-    <div style={{
-      flex: 1,
-      background: "var(--surface)",
-      backdropFilter: "blur(20px)",
-      WebkitBackdropFilter: "blur(20px)",
-      border: "1px solid var(--border)",
-      borderRadius: "0.875rem",
-      padding: "1rem 1.125rem",
-      display: "flex", flexDirection: "column", gap: "0.4rem",
-      boxShadow: "0 2px 12px rgba(var(--blue-rgb),0.06)",
-      transition: "transform 0.22s ease, box-shadow 0.22s ease",
-    }}
-    onMouseEnter={e => {
-      (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 8px 28px rgba(var(--blue-rgb),0.12)";
-    }}
-    onMouseLeave={e => {
-      (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 2px 12px rgba(var(--blue-rgb),0.06)";
-    }}
-    >
-      <div style={{ fontSize: "1.35rem" }}>{icon}</div>
-      <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "var(--text)" }}>{title}</div>
-      <div style={{ fontSize: "0.72rem", color: "var(--muted)", lineHeight: 1.5 }}>{desc}</div>
-    </div>
-  );
+/** Today / Yesterday / "Oct 20" (adds the year when it isn't this year) */
+function relativeDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const now = new Date();
+  const days = Math.round((startOf(now) - startOf(d)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", {
+    month: "short", day: "numeric",
+    ...(d.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
 }
+
+const BAND_CHIP: Record<string, string> = { strong: "ds-chip-for", moderate: "ds-chip-neutral", flagged: "ds-chip-against" };
+const BAND_COPY: Record<string, string> = {
+  strong:   "Your scores line up closely with the AI judge and other judges.",
+  moderate: "Your scores mostly line up with the AI judge and other judges.",
+  flagged:  "Your scores often differ from the AI judge and other judges.",
+};
+
+const cardPad = (isMobile: boolean) => (isMobile ? 20 : 28);
 
 // ─── Module-level cache (survives tab switches / route navigations) ───────────
-let _statsCache: { activeRooms: number; liveDebates: number; totalDebates: number } | null = null;
+let _statsCache: PlatformStats | null = null;
 let _leaderboardCache: LeaderboardEntry[] | null = null;
+let _historyCache: DebateHistoryEntry[] | null = null;
 
 /** Exported only for unit tests — do not call in production code. */
 export function _resetCacheForTests() {
   _statsCache = null;
   _leaderboardCache = null;
+  _historyCache = null;
+}
+
+// ─── Small pieces ────────────────────────────────────────────────────────────
+
+function SectionHead({ title, link, onLink }: { title: string; link: string; onLink: () => void }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{title}</h2>
+      <button type="button" className="ds-link" style={{ fontSize: 14 }} onClick={onLink}>{link}</button>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  return (
+    <div className="ds-raised" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <span style={{ fontSize: 12, color: "var(--ds-muted)", fontWeight: 600 }}>{label}</span>
+      <span className="ds-mono" style={{ fontSize: 24, fontWeight: 600, color: color ?? "var(--ds-text)" }}>{value}</span>
+    </div>
+  );
+}
+
+function PlatformChip({ dot, value, label }: { dot?: "green" | "red"; value: number; label: string }) {
+  return (
+    <span className="ds-chip ds-chip-neutral" style={{ height: 30, gap: 8 }}>
+      {dot && <span className={`pulse-dot pulse-dot-${dot}`} style={{ width: 8, height: 8 }} aria-hidden="true" />}
+      <span className="ds-mono" style={{ color: "var(--ds-text)" }}>{value.toLocaleString()}</span>
+      <span style={{ fontWeight: 600 }}>{label}</span>
+    </span>
+  );
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function Home() {
   const navigate  = useNavigate();
-  const { user, logout, isLoading } = useAuth();
-  const { theme, setTheme, meta: themeMeta } = useTheme();
-  const [showThemePicker, setShowThemePicker] = useState(false);
-  const [activeTab, setActiveTab] = useState<"home" | "leaderboard" | "profile">("home");
+  const { user }  = useAuth();
   const isMobile  = useIsMobile();
-  const isPro          = (user as any)?.isPro ?? false;
-  const isDev          = user?.email === "bkumar28899@gmail.com";
-  const subStatus      = (user as any)?.subscriptionStatus ?? null;
-  const isCancelled    = subStatus === "cancelled";
+  // Below the full-sidebar breakpoint the shell switches to an icon rail —
+  // stack the 2-column board rows there so the cards keep a readable width.
+  const isNarrow  = useIsMobile(1100);
+  const isPro       = (user as any)?.isPro ?? false;
+  const subStatus   = (user as any)?.subscriptionStatus ?? null;
+  const isCancelled = subStatus === "cancelled";
+  const myId        = (user as any)?.id ?? null;
 
   // Seed from cache so there's no empty-state flash on remount
-  const [stats,       setStats]       = useState<{ activeRooms: number; liveDebates: number; totalDebates: number } | null>(_statsCache);
+  const [stats,       setStats]       = useState<PlatformStats | null>(_statsCache);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(_leaderboardCache ?? []);
+  const [history,     setHistory]     = useState<DebateHistoryEntry[] | null>(_historyCache);
+  const [code,        setCode]        = useState("");
 
   // Pro welcome modal — shown once per user after first upgrade
   const userId = (user as any)?.id ?? (user as any)?._id ?? "";
@@ -148,903 +152,368 @@ export function Home() {
     return () => { alive = false; };
   }, []);
 
-  const [loggingOut, setLoggingOut] = useState(false);
-  const handleLogout = async () => {
-    setLoggingOut(true);
-    try { await logout(); navigate("/login"); } catch { setLoggingOut(false); }
-  };
+  useEffect(() => {
+    // Same once-per-session policy for the "Recent debates" card
+    if (_historyCache) return;
+    let alive = true;
+    historyApi.getHistory().then(data => {
+      _historyCache = data;
+      if (alive) setHistory(data);
+    }).catch(() => { if (alive) setHistory([]); });
+    return () => { alive = false; };
+  }, []);
 
-  // ─── Player card ─────────────────────────────────────────────────────────
-  const isDark    = theme === "dark";
-  const isGlacier = theme === "glacier";
+  const pad = cardPad(isMobile);
+  const twoCol = (cols: string) => (isNarrow ? "minmax(0,1fr)" : cols);
 
-  // ── Accent palette: glacier uses pure blue, everything else uses gold ──
-  const ac = {
-    color:   isGlacier ? "#0284c7"                                    : "#f59e0b",
-    dark:    isGlacier ? "#0369a1"                                    : "#d97706",
-    bright:  isGlacier ? "#38bdf8"                                    : "#fbbf24",
-    grad:    isGlacier ? "linear-gradient(90deg,#0284c7,#38bdf8)"     : "linear-gradient(90deg,#f59e0b,#fbbf24)",
-    grad135: isGlacier ? "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8)" : "linear-gradient(135deg,#f59e0b,#fbbf24,#f97316)",
-    bg:      isGlacier ? "rgba(2,132,199,0.12)"                       : (isDark ? "rgba(245,158,11,0.18)" : "rgba(245,158,11,0.12)"),
-    bgCard:  isGlacier
-               ? "linear-gradient(160deg,rgba(2,132,199,0.1) 0%,rgba(14,165,233,0.05) 60%)"
-               : isDark
-                 ? "linear-gradient(160deg,rgba(245,158,11,0.08) 0%,rgba(15,15,26,0.9) 60%)"
-                 : "linear-gradient(160deg,rgba(245,158,11,0.04) 0%,rgba(255,255,255,0.72) 60%)",
-    border:  isGlacier ? "rgba(2,132,199,0.4)"                        : "rgba(245,158,11,0.4)",
-    border2: isGlacier ? "rgba(2,132,199,0.25)"                       : "rgba(245,158,11,0.25)",
-    shadow:  isGlacier ? "rgba(2,132,199,0.12)"                       : "rgba(245,158,11,0.12)",
-    glow:    isGlacier
-               ? "0 0 28px rgba(2,132,199,0.14), 0 2px 16px rgba(0,0,0,0.15)"
-               : isDark
-                 ? "0 0 28px rgba(245,158,11,0.12), 0 2px 16px rgba(0,0,0,0.4)"
-                 : "0 0 24px rgba(245,158,11,0.08), 0 2px 12px rgba(0,0,0,0.06)",
-  };
-  const PlayerCard = (
-    <div
-      className="glass glass-interactive fade-up"
-      onClick={() => navigate("/level-rewards")}
+  // ─── Header ───────────────────────────────────────────────────────────────
+  const nextMinXP = lvlInfo.next ? xp - lvlInfo.progressXP + lvlInfo.neededXP : null;
+  const subLine = lvlInfo.next
+    ? `${(lvlInfo.neededXP - lvlInfo.progressXP).toLocaleString()} XP until you're ${withArticle(lvlInfo.next.title)}.`
+    : `Top level reached — you're ${withArticle(lvlInfo.current.title)}.`;
+
+  const ProStatus = isPro ? (
+    <button
+      type="button"
+      onClick={() => navigate("/pricing")}
+      className="ds-chip ds-chip-gold"
+      style={{ height: 36, padding: "0 12px", border: "1px solid var(--ds-gold-line)", cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.06em" }}
+      title="Manage subscription"
+    >
+      <Icon name="crown" size={16} />
+      {isCancelled ? "PRO (ending)" : "PRO"}
+    </button>
+  ) : (
+    <button type="button" onClick={() => navigate("/pricing")} className="ds-btn ds-btn-ghost" title="Judges · Spectators · Buzzer · Voting — ₹50/mo">
+      <Icon name="bolt" size={18} />Upgrade
+    </button>
+  );
+
+  const Header = (
+    <header style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+        <h1 className="ds-h1" style={isMobile ? { fontSize: 22 } : undefined}>
+          {greeting()}{user?.username ? `, ${user.username}` : ""}
+        </h1>
+        <p className="ds-sub">{subLine}</p>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        {ProStatus}
+        {!isMobile && (
+          <button type="button" onClick={() => navigate("/create-room")} className="ds-btn ds-btn-primary">
+            <Icon name="plus" size={18} />New room
+          </button>
+        )}
+      </div>
+    </header>
+  );
+
+  // ─── Platform stats strip ─────────────────────────────────────────────────
+  const PlatformStrip = (
+    <div aria-label="Platform activity" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: -8 }}>
+      <PlatformChip value={stats?.totalDebates ?? 0} label="debates hosted" />
+      {(stats?.activeRooms ?? 0) > 0 && <PlatformChip dot="green" value={stats!.activeRooms} label="rooms open" />}
+      {(stats?.liveDebates ?? 0) > 0 && <PlatformChip dot="red" value={stats!.liveDebates} label="live now" />}
+    </div>
+  );
+
+  // ─── Level card ───────────────────────────────────────────────────────────
+  const LevelCard = (
+    <div className="ds-card" style={{ padding: pad, display: "flex", flexDirection: "column", gap: 22, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <span
+          aria-hidden="true"
+          style={{
+            width: isMobile ? 60 : 72, height: isMobile ? 60 : 72, flexShrink: 0, borderRadius: 22,
+            background: "var(--ds-avatar-bg)", color: "var(--ds-avatar-fg)",
+            display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 22,
+          }}
+        >
+          {initials(user?.username)}
+        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <span className="ds-eyebrow">Level {lvlInfo.current.level}</span>
+          <span style={{ fontWeight: 800, fontSize: isMobile ? 24 : 30, letterSpacing: "-0.02em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {lvlInfo.current.title}
+          </span>
+        </div>
+        <button type="button" className="ds-link" onClick={() => navigate("/level-rewards")} style={{ marginLeft: "auto", fontSize: 14, whiteSpace: "nowrap" }}>
+          All levels
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13, color: "var(--ds-muted)" }}>
+          <span className="ds-mono" style={{ color: "var(--ds-text)", fontWeight: 600 }}>{xp.toLocaleString()} XP</span>
+          <span>{lvlInfo.next && nextMinXP !== null ? `${lvlInfo.next.title} at ${nextMinXP.toLocaleString()}` : "Max level"}</span>
+        </div>
+        <div
+          className="ds-track"
+          style={{ height: 12 }}
+          role="progressbar"
+          aria-label="Level progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={lvlInfo.progressPct}
+        >
+          <div style={{ width: `${lvlInfo.progressPct}%` }} />
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${isMobile ? 2 : 4}, minmax(0,1fr))`, gap: 12 }}>
+        <Stat label="Debates"  value={userStats.totalDebates} />
+        <Stat label="Wins"     value={userStats.debatesWon}  color="var(--ds-for-text)" />
+        <Stat label="Losses"   value={userStats.debatesLost} />
+        <Stat label="Win rate" value={winRate(userStats.debatesWon, userStats.totalDebates)} />
+      </div>
+    </div>
+  );
+
+  // ─── Judge credibility card ───────────────────────────────────────────────
+  const hasJudged = (judgeStats.totalSessions ?? 0) > 0;
+  const credScore = judgeStats.credibilityScore ?? 0.75;
+  const credBand  = judgeStats.credibilityBand ?? "moderate";
+  const markerPct = Math.max(0, Math.min(100, credScore * 100));
+
+  const JudgeCard = (
+    <button
+      type="button"
+      onClick={() => navigate("/judge-credibility")}
+      className="ds-card"
       style={{
-        padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem",
-        cursor: "pointer",
-        ...(isPro ? {
-          border: `1.5px solid ${ac.border.replace("0.4","0.45")}`,
-          boxShadow: ac.glow,
-          background: ac.bgCard,
-        } : {}),
+        padding: pad, display: "flex", flexDirection: "column", gap: 18, minWidth: 0,
+        textAlign: "left", cursor: "pointer", color: "var(--ds-text)", font: "inherit",
       }}
     >
-      {/* Pro crown banner */}
-      {isPro && (
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "-0.25rem" }}>
-          <span style={{ fontSize: "0.75rem" }}>👑</span>
-          <span style={{ fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-            Pro Member
-          </span>
-        </div>
-      )}
-
-      <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: "50%", flexShrink: 0,
-          background: isPro
-            ? (isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)")
-            : "var(--volt)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "1.3rem", fontWeight: 900, color: isPro ? "#fff" : "var(--on-volt)",
-          boxShadow: isPro
-            ? (isGlacier ? "0 4px 16px rgba(2,132,199,0.5)" : "0 4px 16px rgba(245,158,11,0.5)")
-            : "0 4px 16px rgba(var(--volt-rgb),0.35)",
-        }}>
-          {user?.username?.[0]?.toUpperCase() ?? "?"}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: "1rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {user?.username}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.15rem" }}>
-            <span style={{
-              fontFamily: "'JetBrains Mono', monospace", fontSize: "0.65rem", fontWeight: 900,
-              padding: "0.1rem 0.45rem", borderRadius: "9999px",
-              background: isPro
-                ? ac.bg
-                : (isDark ? "rgba(var(--blue-rgb),0.18)" : "rgba(var(--blue-rgb),0.1)"),
-              border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(var(--blue-rgb),0.35)",
-              color: isPro ? ac.dark : "var(--blue)",
-            }}>
-              Lv.{lvlInfo.current.level}
-            </span>
-            <span style={{ fontSize: "0.72rem", color: "var(--subtle)", fontWeight: 600 }}>
-              {lvlInfo.current.title}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* XP bar */}
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
-          <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            {lvlInfo.next ? `Progress to Lv.${lvlInfo.next.level}` : "Max Level"}
-          </span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.6rem", color: "var(--muted)" }}>
-            {lvlInfo.progressXP}{lvlInfo.next ? `/${lvlInfo.neededXP} XP` : " XP"}
-          </span>
-        </div>
-        <div style={{ height: 7, borderRadius: "9999px", background: isDark ? "rgba(255,255,255,0.12)" : "var(--border2)", overflow: "hidden" }}>
-          <div
-            style={{
-              height: "100%", borderRadius: "9999px", width: `${lvlInfo.progressPct}%`,
-              transition: "width 1.1s cubic-bezier(.4,0,.2,1)",
-            }}
-            className="xp-bar-fill"
-          />
-        </div>
-        <div style={{ fontSize: "0.58rem", color: "var(--muted)", marginTop: "0.2rem", textAlign: "right" }}>{xp} total XP</div>
-      </div>
-
-      <div style={{
-        display: "flex", gap: "0.5rem", padding: "0.75rem 0.5rem", borderRadius: "0.625rem",
-        background: isPro
-          ? (isGlacier ? "rgba(2,132,199,0.07)" : isDark ? "rgba(245,158,11,0.08)" : "rgba(245,158,11,0.04)")
-          : isDark ? "rgba(var(--blue-rgb),0.08)" : "rgba(var(--blue-rgb),0.03)",
-        border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(var(--blue-rgb),0.2)" : "var(--border)"}`,
-      }}>
-        <StatBox label="Won"   value={userStats.debatesWon}   color="var(--for)" />
-        <div style={{ width: 1, background: "var(--border)" }} />
-        <StatBox label="Lost"  value={userStats.debatesLost}  color="var(--against)" />
-        <div style={{ width: 1, background: "var(--border)" }} />
-        <StatBox label="Total" value={userStats.totalDebates} />
-        <div style={{ width: 1, background: "var(--border)" }} />
-        <StatBox label="Win %" value={winRate(userStats.debatesWon, userStats.totalDebates)} color="var(--cyan)" />
-      </div>
-    </div>
-  );
-
-  // ─── Judge Credibility Card ───────────────────────────────────────────────
-  const credPct   = Math.round((judgeStats.credibilityScore ?? 0.75) * 100);
-  const credBand  = judgeStats.credibilityBand ?? "moderate";
-  const credColor = credBand === "strong"   ? "#22c55e"
-                  : credBand === "moderate" ? "var(--blue)"
-                  :                           "#ef4444";
-  const credBg    = credBand === "strong"   ? "rgba(34,197,94,0.1)"
-                  : credBand === "moderate" ? "rgba(var(--blue-rgb),0.08)"
-                  :                           "rgba(239,68,68,0.08)";
-  const credBorder = credBand === "strong"  ? "rgba(34,197,94,0.3)"
-                  : credBand === "moderate" ? "rgba(var(--blue-rgb),0.25)"
-                  :                           "rgba(239,68,68,0.3)";
-  const credIcon   = credBand === "strong"  ? "⚖️"
-                  : credBand === "moderate" ? "📋"
-                  :                           "⚠️";
-
-  const JudgeCard = judgeStats.totalSessions > 0 ? (
-    <div className="glass fade-up" style={{ padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
-          <span style={{ fontSize: "0.95rem" }}>⚖️</span>
-          <span style={{ fontSize: "0.62rem", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--muted)" }}>Judge Credibility</span>
-        </div>
-        <span style={{ fontSize: "0.6rem", fontWeight: 800, padding: "0.12rem 0.5rem", borderRadius: "9999px", background: credBg, border: `1px solid ${credBorder}`, color: credColor, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-          {credIcon} {credBand}
+      <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, width: "100%" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 700, color: "var(--ds-text3)" }}>
+          <span style={{ color: "var(--ds-accent)", display: "inline-flex" }}><Icon name="scale" size={20} /></span>
+          Judge credibility
         </span>
-      </div>
-
-      {/* Score arc / bar */}
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
-          <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Credibility Score</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.75rem", fontWeight: 900, color: credColor }}>{credPct}%</span>
-        </div>
-        <div style={{ height: 8, borderRadius: "9999px", background: isDark ? "rgba(255,255,255,0.1)" : "var(--border2)", overflow: "hidden" }}>
-          <div style={{ height: "100%", borderRadius: "9999px", width: `${credPct}%`, background: `linear-gradient(90deg,${credColor},${credColor}cc)`, transition: "width 1.1s cubic-bezier(.4,0,.2,1)" }} />
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: "flex", gap: "0.5rem", padding: "0.625rem 0.5rem", borderRadius: "0.625rem", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.025)", border: "1px solid var(--border)" }}>
-        <StatBox label="Sessions"   value={judgeStats.totalSessions} />
-        <div style={{ width: 1, background: "var(--border)" }} />
-        <StatBox label="Score"      value={`${credPct}%`}           color={credColor} />
-        <div style={{ width: 1, background: "var(--border)" }} />
-        <StatBox label="Band"       value={credBand.charAt(0).toUpperCase() + credBand.slice(1)} color={credColor} />
-      </div>
-
-      {judgeStats.lastJudgedAt && (
-        <div style={{ fontSize: "0.58rem", color: "var(--muted)", textAlign: "right" }}>
-          Last judged: {new Date(judgeStats.lastJudgedAt).toLocaleDateString()}
-        </div>
-      )}
-    </div>
-  ) : (
-    <div className="glass fade-up" style={{ padding: "1rem 1.25rem", display: "flex", alignItems: "center", gap: "0.75rem", opacity: 0.72 }}>
-      <span style={{ fontSize: "1.25rem", flexShrink: 0 }}>⚖️</span>
-      <div>
-        <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "var(--text)", marginBottom: "0.15rem" }}>Judge Credibility</div>
-        <div style={{ fontSize: "0.62rem", color: "var(--muted)", lineHeight: 1.4 }}>Join a room as a judge to start building your credibility score.</div>
-      </div>
-    </div>
-  );
-
-  // ─── Leaderboard ──────────────────────────────────────────────────────────
-  const LeaderboardPanel = (
-    <div className="glass glass-interactive fade-up" style={{ padding: "1.125rem 1.25rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.875rem" }}>
-        <span>🏆</span>
-        <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>Top Debaters</span>
-      </div>
-      {leaderboard.length === 0 ? (
-        <div style={{ fontSize: "0.8rem", color: "var(--muted)", textAlign: "center", padding: "0.75rem 0" }}>No data yet — be the first!</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-          {leaderboard.slice(0, 3).map((entry, i) => {
-            const isMe    = entry.id === (user as any)?.id;
-            const isFirst = i === 0;
-            const lvl     = getLevelInfo(entry.xp);
-            const pal     = avatarPalette(entry.username);
-            return (
-              <div key={entry.id} style={{
-                display: "flex", alignItems: "center", gap: "0.55rem",
-                padding: isFirst ? "0.55rem 0.75rem" : "0.4rem 0.625rem",
-                borderRadius: "0.625rem",
-                background: isFirst
-                  ? (isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.12),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(217,119,6,0.06))")
-                  : isMe ? "rgba(var(--blue-rgb),0.07)" : "var(--surface)",
-                border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.38)" : "rgba(245,158,11,0.38)") : isMe ? "rgba(var(--blue-rgb),0.28)" : "var(--border)"}`,
-                boxShadow: isFirst ? (isGlacier ? "0 2px 12px rgba(2,132,199,0.14)" : "0 2px 12px rgba(245,158,11,0.14)") : "none",
-                transition: "background 0.2s",
-              }}>
-                <div style={{
-                  width: isFirst ? 28 : 24, height: isFirst ? 28 : 24, borderRadius: "50%", flexShrink: 0,
-                  background: pal.bg, border: `1.5px solid ${pal.border}`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: isFirst ? "0.72rem" : "0.62rem", fontWeight: 900, color: pal.color,
-                }}>
-                  {entry.username[0].toUpperCase()}
-                </div>
-                <span style={{ flex: 1, fontWeight: isFirst || isMe ? 800 : 600, fontSize: "0.82rem", color: isFirst ? (isGlacier ? "#0369a1" : "#92400e") : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {isFirst && "👑 "}{entry.username}{isMe && !isFirst ? " 👤" : ""}
-                </span>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.05rem", flexShrink: 0 }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.72rem", fontWeight: 800, color: isFirst ? (isGlacier ? "#0284c7" : "#d97706") : "var(--blue)" }}>
-                    {entry.xp} <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: "0.58rem" }}>XP</span>
-                  </span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.58rem", color: "var(--muted)" }}>Lv.{lvl.current.level}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  // ─── Social proof strip ───────────────────────────────────────────────────
-  const topDebater = leaderboard[0] ?? null;
-  const SocialStrip = (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem" }}>
-      <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-        <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--blue)", fontFamily: "'JetBrains Mono', monospace" }}>{(stats?.totalDebates ?? 0).toLocaleString()}</span>
-        <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>debates hosted</span>
-      </div>
-      {(stats?.activeRooms ?? 0) > 0 && (
-        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <div className="pulse-dot pulse-dot-green" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{stats?.activeRooms}</span>
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>rooms open</span>
-        </div>
-      )}
-      {(stats?.liveDebates ?? 0) > 0 && (
-        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <div className="pulse-dot pulse-dot-red" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: "0.76rem", fontWeight: 900, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{stats?.liveDebates}</span>
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>live now</span>
-        </div>
-      )}
-      {topDebater && (
-        <div className="glass" style={{ padding: "0.38rem 0.72rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <span style={{ fontSize: "0.74rem" }}>🥇</span>
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontWeight: 600 }}>Top debater:</span>
-          <span style={{ fontSize: "0.74rem", fontWeight: 800, color: "var(--blue)" }}>{topDebater.username}</span>
-          <span style={{ fontSize: "0.65rem", color: "var(--muted)", fontFamily: "'JetBrains Mono', monospace" }}>{topDebater.xp} XP</span>
-        </div>
-      )}
-    </div>
-  );
-
-  // ── Theme picker panel (shared between mobile + desktop) ─────────────────
-  const ThemePickerPanel = showThemePicker ? (
-    <>
-      <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setShowThemePicker(false)} />
-      <div style={{
-        position: "fixed", top: 52, right: 12, zIndex: 200,
-        background: "var(--menu-bg)", border: "1px solid var(--border)",
-        borderRadius: "0.875rem", padding: "0.4rem",
-        boxShadow: "0 12px 40px rgba(0,0,0,0.14)",
-        display: "flex", flexDirection: "column", gap: "0.2rem", minWidth: 175,
-      }}>
-        <div style={{ fontSize: "0.56rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", padding: "0.2rem 0.5rem 0.3rem" }}>Theme</div>
-        {THEMES.map(t => {
-          const active = theme === t.id;
-          return (
-            <button key={t.id}
-              onClick={() => { setTheme(t.id); setShowThemePicker(false); }}
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.55rem", borderRadius: "0.55rem", border: "none", cursor: "pointer", textAlign: "left", width: "100%", background: active ? "var(--accent-soft)" : "transparent", fontFamily: "inherit", color: "var(--text)" }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-              onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-            >
-              <span style={{ fontSize: "0.95rem", lineHeight: 1, flexShrink: 0 }}>{t.icon}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "0.75rem", fontWeight: active ? 800 : 600, color: active ? "var(--accent-soft-text)" : "var(--text)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                  {t.label}
-                </div>
-                <div style={{ fontSize: "0.6rem", color: "var(--muted)", marginTop: "0.04rem" }}>{t.desc}</div>
-              </div>
-              {active ? <span style={{ color: "var(--accent-soft-text)", flexShrink: 0 }}><Icon name="check" size={14} /></span> : null}
-            </button>
-          );
-        })}
-      </div>
-    </>
-  ) : null;
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // ── MOBILE LAYOUT (no scroll, bottom nav) ─────────────────────────────────
-  // ══════════════════════════════════════════════════════════════════════════
-  if (isMobile) {
-    const totalDebates = stats?.totalDebates ?? 0;
-
-    // Compact player summary used in Profile tab
-    const MobilePlayerCard = (
-      <div className="glass" onClick={() => navigate("/level-rewards")} style={{
-        padding: "1rem 1.125rem", cursor: "pointer",
-        ...(isPro ? { border: `1.5px solid ${ac.border}`, boxShadow: ac.glow, background: ac.bgCard } : {}),
-      }}>
-        {isPro && (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.7rem" }}>👑</span>
-            <span style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Pro Member</span>
-          </div>
+        {hasJudged && (
+          <span className={`ds-chip ${BAND_CHIP[credBand] ?? "ds-chip-neutral"}`} style={{ textTransform: "capitalize" }}>{credBand}</span>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", flexShrink: 0, background: isPro ? (isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)") : "var(--volt)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", fontWeight: 900, color: isPro ? "#fff" : "var(--on-volt)", boxShadow: isPro ? (isGlacier ? "0 3px 12px rgba(2,132,199,0.45)" : "0 3px 12px rgba(245,158,11,0.45)") : "0 3px 12px rgba(var(--volt-rgb),0.35)" }}>
-            {user?.username?.[0]?.toUpperCase() ?? "?"}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.username}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginTop: "0.12rem" }}>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.62rem", fontWeight: 900, padding: "0.08rem 0.4rem", borderRadius: "9999px", background: isPro ? ac.bg : "rgba(var(--blue-rgb),0.1)", border: isPro ? `1px solid ${ac.border}` : "1px solid rgba(var(--blue-rgb),0.3)", color: isPro ? ac.dark : "var(--blue)" }}>Lv.{lvlInfo.current.level}</span>
-              <span style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 600 }}>{lvlInfo.current.title}</span>
-            </div>
-          </div>
-        </div>
-        {/* XP bar */}
-        <div style={{ marginBottom: "0.75rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-            <span style={{ fontSize: "0.56rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{lvlInfo.next ? `To Lv.${lvlInfo.next.level}` : "Max Level"}</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.56rem", color: "var(--muted)" }}>{lvlInfo.progressXP}{lvlInfo.next ? `/${lvlInfo.neededXP} XP` : " XP"}</span>
-          </div>
-          <div style={{ height: 6, borderRadius: "9999px", background: isDark ? "rgba(255,255,255,0.1)" : "var(--border2)", overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: "9999px", width: `${lvlInfo.progressPct}%`, transition: "width 1.1s cubic-bezier(.4,0,.2,1)" }} className="xp-bar-fill" />
-          </div>
-          <div style={{ fontSize: "0.54rem", color: "var(--muted)", marginTop: "0.15rem", textAlign: "right" }}>{xp} total XP</div>
-        </div>
-        {/* Stats */}
-        <div style={{ display: "flex", gap: "0.4rem", padding: "0.625rem 0.4rem", borderRadius: "0.5rem", background: isPro ? (isGlacier ? "rgba(2,132,199,0.06)" : isDark ? "rgba(245,158,11,0.07)" : "rgba(245,158,11,0.03)") : isDark ? "rgba(var(--blue-rgb),0.07)" : "rgba(var(--blue-rgb),0.03)", border: `1px solid ${isPro ? ac.border2 : isDark ? "rgba(var(--blue-rgb),0.18)" : "var(--border)"}` }}>
-          <StatBox label="Won"   value={userStats.debatesWon}   color="var(--for)" />
-          <div style={{ width: 1, background: "var(--border)" }} />
-          <StatBox label="Lost"  value={userStats.debatesLost}  color="var(--against)" />
-          <div style={{ width: 1, background: "var(--border)" }} />
-          <StatBox label="Total" value={userStats.totalDebates} />
-          <div style={{ width: 1, background: "var(--border)" }} />
-          <StatBox label="Win %" value={winRate(userStats.debatesWon, userStats.totalDebates)} color="var(--cyan)" />
-        </div>
+      </span>
+
+      <span style={{ fontWeight: 800, fontSize: 56, letterSpacing: "-0.03em", lineHeight: 1, color: hasJudged ? "var(--ds-text)" : "var(--ds-faint)" }}>
+        {hasJudged ? credScore.toFixed(2) : "—"}
+      </span>
+
+      <span
+        aria-hidden="true"
+        style={{
+          position: "relative", display: "block", width: "100%", height: 10, borderRadius: 99,
+          background: "linear-gradient(90deg, var(--ds-against-mid) 0, var(--ds-against-mid) 45%, var(--ds-mid) 45%, var(--ds-mid) 75%, var(--ds-for-mid) 75%, var(--ds-for-mid) 100%)",
+          opacity: hasJudged ? 1 : 0.45,
+        }}
+      >
+        {hasJudged && (
+          <span style={{ position: "absolute", left: `calc(${markerPct}% - 2px)`, top: -5, width: 4, height: 20, borderRadius: 2, background: "var(--ds-text)" }} />
+        )}
+      </span>
+
+      <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ fontSize: 14, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+          {hasJudged
+            ? `Based on ${judgeStats.totalSessions} judged debate${judgeStats.totalSessions === 1 ? "" : "s"}. ${BAND_COPY[credBand] ?? ""}`
+            : "Join a room as a judge to start building your credibility score."}
+        </span>
+        {hasJudged && judgeStats.lastJudgedAt && (
+          <span style={{ fontSize: 12, color: "var(--ds-faint)" }}>
+            Last judged: {new Date(judgeStats.lastJudgedAt).toLocaleDateString()}
+          </span>
+        )}
+      </span>
+
+      <span style={{ marginTop: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700, color: "var(--ds-link)" }}>
+        {hasJudged ? "See pillar breakdown" : "How credibility works"}
+        <Icon name="right" size={16} />
+      </span>
+    </button>
+  );
+
+  // ─── Create / join tiles ──────────────────────────────────────────────────
+  const canJoin = code.length === 6;
+  const CreateTile = (
+    <button
+      type="button"
+      onClick={() => navigate("/create-room")}
+      style={{
+        minHeight: 180, boxSizing: "border-box", padding: pad, borderRadius: 24, border: 0, cursor: "pointer",
+        background: "var(--ds-primary-fill)", color: "var(--ds-on-primary)", boxShadow: "var(--ds-primary-shadow)",
+        display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "flex-start", gap: 20,
+        textAlign: "left", font: "inherit",
+      }}
+    >
+      <span style={{ width: 48, height: 48, borderRadius: 14, background: "color-mix(in srgb, var(--ds-on-primary) 14%, transparent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon name="plus" size={24} />
+      </span>
+      <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em" }}>Create a room</span>
+        <span style={{ fontSize: 15, fontWeight: 500, opacity: 0.9 }}>Set the motion, pick Alternate or Buzzer, invite with a code.</span>
+      </span>
+    </button>
+  );
+
+  const JoinTile = (
+    <div className="ds-card" style={{ padding: pad, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 20, minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em" }}>Join with a code</span>
+        <span style={{ fontSize: 15, color: "var(--ds-muted)" }}>Six characters, shared by the host.</span>
       </div>
-    );
+      <form
+        style={{ display: "flex", gap: 10 }}
+        onSubmit={e => {
+          e.preventDefault();
+          if (canJoin) navigate("/join-room", { state: { code } });
+        }}
+      >
+        <label htmlFor="home-code" className="sr-only">Room code</label>
+        <input
+          id="home-code"
+          className="ds-input"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={6}
+          placeholder="K7Q2XM"
+          value={code}
+          onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+          style={{ flex: 1, minWidth: 0, width: "auto", font: "600 20px 'JetBrains Mono', monospace", letterSpacing: "0.2em", textTransform: "uppercase" }}
+        />
+        <button
+          type="submit"
+          className="ds-btn"
+          disabled={!canJoin}
+          style={{ height: 52, background: "var(--ds-text)", color: "var(--ds-panel)", flexShrink: 0 }}
+        >
+          Join
+        </button>
+      </form>
+    </div>
+  );
 
-    return (
-      <div style={{ height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", position: "relative" }}>
-        {/* Background layers */}
-        <div style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", background: isPro ? "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(245,158,11,0.07) 0%,transparent 60%)" : "radial-gradient(ellipse 70% 60% at 15% 0%,rgba(var(--volt-rgb),0.08) 0%,transparent 60%)" }} />
-        <div className="bg-grid" style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />
-
-        {/* ── TOP NAV ── */}
-        <nav style={{ position: "relative", zIndex: 10, flexShrink: 0, height: 56, padding: "0 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--hair)", background: "var(--surface)" }}>
-          <NavLogo isPro={isPro} isGlacier={isGlacier} />
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            {isPro && (
-              <div style={{ padding: "0.15rem 0.5rem", borderRadius: "9999px", background: ac.bg, border: `1px solid ${ac.border}`, display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                <span style={{ fontSize: "0.6rem" }}>👑</span>
-                <span style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.06em", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>PRO</span>
-              </div>
-            )}
-            {!isPro && (
-              <button onClick={() => navigate("/pricing")} className="btn-primary" style={{ padding: "0.25rem 0.6rem", fontSize: "0.68rem", fontWeight: 800 }}>⚡ Upgrade</button>
-            )}
-            <button onClick={() => setShowThemePicker(p => !p)} className="btn-ghost" title="Theme" style={{ padding: "0.28rem 0.45rem", fontSize: "0.82rem", lineHeight: 1 }}>
-              {themeMeta.icon}
-            </button>
-          </div>
-        </nav>
-
-        {/* ── CONTENT AREA ── */}
-        <div style={{ flex: 1, minHeight: 0, position: "relative", zIndex: 1, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
-
-          {/* ─── HOME TAB ─── */}
-          {activeTab === "home" && (
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "1rem 1rem", gap: "0.7rem", overflow: "hidden", justifyContent: "center" }}>
-
-              {/* ── HERO BLOCK ── badge + heading + description together */}
-              <div>
-                {isPro ? (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", marginBottom: "0.55rem", padding: "0.18rem 0.625rem", borderRadius: "9999px", background: isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.14),rgba(14,165,233,0.07))" : "linear-gradient(135deg,rgba(245,158,11,0.14),rgba(251,191,36,0.07))", border: `1px solid ${ac.border}` }}>
-                    <span style={{ fontSize: "0.68rem" }}>👑</span>
-                    <span style={{ fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Pro — Live Debate Platform</span>
-                  </div>
-                ) : (
-                  <div className="badge badge-cyan" style={{ marginBottom: "0.55rem", fontSize: "0.6rem" }}>⚡ Live Debate Platform</div>
-                )}
-                <h1 style={{ fontSize: "2.4rem", fontWeight: 900, lineHeight: 1.06, letterSpacing: "-0.03em", margin: "0 0 0.5rem", color: "var(--text)" }}>
-                  {isGlacier ? (
-                    <><span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argue smarter.</span><br /><span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8,#bae6fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Win the room.</span></>
-                  ) : isPro ? (
-                    <><span style={{ backgroundImage: ac.grad135, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argue smarter.</span><br /><span className="brand-highlight">Win the room.</span></>
-                  ) : (
-                    <>Argue smarter.<br /><span className="brand-highlight">Win the room.</span></>
+  // ─── Recent debates ───────────────────────────────────────────────────────
+  const recent = (history ?? []).slice(0, 4);
+  const RecentCard = (
+    <div className="ds-card" style={{ padding: pad, display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+      <SectionHead title="Recent debates" link="View all" onLink={() => navigate("/history")} />
+      {history === null ? (
+        <p className="ds-sub" style={{ fontSize: 14 }}>Loading your debates…</p>
+      ) : recent.length === 0 ? (
+        <p className="ds-sub" style={{ fontSize: 14, lineHeight: 1.5 }}>
+          No debates yet — create or join a room and your results will show up here.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {recent.map(d => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => navigate(`/room/${d.roomCode}/analysis/${d.id}`)}
+              className="ds-raised"
+              style={{
+                padding: "14px 16px", border: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "var(--ds-text)",
+                display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", gap: 12,
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.4 }}>{d.topic}</span>
+                <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ds-muted)" }}>
+                  {d.side && (
+                    <span className={`ds-chip ${d.side === "for" ? "ds-chip-for" : "ds-chip-against"}`} style={{ height: 22, padding: "0 8px", borderRadius: 6, letterSpacing: "0.08em" }}>
+                      {d.side === "for" ? "FOR" : "AGAINST"}
+                    </span>
                   )}
-                </h1>
-                <p style={{ margin: 0, color: "var(--subtle)", fontSize: "0.82rem", lineHeight: 1.6 }}>
-                  Real-time structured debates. AI judging. Live transcription.<br />
-                  Compete against others or sharpen your rhetoric.
-                </p>
-              </div>
-
-              {/* Live stats pills */}
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                <div className="glass" style={{ padding: "0.28rem 0.55rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.28rem" }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 900, color: "var(--blue)" }}>{totalDebates.toLocaleString()}</span>
-                  <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>debates</span>
-                </div>
-                <div className="glass" style={{ padding: "0.28rem 0.55rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.28rem" }}>
-                  <div className="pulse-dot pulse-dot-green" style={{ flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 900, color: "var(--text)" }}>{stats?.activeRooms ?? 0}</span>
-                  <span style={{ fontSize: "0.62rem", color: "var(--muted)", fontWeight: 600 }}>rooms open</span>
-                </div>
-                {(stats?.liveDebates ?? 0) > 0 && (
-                  <div className="glass" style={{ padding: "0.28rem 0.55rem", borderRadius: "9999px", display: "flex", alignItems: "center", gap: "0.28rem" }}>
-                    <div className="pulse-dot pulse-dot-red" style={{ flexShrink: 0 }} />
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 900, color: "var(--against)" }}>{stats?.liveDebates} live</span>
-                  </div>
+                  <span>{d.mode === "buzzer" ? "Buzzer" : "Alternate"}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{relativeDay(d.endedAt)}</span>
+                </span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+                {d.isWinner !== null && (
+                  <span style={{ fontSize: 13, fontWeight: 700, color: d.isWinner ? "var(--ds-for-text)" : "var(--ds-muted)" }}>
+                    {d.isWinner ? "Won" : "Lost"}
+                  </span>
                 )}
-              </div>
-
-              {/* CTA buttons */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem" }}>
-                <button onClick={() => navigate("/create-room")} className="btn-primary" style={{ padding: "0.825rem", fontSize: "0.95rem", fontWeight: 800, width: "100%" }}>
-                  ⚔️ Create Room
-                </button>
-                <button onClick={() => navigate("/join-room")} className="btn-for" style={{ padding: "0.825rem", fontSize: "0.95rem", fontWeight: 800, width: "100%" }}>
-                  🎯 Join Room
-                </button>
-              </div>
-
-              {/* Upgrade teaser (non-Pro) */}
-              {!isPro && (
-                <div onClick={() => navigate("/pricing")} style={{ display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.55rem 0.875rem", borderRadius: "0.75rem", cursor: "pointer", background: isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.07),rgba(14,165,233,0.03))" : "linear-gradient(135deg,rgba(245,158,11,0.07),rgba(251,191,36,0.03))", border: `1px solid ${ac.border.replace("0.4","0.28")}` }}>
-                  <span style={{ fontSize: "0.95rem", flexShrink: 0 }}>⚡</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "0.7rem", fontWeight: 800, backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Argumint Pro</div>
-                    <div style={{ fontSize: "0.58rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Judges · Spectators · Buzzer · Voting — ₹50/mo</div>
-                  </div>
-                  <span style={{ fontSize: "0.65rem", fontWeight: 700, color: ac.dark, flexShrink: 0 }}>→</span>
-                </div>
-              )}
-
-              {/* Feature cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                {([
-                  { icon: "🤖", title: "AI Judging",         desc: "GPT-4 scores every argument on rhetoric, clarity and evidence in real time." },
-                  { icon: "🎤", title: "Live Transcription", desc: "Whisper-powered voice-to-text so you can speak your arguments, hands-free." },
-                  { icon: "🏆", title: "Ranked Play",        desc: "Climb the leaderboard, earn XP and unlock titles with every debate you win." },
-                ] as { icon: string; title: string; desc: string }[]).map(({ icon, title, desc }) => (
-                  <div key={title} className="glass" style={{ display: "flex", alignItems: "center", gap: "0.65rem", padding: "0.5rem 0.75rem", borderRadius: "0.75rem" }}>
-                    <span style={{ fontSize: "1.1rem", flexShrink: 0, lineHeight: 1 }}>{icon}</span>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "var(--text)", marginBottom: "0.08rem" }}>{title}</div>
-                      <div style={{ fontSize: "0.6rem", color: "var(--muted)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{desc}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ─── PROFILE TAB ─── */}
-          {activeTab === "profile" && (
-            <div style={{ height: "100%", overflowY: "auto", padding: "0.875rem 1rem" }}>
-              {MobilePlayerCard}
-              <div style={{ marginTop: "0.75rem" }}>{JudgeCard}</div>
-              <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                {/* Dev tools */}
-                {isDev && (
-                  <div className="glass" style={{ padding: "0.625rem 0.875rem", borderRadius: "0.75rem" }}>
-                    <div style={{ fontSize: "0.55rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: "0.4rem" }}>Dev Previews</div>
-                    <div style={{ display: "flex", gap: "0.4rem" }}>
-                      {([["🧪", "/room/PREVIEW/result/preview", "Result"], ["🎙", "/room/PREVIEW/debate/preview", "Alternate"], ["🔔", "/room/PREVIEW/debate/preview-buzzer", "Buzzer"]] as [string, string, string][]).map(([icon, path, label]) => (
-                        <button key={path} onClick={() => navigate(path)} className="btn-ghost" style={{ flex: 1, padding: "0.4rem 0.25rem", fontSize: "0.7rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.1rem" }}>
-                          <span>{icon}</span>
-                          <span style={{ fontSize: "0.52rem" }}>{label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                {d.points !== null && (
+                  <span className="ds-mono" style={{ fontWeight: 600, fontSize: 15 }} title="Your score">{d.points}</span>
                 )}
-                {/* Logout */}
-                <button onClick={handleLogout} disabled={loggingOut} className="btn-danger" style={{ width: "100%", padding: "0.75rem", fontSize: "0.88rem", fontWeight: 700 }}>
-                  {loggingOut ? "…" : "Sign out"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ─── LEADERBOARD TAB ─── */}
-          {activeTab === "leaderboard" && (
-            <div style={{ height: "100%", overflowY: "auto", padding: "0.875rem 1rem" }}>
-              <div className="glass" style={{ padding: "1rem 1.125rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.875rem" }}>
-                  <span>🏆</span>
-                  <span style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--blue)" }}>Top Debaters</span>
-                </div>
-                {leaderboard.length === 0 ? (
-                  <div style={{ fontSize: "0.8rem", color: "var(--muted)", textAlign: "center", padding: "0.75rem 0" }}>No data yet — be the first!</div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                    {leaderboard.map((entry, i) => {
-                      const isMe = entry.id === (user as any)?.id;
-                      const isFirst = i === 0;
-                      const lvl = getLevelInfo(entry.xp);
-                      const pal = avatarPalette(entry.username);
-                      return (
-                        <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: isFirst ? "0.5rem 0.7rem" : "0.375rem 0.6rem", borderRadius: "0.6rem", background: isFirst ? (isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.12),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(217,119,6,0.06))") : isMe ? "rgba(var(--blue-rgb),0.07)" : "var(--surface)", border: `1px solid ${isFirst ? (isGlacier ? "rgba(2,132,199,0.35)" : "rgba(245,158,11,0.35)") : isMe ? "rgba(var(--blue-rgb),0.25)" : "var(--border)"}` }}>
-                          <div style={{ width: isFirst ? 28 : 24, height: isFirst ? 28 : 24, borderRadius: "50%", flexShrink: 0, background: pal.bg, border: `1.5px solid ${pal.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isFirst ? "0.7rem" : "0.6rem", fontWeight: 900, color: pal.color }}>
-                            {entry.username[0].toUpperCase()}
-                          </div>
-                          <span style={{ flex: 1, fontWeight: isFirst || isMe ? 800 : 600, fontSize: "0.82rem", color: isFirst ? (isGlacier ? "#0369a1" : "#92400e") : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {isFirst && "👑 "}{entry.username}{isMe && !isFirst ? " 👤" : ""}
-                          </span>
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.7rem", fontWeight: 800, color: isFirst ? (isGlacier ? "#0284c7" : "#d97706") : "var(--blue)" }}>{entry.xp} <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: "0.55rem" }}>XP</span></span>
-                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "0.55rem", color: "var(--muted)" }}>Lv.{lvl.current.level}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+              </span>
+            </button>
+          ))}
         </div>
+      )}
+    </div>
+  );
 
-        {/* ── BOTTOM NAV ── */}
-        <nav aria-label="Main" className="app-tabbar">
-          {([
-            { id: "home",        icon: "home",   label: "Home" },
-            { id: "leaderboard", icon: "trophy", label: "Rank" },
-            { id: "profile",     icon: "user",   label: "Me"   },
-          ] as { id: string; icon: IconName; label: string }[]).map(({ id, icon, label }) => {
-            const isActive = activeTab === id;
+  // ─── Top debaters ─────────────────────────────────────────────────────────
+  const myIndex = myId ? leaderboard.findIndex(e => e.id === myId) : -1;
+  const topRows = leaderboard.slice(0, 4).map((e, i) => ({ entry: e, rank: String(i + 1) }));
+  if (user && leaderboard.length > 0 && (myIndex === -1 || myIndex >= 4)) {
+    topRows.push(myIndex >= 4
+      ? { entry: leaderboard[myIndex], rank: String(myIndex + 1) }
+      // Not in the fetched top list — show the user's own row without a rank
+      : { entry: { id: myId ?? "me", username: user.username, xp, debatesWon: userStats.debatesWon, totalDebates: userStats.totalDebates }, rank: "—" });
+  }
+
+  const TopCard = (
+    <div className="ds-card" style={{ padding: pad, display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+      <SectionHead title="Top debaters" link="Leaderboard" onLink={() => navigate("/leaderboard")} />
+      {leaderboard.length === 0 ? (
+        <p className="ds-sub" style={{ fontSize: 14 }}>No data yet — be the first!</p>
+      ) : (
+        <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+          {topRows.map(({ entry, rank }) => {
+            const isMe = (!!myId && entry.id === myId) || rank === "—";
+            const lvl  = getLevelInfo(entry.xp);
             return (
-              <button
-                key={id}
-                onClick={() => setActiveTab(id as "home" | "leaderboard" | "profile")}
-                aria-current={isActive ? "page" : undefined}
-                className={`app-tabbar-item${isActive ? " is-active" : ""}`}
+              <li
+                key={entry.id}
+                aria-current={isMe ? "true" : undefined}
+                style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 52, padding: "0 10px", borderRadius: 12, background: isMe ? "var(--ds-accent-soft)" : "transparent" }}
               >
-                <Icon name={icon} size={20} />
-                <span>{label}</span>
-              </button>
+                <span className="ds-mono" style={{ width: 22, fontWeight: 600, color: "var(--ds-muted)", flexShrink: 0 }}>{rank}</span>
+                <span className="ds-avatar" style={{ width: 34, height: 34, fontSize: 12, background: "var(--ds-raised)", border: "1px solid var(--ds-border)", color: "var(--ds-text)" }}>
+                  {initials(entry.username)}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {entry.username}{isMe ? " (you)" : ""}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>Lv {lvl.current.level} · {lvl.current.title}</span>
+                </span>
+                <span className="ds-mono" style={{ fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{entry.xp.toLocaleString()}</span>
+              </li>
             );
           })}
-        </nav>
-
-        {/* Theme picker dropdown */}
-        {ThemePickerPanel}
-
-        {/* Pro welcome modal */}
-        {showProWelcome && userId && <ProWelcomeModal userId={userId} onClose={() => setShowProWelcome(false)} />}
-      </div>
-    );
-  }
-  // ── END MOBILE ─────────────────────────────────────────────────────────────
+        </ol>
+      )}
+    </div>
+  );
 
   return (
-    <div className="app-shell" style={{ height: "100vh", display: "flex", background: "var(--bg)", position: "relative" }}>
-      {/* Clean gradient bg — golden tint for Pro */}
-      <div style={{
-        position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
-        background: isPro
-          ? "radial-gradient(ellipse 70% 60% at 15% 0%, rgba(245,158,11,0.07) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 90% 100%, rgba(251,191,36,0.05) 0%, transparent 55%)"
-          : "radial-gradient(ellipse 70% 60% at 15% 0%, rgba(var(--volt-rgb),0.08) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 90% 100%, rgba(var(--volt-rgb),0.05) 0%, transparent 55%)",
-      }} />
-      {/* Soft grid */}
-      <div className="bg-grid" style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />
+    <AppShell active="home">
+      <div className="ds-page" style={isMobile ? { gap: 20 } : undefined}>
+        {Header}
+        {PlatformStrip}
 
-      {/* ── SIDEBAR ── */}
-      <aside className="app-sidebar">
-        <div className="app-sidebar-logo">
-          <NavLogo isPro={isPro} isGlacier={isGlacier} />
-        </div>
-        <nav aria-label="Main" className="app-sidebar-links">
-          {SIDEBAR_LINKS.map(link => {
-            const active = link.id === "home";
-            return (
-              <button
-                key={link.id}
-                onClick={() => { if (link.path) navigate(link.path); }}
-                aria-current={active ? "page" : undefined}
-                title={link.label}
-                className={`app-sidebar-link${active ? " is-active" : ""}`}
-              >
-                <Icon name={link.icon} />
-                <span className="app-sidebar-label">{link.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-        <div className="app-sidebar-foot">
-          {!isPro && (
-            <button onClick={() => navigate("/pricing")} className="app-sidebar-pro">
-              <span className="app-sidebar-pro-title"><Icon name="bolt" size={16} />GO PRO</span>
-              <span className="app-sidebar-pro-copy">Judges · Spectators · Buzzer · Voting — ₹50/mo</span>
-            </button>
-          )}
-          <div className="app-sidebar-user">
-            <span className="app-sidebar-avatar" style={isPro ? { background: isGlacier ? "linear-gradient(135deg,#0284c7,#0369a1)" : "linear-gradient(135deg,#f59e0b,#d97706)", color: "#fff" } : undefined}>
-              {user?.username?.[0]?.toUpperCase() ?? "?"}
-            </span>
-            <div className="app-sidebar-user-text">
-              <span className="app-sidebar-user-name">{user?.username}</span>
-              <span className="app-sidebar-user-meta">Lv.{lvlInfo.current.level} · {lvlInfo.current.title}</span>
-            </div>
-            <button onClick={handleLogout} disabled={loggingOut} className="app-sidebar-logout" title="Logout">
-              <Icon name="logout" />
-              <span className="sr-only">{loggingOut ? "…" : "Logout"}</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+        <section style={{ display: "grid", gridTemplateColumns: twoCol("minmax(0,2fr) minmax(0,1fr)"), gap: 20 }}>
+          {LevelCard}
+          {JudgeCard}
+        </section>
 
-      <div className="app-main-col">
-      {/* ── TOP BAR ── */}
-      <header className="app-topbar">
-        <div className="app-topbar-title">
-          Welcome back{user?.username ? "," : ""} <strong>{user?.username}</strong>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          {(stats?.liveDebates ?? 0) > 0 && (
-            <div className="nav-chip" style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.22rem 0.6rem", borderRadius: "9999px", background: "rgba(var(--against-rgb),0.08)", border: "1px solid rgba(var(--against-rgb),0.22)" }}>
-              <div className="pulse-dot pulse-dot-red" />
-              <span style={{ fontSize: "0.67rem", fontWeight: 700, color: "var(--against)" }}>{stats?.liveDebates} LIVE</span>
-            </div>
-          )}
-          {isPro && isCancelled ? (
-            <div
-              onClick={() => navigate("/pricing")}
-              style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.28rem 0.65rem", borderRadius: "9999px", background: ac.bg, border: `1px solid ${ac.border}` }}
-            >
-              <span style={{ fontSize: "0.7rem" }}>⏳</span>
-              <span style={{ fontSize: "0.68rem", fontWeight: 800, color: ac.color, letterSpacing: "0.04em" }}>PRO (ending)</span>
-            </div>
-          ) : isPro ? (
-            <div
-              onClick={() => navigate("/pricing")}
-              style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.28rem 0.7rem", borderRadius: "9999px", background: isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.18),rgba(14,165,233,0.1))" : "linear-gradient(135deg,rgba(245,158,11,0.18),rgba(251,191,36,0.1))", border: `1px solid ${ac.border.replace("0.4","0.5")}`, boxShadow: `0 0 10px ${ac.shadow}` }}
-            >
-              <span style={{ fontSize: "0.72rem" }}>👑</span>
-              <span style={{ fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.06em", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>PRO</span>
-            </div>
-          ) : (
-            <button onClick={() => navigate("/pricing")} className="btn-primary" style={{ padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontWeight: 800 }}>
-              ⚡ Upgrade
-            </button>
-          )}
-          {/* Theme picker */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowThemePicker(p => !p)}
-              className="btn-ghost"
-              title="Change theme"
-              style={{ padding: "0.35rem 0.6rem", fontSize: "0.88rem", lineHeight: 1, display: "flex", alignItems: "center", gap: "0.25rem" }}
-            >
-              <span>{themeMeta.icon}</span>
-              {!isMobile && <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "var(--muted)", letterSpacing: "0.04em" }}>{themeMeta.label}</span>}
-            </button>
-            {showThemePicker && (
-              <>
-                {/* Backdrop to close */}
-                <div
-                  style={{ position: "fixed", inset: 0, zIndex: 99 }}
-                  onClick={() => setShowThemePicker(false)}
-                />
-                <div style={{
-                  position: "absolute", top: "calc(100% + 0.5rem)", right: 0, zIndex: 200,
-                  /* Always solid — never transparent regardless of theme */
-                  background: "var(--menu-bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "0.875rem", padding: "0.4rem",
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
-                  display: "flex", flexDirection: "column", gap: "0.2rem", minWidth: 180,
-                }}>
-                  <div style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", padding: "0.2rem 0.5rem 0.35rem" }}>
-                    Theme
-                  </div>
-                  {THEMES.map(t => {
-                    const active = theme === t.id;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          setTheme(t.id); setShowThemePicker(false);
-                        }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "0.55rem",
-                          padding: "0.45rem 0.6rem", borderRadius: "0.6rem",
-                          border: "none", cursor: "pointer", textAlign: "left", width: "100%",
-                          background: active ? "var(--accent-soft)" : "transparent",
-                          transition: "background 0.15s",
-                          fontFamily: "inherit",
-                          color: "var(--text)",
-                        }}
-                        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--surface2)"; }}
-                        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                      >
-                        <span style={{ fontSize: "1rem", lineHeight: 1, flexShrink: 0 }}>{t.icon}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: "0.78rem", fontWeight: active ? 800 : 600, color: active ? "var(--accent-soft-text)" : "var(--text)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                            {t.label}
-                          </div>
-                          <div style={{ fontSize: "0.62rem", color: "var(--muted)", marginTop: "0.05rem" }}>{t.desc}</div>
-                        </div>
-                        {active ? <span style={{ color: "var(--accent-soft-text)", flexShrink: 0 }}><Icon name="check" size={15} /></span> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-          {isDev && (
-            <>
-              <button
-                onClick={() => navigate("/room/PREVIEW/result/preview")}
-                className="btn-ghost"
-                title="Preview result page"
-                style={{ padding: "0.35rem 0.6rem", fontSize: "0.75rem" }}
-              >
-                🧪
-              </button>
-              <button
-                onClick={() => navigate("/room/PREVIEW/debate/preview")}
-                className="btn-ghost"
-                title="Preview debate arena (alternate mode)"
-                style={{ padding: "0.35rem 0.6rem", fontSize: "0.75rem" }}
-              >
-                🎙
-              </button>
-              <button
-                onClick={() => navigate("/room/PREVIEW/debate/preview-buzzer")}
-                className="btn-ghost"
-                title="Preview debate arena (buzzer mode)"
-                style={{ padding: "0.35rem 0.6rem", fontSize: "0.75rem" }}
-              >
-                🔔
-              </button>
-            </>
-          )}
-        </div>
-      </header>
+        <section style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "repeat(2, minmax(0,1fr))", gap: 20 }}>
+          {CreateTile}
+          {JoinTile}
+        </section>
 
-      {/* ── MAIN ── */}
-      <main style={{
-        position: "relative", zIndex: 1, flex: 1,
-        display: "flex", flexDirection: "column",
-        padding: isMobile ? "1.25rem 1rem 2rem" : "1.5rem 2rem",
-      }}>
-        {isMobile && <div style={{ marginBottom: "1.25rem" }}>{PlayerCard}</div>}
-
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0,1fr) 300px", gap: "1.5rem", alignItems: "start" }}>
-
-          {/* ── LEFT ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-
-            {/* Hero */}
-            <div className="fade-up">
-              {isPro ? (
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.875rem", padding: "0.25rem 0.75rem", borderRadius: "9999px", background: isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.15),rgba(14,165,233,0.08))" : "linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.08))", border: `1px solid ${ac.border}` }}>
-                  <span style={{ fontSize: "0.72rem" }}>👑</span>
-                  <span style={{ fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Pro — Live Debate Platform</span>
-                </div>
-              ) : (
-                <div className="badge badge-cyan" style={{ marginBottom: "0.875rem", fontSize: "0.68rem" }}>⚡ Live Debate Platform</div>
-              )}
-              <h1 style={{
-                fontSize: isMobile ? "2.25rem" : "clamp(2.25rem,5vw,3.75rem)",
-                fontWeight: 900, lineHeight: 1.06, letterSpacing: "-0.03em",
-                margin: "0 0 0.75rem", color: "var(--text)",
-              }}>
-                {isGlacier ? (
-                  <span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-                    Argue smarter.
-                  </span>
-                ) : isPro ? (
-                  <span style={{ backgroundImage: ac.grad135, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-                    Argue smarter.
-                  </span>
-                ) : (
-                  <>Argue smarter.</>
-                )}<br />
-                {isGlacier ? (
-                  <span style={{ backgroundImage: "linear-gradient(135deg,#0369a1,#0284c7,#38bdf8,#bae6fd)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
-                    Win the room.
-                  </span>
-                ) : (
-                  <span className="brand-highlight">Win the room.</span>
-                )}
-              </h1>
-              <p style={{ color: "var(--subtle)", fontSize: isMobile ? "0.9rem" : "1rem", lineHeight: 1.65, maxWidth: 480, margin: 0 }}>
-                Real-time structured debates. AI judging. Live transcription.<br />Compete against others or sharpen your rhetoric.
-              </p>
-            </div>
-
-            {/* CTAs */}
-            <div className="fade-up" style={{ display: "flex", flexWrap: "wrap", gap: "0.875rem", flexDirection: isMobile ? "column" : "row", animationDelay: "0.08s" }}>
-              <button onClick={() => navigate("/create-room")} className="btn-primary" style={{ fontSize: "1rem", padding: "0.875rem 2rem", fontWeight: 800 }}>
-                ⚔️ Create Room
-              </button>
-              <button onClick={() => navigate("/join-room")} className="btn-for" style={{ fontSize: "1rem", padding: "0.875rem 2rem", fontWeight: 800 }}>
-                🎯 Join Room
-              </button>
-              {!isPro && (
-                <div
-                  className="fade-up"
-                  onClick={() => navigate("/pricing")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "0.75rem",
-                    padding: "0.75rem 1.25rem", borderRadius: "0.875rem", cursor: "pointer",
-                    background: isGlacier ? "linear-gradient(135deg,rgba(2,132,199,0.1),rgba(14,165,233,0.06))" : "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(251,191,36,0.06))",
-                    border: `1.5px solid ${ac.border.replace("0.4","0.35")}`, transition: "border-color 0.2s, box-shadow 0.2s",
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLDivElement).style.borderColor = isGlacier ? "rgba(2,132,199,0.7)" : "rgba(245,158,11,0.7)";
-                    (e.currentTarget as HTMLDivElement).style.boxShadow = isGlacier ? "0 4px 16px rgba(2,132,199,0.12)" : "0 4px 16px rgba(245,158,11,0.12)";
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLDivElement).style.borderColor = isGlacier ? "rgba(2,132,199,0.35)" : "rgba(245,158,11,0.35)";
-                    (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
-                  }}
-                >
-                  <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚡</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "0.78rem", fontWeight: 800, backgroundImage: ac.grad, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", marginBottom: "0.1rem" }}>
-                      Argumint Pro
-                    </div>
-                    <div style={{ fontSize: "0.68rem", color: "var(--muted)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      Judges · Spectators · Buzzer · Voting — ₹50/mo
-                    </div>
-                  </div>
-                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: ac.dark, flexShrink: 0 }}>Upgrade →</span>
-                </div>
-              )}
-            </div>
-
-            {/* Social proof */}
-            <div className="fade-up" style={{ animationDelay: "0.14s" }}>
-              {SocialStrip}
-            </div>
-
-            {/* Feature cards — desktop only */}
-            {!isMobile && (
-              <div className="fade-up" style={{ display: "flex", gap: "0.75rem", animationDelay: "0.2s" }}>
-                <FeatureCard icon="🤖" title="AI Judging" desc="GPT-4 scores every argument on rhetoric, clarity and evidence in real time." />
-                <FeatureCard icon="🎤" title="Live Transcription" desc="Whisper-powered voice-to-text so you can speak your arguments, hands-free." />
-                <FeatureCard icon="🏆" title="Ranked Play" desc="Climb the leaderboard, earn XP and unlock titles with every debate you win." />
-              </div>
-            )}
-
-            {isMobile && <div style={{ marginTop: "0.25rem" }}>{LeaderboardPanel}</div>}
-          </div>
-
-          {/* ── RIGHT (desktop) ── */}
-          {!isMobile && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              {PlayerCard}
-              {JudgeCard}
-              {LeaderboardPanel}
-            </div>
-          )}
-        </div>
-      </main>
+        <section style={{ display: "grid", gridTemplateColumns: twoCol("minmax(0,1.6fr) minmax(0,1fr)"), gap: 20, alignItems: "start" }}>
+          {RecentCard}
+          {TopCard}
+        </section>
       </div>
 
       {/* Pro welcome modal — shown once after first upgrade */}
@@ -1054,6 +523,6 @@ export function Home() {
           onClose={() => setShowProWelcome(false)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }

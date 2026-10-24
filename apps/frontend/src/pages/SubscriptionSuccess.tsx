@@ -1,31 +1,44 @@
 /**
  * SubscriptionSuccess.tsx
  *
- * Shows the Pro unlock card, then navigates straight to the golden home page.
- * No sweep, no particles — just the card reveal + redirect.
+ * "You're Pro" confirmation: staged card reveal, then refreshes the user and
+ * navigates straight to the golden home page. The buttons take the same exit
+ * early (guarded so the auto-redirect never fires twice).
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { BrandLogo, BrandSymbol } from "../components/BrandLogo";
+import { Icon, type IconName } from "../components/Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
-const PRO_PERKS = [
-  { icon: "⚖️", label: "Human Judges" },
-  { icon: "🎙️", label: "Whisper AI"   },
-  { icon: "🔔", label: "Buzzer Mode"  },
-  { icon: "🗳️", label: "Topic Voting" },
-  { icon: "👑", label: "Pro Badge"    },
+const PRO_PERKS: { icon: IconName; label: string }[] = [
+  { icon: "users", label: "Human Judges" },
+  { icon: "mic",   label: "Whisper AI"   },
+  { icon: "bolt",  label: "Buzzer Mode"  },
+  { icon: "vote",  label: "Topic Voting" },
+  { icon: "crown", label: "Pro Badge"    },
 ];
 
 export function SubscriptionSuccess() {
-  const navigate      = useNavigate();
-  const { checkAuth } = useAuth();
-  const navFired      = useRef(false);
+  const navigate            = useNavigate();
+  const { user, checkAuth } = useAuth();
+  const isMobile            = useIsMobile();
+  const navFired            = useRef(false);
 
   const [showCrown, setShowCrown] = useState(false);
   const [showText,  setShowText]  = useState(false);
   const [showPerks, setShowPerks] = useState(false);
   const [showHome,  setShowHome]  = useState(false);
+
+  // Refresh the user (so isPro is current) and leave — once only
+  const leave = async (to: string) => {
+    if (navFired.current) return;
+    navFired.current = true;
+    await checkAuth();
+    navigate(to, { replace: true });
+  };
 
   useEffect(() => {
     const t = [
@@ -33,151 +46,125 @@ export function SubscriptionSuccess() {
       setTimeout(() => setShowText(true),   400),
       setTimeout(() => setShowPerks(true),  700),
       setTimeout(() => setShowHome(true),   2200),
-      setTimeout(async () => {
-        if (navFired.current) return;
-        navFired.current = true;
-        await checkAuth();
-        navigate("/", { replace: true });
-      }, 3000),
+      setTimeout(() => { void leave("/"); }, 3000),
     ];
     return () => t.forEach(clearTimeout);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const periodEnd = (user as any)?.currentPeriodEnd as string | null | undefined;
+  const renewsOn  = periodEnd
+    ? new Date(periodEnd).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+
+  const reveal = (on: boolean, delay = 0): React.CSSProperties => ({
+    opacity: on ? 1 : 0,
+    animation: on ? `proFadeUp 0.45s ease ${delay}s both` : "none",
+  });
+
   return (
-    <div style={{
-      position: "fixed", inset: 0,
-      background: "#08080f",
-      display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
+    <div
+      // html/body/#root are overflow:hidden app-wide, so this page owns its scroll
+      style={{
+        height: "100vh", overflowY: "auto", boxSizing: "border-box",
+        padding: isMobile ? "20px 16px 32px" : "32px 48px 56px",
+        backgroundColor: "var(--ds-bg)",
+        backgroundImage: "radial-gradient(var(--ds-dots) 1px, transparent 1.2px)",
+        backgroundSize: "22px 22px",
+        color: "var(--ds-text)",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 40,
+      }}
+    >
       <style>{`
-        @keyframes crownDrop {
-          0%   { opacity:0; transform: translateY(-50px) scale(0.6); }
+        @keyframes proEmblemDrop {
+          0%   { opacity:0; transform: translateY(-40px) scale(0.6); }
           60%  { transform: translateY(6px) scale(1.08); }
           80%  { transform: translateY(-3px) scale(0.97); }
           100% { opacity:1; transform: translateY(0) scale(1); }
         }
-        @keyframes fadeUp {
+        @keyframes proFadeUp {
           from { opacity:0; transform: translateY(10px); }
           to   { opacity:1; transform: translateY(0); }
         }
-        @keyframes perkPop {
-          0%   { opacity:0; transform: scale(0.7) translateY(8px); }
-          65%  { transform: scale(1.07) translateY(-1px); }
-          100% { opacity:1; transform: scale(1) translateY(0); }
-        }
-        @keyframes goldHalo {
-          0%,100% { box-shadow: 0 0 30px 0   rgba(245,158,11,0.2); }
-          50%     { box-shadow: 0 0 60px 12px rgba(245,158,11,0.45); }
+        @keyframes proHalo {
+          0%,100% { box-shadow: 0 0 24px 0    rgba(var(--gold-rgb),0.18); }
+          50%     { box-shadow: 0 0 48px 10px rgba(var(--gold-rgb),0.35); }
         }
       `}</style>
 
-      {/* Card */}
-      <div style={{
-        width: "min(460px, 90vw)",
-        padding: "2.75rem 3rem",
-        borderRadius: "1.5rem",
-        textAlign: "center",
-        background: "linear-gradient(160deg, rgba(245,158,11,0.1) 0%, rgba(12,12,22,0.98) 50%, rgba(251,191,36,0.06) 100%)",
-        border: "1.5px solid rgba(245,158,11,0.55)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        animation: "goldHalo 2.4s ease-in-out infinite",
-      }}>
+      <div style={{ alignSelf: "flex-start" }}>
+        <BrandLogo height={isMobile ? 26 : 30} />
+      </div>
 
-        {/* Crown */}
-        <div style={{
-          fontSize: "4.5rem", lineHeight: 1, marginBottom: "0.5rem",
-          display: "inline-block",
-          filter: "drop-shadow(0 0 20px rgba(245,158,11,0.7))",
-          opacity: showCrown ? 1 : 0,
-          animation: showCrown ? "crownDrop 0.6s cubic-bezier(.34,1.56,.64,1) forwards" : "none",
-        }}>
-          👑
+      <main style={{ flex: 1, width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", justifyContent: isMobile ? "flex-start" : "center", gap: 28 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 18, textAlign: "center" }}>
+          {/* Emblem */}
+          <span
+            style={{
+              width: isMobile ? 96 : 120, height: isMobile ? 96 : 120, borderRadius: "50%",
+              background: "var(--ds-gold-bg)", border: "2px solid var(--ds-gold-line)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              opacity: showCrown ? 1 : 0,
+              animation: showCrown ? "proEmblemDrop 0.6s cubic-bezier(.34,1.56,.64,1) forwards, proHalo 2.4s ease-in-out 0.6s infinite" : "none",
+            }}
+          >
+            <BrandSymbol size={isMobile ? 56 : 72} title="" />
+          </span>
+
+          <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 34 : 48, letterSpacing: "-0.03em", color: "var(--ds-text)", ...reveal(showText) }}>
+            You're <span style={{ color: "var(--ds-gold-text)" }}>Pro</span>
+          </h1>
+          <p style={{ margin: 0, fontSize: 16, lineHeight: 1.55, color: "var(--ds-muted)", ...reveal(showText, 0.1) }}>
+            {renewsOn
+              ? `Payment confirmed. Your subscription renews on ${renewsOn}.`
+              : "Payment confirmed. All Pro features are now active on your account."}
+          </p>
         </div>
 
-        {/* Label */}
-        <div style={{
-          fontSize: "0.62rem", fontWeight: 800, letterSpacing: "0.22em",
-          textTransform: "uppercase", color: "#d97706",
-          marginBottom: "0.3rem",
-          opacity: showText ? 1 : 0,
-          animation: showText ? "fadeUp 0.4s ease forwards" : "none",
-        }}>
-          Argumint
-        </div>
+        {/* Unlocked perks */}
+        <section
+          className="ds-card"
+          style={{ padding: isMobile ? 20 : 24, display: "flex", flexDirection: "column", gap: 14, ...reveal(showPerks) }}
+        >
+          <h2 style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", color: "var(--ds-muted)" }}>NOW UNLOCKED</h2>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+            {PRO_PERKS.map((perk) => (
+              <div key={perk.label} style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 12, background: "var(--ds-gold-bg)", color: "var(--ds-gold-text)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Icon name={perk.icon} size={20} />
+                </span>
+                <span style={{ fontWeight: 700 }}>{perk.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        {/* PRO UNLOCKED */}
-        <h1 style={{
-          margin: "0 0 0.25rem",
-          fontSize: "clamp(2.2rem, 6vw, 3rem)",
-          fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.02em",
-          background: "linear-gradient(135deg,#f59e0b 0%,#fcd34d 45%,#f97316 75%,#fbbf24 100%)",
-          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          opacity: showText ? 1 : 0,
-          animation: showText ? "fadeUp 0.45s ease 0.05s forwards" : "none",
-        }}>
-          PRO UNLOCKED
-        </h1>
-
-        {/* Subtitle */}
-        <p style={{
-          color: "rgba(255,255,255,0.4)", fontSize: "0.88rem", lineHeight: 1.6,
-          margin: "0.6rem 0 1.4rem",
-          opacity: showText ? 1 : 0,
-          animation: showText ? "fadeUp 0.45s ease 0.15s forwards" : "none",
-        }}>
-          All Pro features are now active on your account.
-        </p>
-
-        {/* Divider */}
-        <div style={{
-          height: 1, marginBottom: "1.25rem",
-          background: "linear-gradient(90deg,transparent,rgba(245,158,11,0.5),rgba(251,191,36,0.75),rgba(245,158,11,0.5),transparent)",
-          opacity: showText ? 1 : 0,
-          transition: "opacity 0.5s ease 0.2s",
-        }} />
-
-        {/* Feature pills */}
-        <div style={{ display:"flex", flexWrap:"wrap", gap:"0.5rem", justifyContent:"center", marginBottom:"1.75rem" }}>
-          {PRO_PERKS.map((perk, i) => (
-            <div key={perk.label} style={{
-              display:"flex", alignItems:"center", gap:"0.35rem",
-              padding:"0.38rem 0.85rem", borderRadius:"9999px",
-              background:"linear-gradient(135deg,rgba(245,158,11,0.18),rgba(251,191,36,0.08))",
-              border:"1px solid rgba(245,158,11,0.4)",
-              fontSize:"0.76rem", fontWeight:700, color:"#fbbf24",
-              opacity: showPerks ? 1 : 0,
-              animation: showPerks
-                ? `perkPop 0.4s cubic-bezier(.34,1.56,.64,1) ${i * 80}ms forwards`
-                : "none",
-            }}>
-              <span>{perk.icon}</span>
-              <span>{perk.label}</span>
-            </div>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, ...reveal(showPerks, 0.1) }}>
+          <button onClick={() => leave("/create-room")} className="ds-btn ds-btn-primary ds-btn-block" style={{ height: 56, borderRadius: 16, fontSize: 16 }}>
+            Create a room<Icon name="right" size={18} />
+          </button>
+          <button onClick={() => leave("/")} className="ds-btn ds-btn-ghost ds-btn-block" style={{ height: 52, borderRadius: 16, color: "var(--ds-text)" }}>
+            Back to home
+          </button>
         </div>
 
         {/* Redirect line */}
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"center", gap:"0.5rem",
-          fontSize:"0.84rem", fontWeight:600, minHeight:"1.4rem",
-          opacity: showHome ? 1 : 0,
-          animation: showHome ? "fadeUp 0.4s ease forwards" : "none",
-          color: "#f59e0b",
-        }}>
+        <div
+          role="status"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            fontSize: 14, fontWeight: 600, minHeight: 22, color: "var(--ds-gold-text)",
+            ...reveal(showHome),
+          }}
+        >
           {showHome && (
             <>
-              <span style={{
-                width:7, height:7, borderRadius:"50%", background:"#f59e0b",
-                display:"inline-block", flexShrink:0,
-                animation:"goldHalo 0.9s ease-in-out infinite",
-              }} />
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ds-gold-mid)", flexShrink: 0, animation: "proHalo 0.9s ease-in-out infinite" }} />
               Taking you to your dashboard…
             </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

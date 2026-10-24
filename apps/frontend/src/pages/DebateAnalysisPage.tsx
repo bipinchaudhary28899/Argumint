@@ -3,19 +3,21 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../hooks/useSocket";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { getLevelInfo } from "@argumint/shared";
+import { AppShell } from "../components/AppShell";
+import { Icon } from "../components/Icon";
 import type { Debate, ScoreBreakdown } from "@argumint/shared";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const BAR_LABELS: Record<string, string> = {
   clarity:      "Clarity",
-  evidence:     "Proof",
-  rebuttal:     "Counter",
-  organization: "Structure",
+  evidence:     "Evidence",
+  rebuttal:     "Rebuttal",
+  organization: "Organization",
 };
-const BAR_ORDER = ["clarity", "evidence", "rebuttal", "organization"] as Array<keyof ScoreBreakdown>;
+const BAR_ORDER = ["clarity", "evidence", "rebuttal", "organization"] as const;
 
+// Data colours: bar fill by sub-score band, total by score band
 function barColor(val: number): string {
   if (val >= 18) return "linear-gradient(90deg,#059669,#10b981)";
   if (val >= 10) return "linear-gradient(90deg,#d97706,#f59e0b)";
@@ -29,29 +31,43 @@ function scoreGradient(n: number) {
   return "linear-gradient(135deg,#e11d48,#f43f5e)";
 }
 
-function ScoreBar({ k, val }: { k: string; val: number }) {
-  const pct   = Math.max(0, Math.min(100, (val / 25) * 100));
-  const color = barColor(val);
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function fmtDuration(sec?: number) {
+  if (!sec || sec < 0) return null;
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function fmtDate(d: unknown) {
+  if (!d) return null;
+  const date = new Date(d as string);
+  return isNaN(date.getTime()) ? null : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** One rubric axis: label, value /25, bar, and the top scorer's mark */
+function ScoreBar({ k, val, mark }: { k: string; val: number; mark: number | null }) {
+  const pct = Math.max(0, Math.min(100, (val / 25) * 100));
   return (
-    <div style={{ marginBottom: "0.5rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.18rem" }}>
-        <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--subtle)", textTransform: "uppercase", letterSpacing: "0.04em", width: 66, flexShrink: 0 }}>
-          {BAR_LABELS[k]}
-        </span>
-        <div className="score-bar-track" style={{ flex: 1 }}>
-          <div style={{ height: "100%", borderRadius: "9999px", background: color, width: `${pct}%`, transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }} />
-        </div>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: "0.78rem", color: "var(--text)", width: 26, textAlign: "right", flexShrink: 0 }}>
-          {val}
-        </span>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+        <span style={{ fontWeight: 700 }}>{BAR_LABELS[k]}</span>
+        <span className="ds-mono" style={{ fontWeight: 600 }}><span>{val}</span> / 25</span>
+      </span>
+      <span style={{ position: "relative", height: 10, borderRadius: 99, background: "var(--ds-track)", display: "block" }}>
+        <span style={{ position: "absolute", left: 0, top: 0, height: 10, width: `${pct}%`, borderRadius: 99, background: barColor(val), transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }} />
+        {mark !== null && (
+          <span title="Top scorer" style={{ position: "absolute", top: -4, left: `calc(${Math.max(0, Math.min(100, (mark / 25) * 100))}% - 1px)`, width: 3, height: 18, borderRadius: 2, background: "var(--ds-text)" }} />
+        )}
+      </span>
     </div>
   );
 }
 
-// ─── Tab types ───────────────────────────────────────────────────────────────
-
-type Tab = "transcript" | "scores" | "ai";
+const sectionTitle: React.CSSProperties = { margin: 0 };
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
@@ -68,8 +84,9 @@ export function DebateAnalysisPage() {
   // otherwise fetched from socket (direct URL access / refresh).
   const [debate,  setDebate]  = useState<Debate | null>((location.state as any)?.debate ?? null);
   const [error,   setError]   = useState<string | null>(null);
-  const [tab,     setTab]     = useState<Tab>("transcript");
-  const [judgeScores, setJudgeScores] = useState<Array<{
+  const [selectedId, setSelectedId] = useState<string | null>(null);   // debater shown in the panel
+  const [onlyTheirTurns, setOnlyTheirTurns] = useState(false);          // transcript filter
+  const [judgeScores] = useState<Array<{
     judgeId: string; judgeUsername: string;
     scores: Array<{ userId: string; score: number }>;
     submittedAt: Date;
@@ -97,327 +114,310 @@ export function DebateAnalysisPage() {
 
   // ── Loading / error ───────────────────────────────────────────────────────
   if (error) return (
-    <div className="bg-grid" style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-      <div className="glass" style={{ padding: "2rem", textAlign: "center", maxWidth: 380 }}>
-        <p style={{ color: "var(--against)", marginBottom: "1rem" }}>⚠ {error}</p>
-        <button onClick={() => navigate(-1)} className="btn-ghost">← Go Back</button>
+    <AppShell active="history">
+      <div className="ds-page" style={{ alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <div className="ds-card" style={{ padding: 32, textAlign: "center", maxWidth: 380, display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+          <p style={{ margin: 0, color: "var(--ds-against-text)", display: "flex", alignItems: "center", gap: 8 }}><Icon name="info" size={18} />{error}</p>
+          <button onClick={() => navigate(-1)} className="ds-btn ds-btn-secondary"><Icon name="left" size={18} />Go Back</button>
+        </div>
+      </div>
+    </AppShell>
+  );
+
+  if (!debate || !result) return (
+    <AppShell active="history">
+      <div className="ds-page" style={{ alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 64, height: 64 }} />
+      </div>
+    </AppShell>
+  );
+
+  const backHref = `/room/${code}/result/${debateId}`;
+  const winSide  = result.winnerSide;
+  const winText  = winSide === "for" ? "FOR" : "AGAINST";
+  const dateText = fmtDate(result.judgedAt);
+  const cardPad  = isMobile ? 18 : 24;
+
+  // Debater tabs: you first, then everyone else by rank
+  const tabOrder = myScore ? [myScore, ...rankedAll.filter((s) => s.userId !== myScore.userId)] : rankedAll;
+  const selected = tabOrder.find((s) => s.userId === selectedId) ?? tabOrder[0] ?? null;
+
+  // ── Pro gate ──────────────────────────────────────────────────────────────
+  const ProGate = (
+    <div style={{ display: "flex", justifyContent: "center", padding: "24px 0" }}>
+      <div onClick={() => navigate("/pricing")} className="ds-card" style={{
+        cursor: "pointer", padding: isMobile ? "28px 20px" : "40px 32px", textAlign: "center",
+        maxWidth: 420, width: "100%", boxSizing: "border-box", borderColor: "var(--ds-gold-line)",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+      }}>
+        <span style={{ width: 56, height: 56, borderRadius: 16, background: "var(--ds-gold-bg)", color: "var(--ds-gold-text)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon name="lock" size={26} />
+        </span>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "var(--ds-text)" }}>Full Analysis is Pro</h2>
+        <p className="ds-sub" style={{ lineHeight: 1.6 }}>
+          Unlock full transcripts, AI breakdowns, per-player strengths & weaknesses, and more.
+        </p>
+        {/* No own handler: the click bubbles to the card */}
+        <button type="button" className="ds-btn ds-btn-primary" style={{ marginTop: 8 }}>
+          <Icon name="crown" size={18} />Upgrade to Pro — ₹50/mo
+        </button>
       </div>
     </div>
   );
 
-  if (!debate || !result) return (
-    <div className="bg-grid" style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-      <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 64, height: 64 }} />
-    </div>
-  );
+  // ── Selected debater panel ────────────────────────────────────────────────
+  const Panel = selected && (() => {
+    const isMe   = selected.userId === user?.id;
+    const won    = selected.side === winSide;
+    const rank   = rankedAll.findIndex((s) => s.userId === selected.userId) + 1;
+    const top    = rankedAll[0];
+    const showMk = !!top && top.userId !== selected.userId;
+    const judgeRows = judgeScores.map(js => ({
+      judgeUsername: js.judgeUsername,
+      score: js.scores.find(x => x.userId === selected.userId)?.score ?? null,
+    })).filter(x => x.score !== null) as { judgeUsername: string; score: number }[];
+    const judgeAvg = judgeRows.length > 0 ? Math.round(judgeRows.reduce((a, x) => a + x.score, 0) / judgeRows.length) : null;
+    const blended  = judgeAvg !== null ? Math.round((selected.total + judgeAvg) / 2) : null;
+    const strengths    = selected.strengths ?? [];
+    const improvements = selected.improvements ?? [];
+    const feedback     = selected.feedback;
 
-  const backHref = `/room/${code}/result/${debateId}`;
+    return (
+      <div role="tabpanel" aria-label={isMe ? "Your analysis" : `${selected.username}'s analysis`}
+        style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 20, alignItems: "start" }}>
 
-  // ── Tab content ───────────────────────────────────────────────────────────
-
-  const TranscriptTab = (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-      {debate.rounds.length === 0 ? (
-        <div className="glass" style={{ padding: "2rem", textAlign: "center", borderRadius: "1rem" }}>
-          <p style={{ color: "var(--muted)", margin: 0 }}>No arguments were captured for this debate.</p>
-        </div>
-      ) : (
-        debate.rounds.map((r, i) => (
-          <div key={i} className="glass" style={{
-            padding: "0.875rem 1rem", borderRadius: "1rem",
-            borderLeft: `3px solid ${r.side === "for" ? "var(--for)" : "var(--against)"}`,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.45rem" }}>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "0.62rem", fontWeight: 700, color: "var(--muted)", background: "var(--surface2)", padding: "0.08rem 0.4rem", borderRadius: "0.3rem" }}>
-                R{r.roundNumber}
+        {/* Score card */}
+        <section className="ds-card" style={{ padding: cardPad, display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className="ds-eyebrow">{isMe ? "Your score" : `${selected.username}'s score`}</span>
+                {won && <span className="ds-chip ds-chip-for" style={{ height: 22, fontSize: 11 }}>WINNER</span>}
               </span>
-              <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "var(--text)", flex: 1 }}>{r.speakerUsername}</span>
-              <span className={`badge ${r.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.58rem" }}>
-                {r.side === "for" ? "FOR" : "AGAINST"}
+              <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span style={{
+                  fontWeight: 800, fontSize: 64, lineHeight: 1, letterSpacing: "-0.03em",
+                  background: scoreGradient(selected.total), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                }}>{selected.total}</span>
+                <span style={{ fontSize: 15, color: "var(--ds-muted)" }}>/100</span>
               </span>
             </div>
-            <p style={{ margin: 0, color: "var(--subtle)", fontSize: "0.85rem", lineHeight: 1.65 }}>
-              {r.argument || <span style={{ fontStyle: "italic", color: "var(--muted)" }}>(no transcript captured)</span>}
+            <span style={{ fontSize: 13, color: "var(--ds-muted)", textAlign: "right", flexShrink: 0 }}>
+              {ordinal(rank)} of {rankedAll.length}<br />
+              <span style={{ color: selected.side === "for" ? "var(--ds-for-text)" : "var(--ds-against-text)", fontWeight: 700 }}>
+                {selected.side === "for" ? "FOR" : "AGAINST"}
+              </span>
+              {showMk && <> · Top scored {top.total}</>}
+            </span>
+          </div>
+
+          {BAR_ORDER.map((k) => (
+            <ScoreBar key={k} k={k} val={selected[k]} mark={showMk ? top[k] : null} />
+          ))}
+
+          {showMk && (
+            <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--ds-muted)" }}>
+              <span style={{ width: 3, height: 14, borderRadius: 2, background: "var(--ds-text)" }} />Top scorer on each axis
+            </span>
+          )}
+
+          {/* Human judge score row (if any) */}
+          {judgeAvg !== null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 12, background: "rgba(var(--ds-judge-rgb),0.07)", border: "1px solid rgba(var(--ds-judge-rgb),0.2)" }}>
+              <span style={{ color: "var(--ds-judge)", display: "inline-flex" }}><Icon name="scale" size={16} /></span>
+              <span style={{ fontSize: 13, color: "var(--ds-muted)", flex: 1 }}>Human judges avg</span>
+              <span className="ds-mono" style={{ fontSize: 14, fontWeight: 800, color: "var(--ds-judge)" }}>{judgeAvg}</span>
+              <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>→ blended</span>
+              <span className="ds-mono" style={{ fontSize: 14, fontWeight: 800, color: "var(--ds-text)" }}>{blended}</span>
+            </div>
+          )}
+        </section>
+
+        {/* Feedback, strengths, improvements */}
+        <section style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
+          <div className="ds-card" style={{ padding: cardPad, display: "flex", flexDirection: "column", gap: 12 }}>
+            <h2 className="ds-eyebrow" style={sectionTitle}>AI feedback</h2>
+            <p style={{ margin: 0, fontSize: 16, lineHeight: 1.6, color: feedback ? "var(--ds-text2)" : "var(--ds-muted)" }}>
+              {feedback || "No written feedback for this debater."}
             </p>
           </div>
-        ))
-      )}
-    </div>
-  );
 
-  const ScoresTab = (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-      {rankedAll.map((s, idx) => {
-        const isMe = s.userId === user?.id;
-        const won  = s.side === result.winnerSide;
-        const lvl  = getLevelInfo((s as any).xp ?? 0);
-        const judgeRows = judgeScores.map(js => ({
-          judgeUsername: js.judgeUsername,
-          score: js.scores.find(x => x.userId === s.userId)?.score ?? null,
-        })).filter(x => x.score !== null) as { judgeUsername: string; score: number }[];
-        const judgeAvg = judgeRows.length > 0 ? Math.round(judgeRows.reduce((a, x) => a + x.score, 0) / judgeRows.length) : null;
-        const blended  = judgeAvg !== null ? Math.round((s.total + judgeAvg) / 2) : null;
-
-        return (
-          <div key={s.userId} className="glass" style={{
-            padding: "1rem 1.125rem", borderRadius: "1rem",
-            border: isMe ? `1.5px solid ${won ? "rgba(16,185,129,0.4)" : "rgba(79,142,247,0.35)"}` : "1px solid var(--border)",
-            background: isMe ? (won ? "rgba(16,185,129,0.04)" : "rgba(79,142,247,0.04)") : undefined,
-          }}>
-            {/* Player header */}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", marginBottom: "0.875rem" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.08rem", flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span style={{ fontWeight: 900, fontSize: "0.95rem", color: isMe ? (won ? "var(--for)" : "var(--cyan)") : "var(--text)" }}>
-                    {idx === 0 ? "🥇 " : idx === 1 ? "🥈 " : idx === 2 ? "🥉 " : ""}{s.username}{isMe ? " 👤" : ""}
-                  </span>
-                  <span className={`badge ${s.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.58rem" }}>
-                    {s.side === "for" ? "FOR" : "AGAINST"}
-                  </span>
-                  {won && <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "var(--for)", background: "rgba(16,185,129,0.1)", padding: "0.06rem 0.4rem", borderRadius: "9999px" }}>WINNER</span>}
-                </div>
-              </div>
-              {/* Total score */}
-              <div style={{ textAlign: "center", flexShrink: 0 }}>
-                <div style={{
-                  fontFamily: "'JetBrains Mono',monospace", fontSize: "2rem", fontWeight: 900, lineHeight: 1,
-                  background: scoreGradient(s.total), WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-                }}>{s.total}</div>
-                <div style={{ fontSize: "0.52rem", color: "var(--muted)", fontWeight: 600 }}>/ 100</div>
-              </div>
+          {strengths.length > 0 && (
+            <div style={{ padding: cardPad, borderRadius: 24, background: "var(--ds-for-bg)", border: "1px solid var(--ds-for-line)", display: "flex", flexDirection: "column", gap: 12 }}>
+              <h3 className="ds-eyebrow" style={{ ...sectionTitle, color: "var(--ds-for-text)" }}>Strengths</h3>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                {strengths.map((str, i) => (
+                  <li key={i} style={{ display: "flex", gap: 10, fontSize: 14, lineHeight: 1.5, color: "var(--ds-text)" }}>
+                    <span style={{ color: "var(--ds-for-text)", flexShrink: 0, display: "inline-flex", paddingTop: 2 }}><Icon name="check" size={16} /></span>
+                    <span>{str}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
+          )}
 
-            {/* Score bars */}
-            <div style={{ marginBottom: "0.75rem" }}>
-              {BAR_ORDER.map((k) => <ScoreBar key={k as string} k={k as string} val={s[k] as number} />)}
+          {improvements.length > 0 && (
+            <div className="ds-card" style={{ padding: cardPad, display: "flex", flexDirection: "column", gap: 12 }}>
+              <h3 className="ds-eyebrow" style={sectionTitle}>To improve</h3>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                {improvements.map((imp, i) => (
+                  <li key={i} style={{ display: "flex", gap: 10, fontSize: 14, lineHeight: 1.5, color: "var(--ds-text)" }}>
+                    <span style={{ color: "var(--ds-gold-mid)", flexShrink: 0, display: "inline-flex", paddingTop: 2 }}><Icon name="right" size={16} /></span>
+                    <span>{imp}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
+          )}
+        </section>
+      </div>
+    );
+  })();
 
-            {/* Judge score row (if any) */}
-            {judgeAvg !== null && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem", padding: "0.4rem 0.625rem", borderRadius: "0.5rem", background: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.2)" }}>
-                <span style={{ fontSize: "0.65rem", color: "var(--muted)", flex: 1 }}>⚖️ Human judges avg</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "0.82rem", fontWeight: 800, color: "#a78bfa" }}>{judgeAvg}</span>
-                <span style={{ fontSize: "0.62rem", color: "var(--muted)" }}>→ blended</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "0.82rem", fontWeight: 800, color: "#c4b5fd" }}>{blended}</span>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  const AITab = (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-
-      {/* Overall summary */}
+  // ── Match summary + why the winner won ────────────────────────────────────
+  const Verdict = (result.summary || result.winningPoints.length > 0) && (
+    <section className="ds-card" style={{
+      padding: cardPad, display: "grid", gap: 20,
+      gridTemplateColumns: !isMobile && result.summary && result.winningPoints.length > 0 ? "repeat(2, minmax(0, 1fr))" : "1fr",
+    }}>
       {result.summary && (
-        <div className="glass" style={{ padding: "1rem 1.125rem", borderRadius: "1rem", borderLeft: "3px solid var(--violet)" }}>
-          <div style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "#a78bfa", marginBottom: "0.5rem" }}>🤖 Match Summary</div>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--subtle)", lineHeight: 1.65 }}>{result.summary}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <h2 className="ds-eyebrow" style={sectionTitle}>Match Summary</h2>
+          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: "var(--ds-text2)" }}>{result.summary}</p>
         </div>
       )}
-
-      {/* Why they won */}
       {result.winningPoints.length > 0 && (
-        <div className="glass" style={{ padding: "1rem 1.125rem", borderRadius: "1rem", borderLeft: "3px solid var(--for)" }}>
-          <div style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--for)", marginBottom: "0.5rem" }}>
-            🔥 Why {result.winnerSide === "for" ? "FOR" : "AGAINST"} Won
-          </div>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <h2 className="ds-eyebrow" style={{ ...sectionTitle, color: `var(--ds-${winSide}-text)` }}>Why {winText} Won</h2>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
             {result.winningPoints.map((pt, i) => (
-              <li key={i} style={{ display: "flex", gap: "0.45rem", alignItems: "flex-start" }}>
-                <span style={{ color: "var(--for)", fontSize: "0.68rem", flexShrink: 0, marginTop: "0.14rem" }}>✦</span>
-                <span style={{ color: "var(--text)", fontSize: "0.85rem", lineHeight: 1.5 }}>{pt}</span>
+              <li key={i} style={{ display: "flex", gap: 10, fontSize: 15, lineHeight: 1.5, color: "var(--ds-text2)" }}>
+                <span style={{ color: `var(--ds-${winSide}-text)`, flexShrink: 0, display: "inline-flex", paddingTop: 2 }}><Icon name="check" size={16} /></span>
+                <span>{pt}</span>
               </li>
             ))}
           </ul>
         </div>
       )}
+    </section>
+  );
 
-      {/* Per-player AI analysis */}
-      {rankedAll.map((s, idx) => {
-        const isMe = s.userId === user?.id;
-        const strengths    = ((s as any).strengths    as string[] | undefined) ?? [];
-        const improvements = ((s as any).improvements as string[] | undefined) ?? [];
-        const feedback     = (s as any).feedback as string | undefined;
+  // ── Transcript ────────────────────────────────────────────────────────────
+  const filterName = selected ? (selected.userId === user?.id ? "my" : `${selected.username}'s`) : null;
+  const rounds = onlyTheirTurns && selected ? debate.rounds.filter((r) => r.speakerId === selected.userId) : debate.rounds;
 
-        return (
-          <div key={s.userId} className="glass" style={{
-            padding: "1rem 1.125rem", borderRadius: "1rem",
-            border: isMe ? "1.5px solid rgba(79,142,247,0.35)" : "1px solid var(--border)",
-          }}>
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem" }}>
-              <span style={{ fontWeight: 900, fontSize: "0.9rem", color: isMe ? "var(--cyan)" : "var(--text)", flex: 1 }}>
-                {idx === 0 ? "🥇 " : idx === 1 ? "🥈 " : ""}{s.username}{isMe ? " 👤" : ""}
-              </span>
-              <span className={`badge ${s.side === "for" ? "badge-for" : "badge-against"}`} style={{ fontSize: "0.6rem" }}>
-                {s.side === "for" ? "FOR" : "AGAINST"}
-              </span>
-            </div>
-
-            {/* AI Feedback */}
-            {feedback && (
-              <div style={{ marginBottom: strengths.length > 0 || improvements.length > 0 ? "0.875rem" : 0 }}>
-                <div style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#a78bfa", marginBottom: "0.35rem" }}>AI Feedback</div>
-                <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--subtle)", lineHeight: 1.65 }}>{feedback}</p>
-              </div>
-            )}
-
-            {/* Strengths + Improvements side by side on desktop */}
-            {(strengths.length > 0 || improvements.length > 0) && (
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "0.75rem" }}>
-                {strengths.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--for)", marginBottom: "0.35rem" }}>✅ Strengths</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
-                      {strengths.map((str, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.3rem 0.5rem", borderRadius: "0.4rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)" }}>
-                          <span style={{ color: "var(--for)", flexShrink: 0, marginTop: "0.1rem", fontSize: "0.62rem" }}>•</span>
-                          <span style={{ color: "var(--subtle)", fontSize: "0.78rem", lineHeight: 1.45 }}>{str}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {improvements.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--against)", marginBottom: "0.35rem" }}>❌ To Improve</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.28rem" }}>
-                      {improvements.map((imp, i) => (
-                        <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.3rem 0.5rem", borderRadius: "0.4rem", background: "rgba(244,63,94,0.05)", border: "1px solid rgba(244,63,94,0.13)" }}>
-                          <span style={{ color: "var(--against)", flexShrink: 0, marginTop: "0.1rem", fontSize: "0.62rem" }}>•</span>
-                          <span style={{ color: "var(--subtle)", fontSize: "0.78rem", lineHeight: 1.45 }}>{imp}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+  const Transcript = (
+    <section className="ds-card" style={{ padding: cardPad, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <h2 className="ds-eyebrow" style={sectionTitle}>Transcript</h2>
+        {debate.rounds.length > 0 && filterName && (
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 44, fontSize: 14, fontWeight: 600, color: "var(--ds-text3)", cursor: "pointer" }}>
+            <input type="checkbox" checked={onlyTheirTurns} onChange={(e) => setOnlyTheirTurns(e.target.checked)}
+              style={{ width: 18, height: 18, accentColor: "var(--ds-accent-mid)", margin: 0 }} />
+            Only {filterName} turns
+          </label>
+        )}
+      </div>
+      {debate.rounds.length === 0 ? (
+        <p className="ds-sub" style={{ padding: 16, borderRadius: 16, background: "var(--ds-raised)", textAlign: "center" }}>
+          No arguments were captured for this debate.
+        </p>
+      ) : rounds.length === 0 ? (
+        <p className="ds-sub" style={{ padding: 16, borderRadius: 16, background: "var(--ds-raised)", textAlign: "center" }}>
+          No turns from this debater in the transcript.
+        </p>
+      ) : (
+        <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
+          {rounds.map((r, i) => {
+            const dur = fmtDuration(r.durationSeconds);
+            return (
+              <li key={i} style={{
+                display: "grid", gridTemplateColumns: isMobile ? "1fr" : "120px minmax(0, 1fr)", gap: isMobile ? 10 : 14,
+                padding: 16, borderRadius: 16, background: "var(--ds-raised)",
+                borderLeft: `3px solid ${r.side === "for" ? "var(--ds-for-mid)" : "var(--ds-against-mid)"}`,
+              }}>
+                <span style={{ display: "flex", flexDirection: isMobile ? "row" : "column", flexWrap: "wrap", gap: 6, fontSize: 12, color: "var(--ds-muted)", minWidth: 0 }}>
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <span className="ds-mono" style={{ fontWeight: 600, color: "var(--ds-text)" }}>R{r.roundNumber}</span>
+                    {dur && <span className="ds-mono">{dur}</span>}
+                  </span>
+                  <span style={{ display: "flex", gap: 6, minWidth: 0 }}>
+                    <span style={{ fontWeight: 700, color: "var(--ds-text3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.speakerUsername}</span>
+                    <span style={{ fontWeight: 700, letterSpacing: "0.08em", color: r.side === "for" ? "var(--ds-for-text)" : "var(--ds-against-text)" }}>
+                      {r.side === "for" ? "FOR" : "AGAINST"}
+                    </span>
+                  </span>
+                </span>
+                <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: "var(--ds-text2)" }}>
+                  {r.argument || <span style={{ fontStyle: "italic", color: "var(--ds-muted)" }}>(no transcript captured)</span>}
+                </p>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
   );
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: "transcript", label: "Transcript", icon: "🎤" },
-    { id: "scores",     label: "Scores",     icon: "📊" },
-    { id: "ai",         label: "AI Review",  icon: "🤖" },
-  ];
-
   return (
-    <>
+    <AppShell active="history">
       <style>{`
-        @keyframes cardFadeUp {
-          0%   { opacity:0; transform:translateY(8px); }
-          100% { opacity:1; transform:translateY(0); }
-        }
-        .analysis-card { animation: cardFadeUp 0.3s ease both; }
-        .tab-btn { transition: background 0.15s, color 0.15s, border-color 0.15s; }
-        .tab-btn:hover { background: var(--surface2) !important; }
+        .analysis-back { align-self: flex-start; min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0;
+          border: 0; background: none; cursor: pointer; font: 600 14px Outfit, system-ui, sans-serif; color: var(--ds-muted); }
+        .analysis-back:hover { color: var(--ds-text); }
+        .analysis-tab { flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 12px; display: inline-flex; align-items: center; gap: 8px;
+          font: 700 14px Outfit, system-ui, sans-serif; cursor: pointer; border: 1px solid var(--ds-border); background: var(--ds-panel); color: var(--ds-text3); }
+        .analysis-tab[aria-selected="true"] { border-color: transparent; background: var(--ds-primary-fill); color: var(--ds-on-primary); }
       `}</style>
-
-      <div className="bg-grid" style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}>
-        {/* Ambient */}
-        <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, background: "radial-gradient(ellipse 60% 50% at 20% 10%,rgba(var(--violet-rgb),0.07) 0%,transparent 60%)" }} />
-
-        {/* ── HEADER ── */}
-        <div style={{
-          flexShrink: 0, position: "relative", zIndex: 1,
-          padding: isMobile ? "0.625rem 0.875rem" : "0.75rem 1.25rem",
-          display: "flex", alignItems: "center", gap: "0.75rem",
-          borderBottom: "1px solid var(--border)",
-          background: "rgba(var(--bg-rgb),0.7)", backdropFilter: "blur(12px)",
-        }}>
-          <button onClick={() => navigate(backHref)} className="btn-ghost" style={{ fontSize: "0.78rem", padding: "0.25rem 0.6rem", flexShrink: 0 }}>
-            ← Results
+      <div className="ds-page" style={{ gap: 22 }}>
+        <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button type="button" className="analysis-back" onClick={() => navigate(backHref)}>
+            <Icon name="left" size={16} />Results
           </button>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "0.52rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.1rem" }}>Full Analysis</div>
-            <div style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{debate.topic}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
-            <span style={{
-              fontSize: "0.68rem", fontWeight: 900, padding: "0.2rem 0.65rem", borderRadius: "9999px",
-              background: result.winnerSide === "for" ? "rgba(16,185,129,0.12)" : "rgba(244,63,94,0.12)",
-              border: `1px solid ${result.winnerSide === "for" ? "rgba(16,185,129,0.35)" : "rgba(244,63,94,0.35)"}`,
-              color: result.winnerSide === "for" ? "var(--for)" : "var(--against)",
-            }}>
-              {result.winnerSide === "for" ? "FOR" : "AGAINST"} WINS
+          <span className="ds-eyebrow">Full Analysis</span>
+          <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 22 : 32, lineHeight: 1.2, letterSpacing: "-0.02em", maxWidth: 860, textWrap: "balance" } as React.CSSProperties}>
+            {debate.topic}
+          </h1>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <span className={`ds-chip ds-chip-${winSide}`} style={{ fontSize: 13 }}>{winText} won</span>
+            <span className="ds-chip" style={{ fontSize: 13, fontWeight: 600, background: "var(--ds-raised)", color: "var(--ds-text3)" }}>
+              {debate.mode === "buzzer" ? "Buzzer" : "Alternate"} · {debate.totalRounds} {debate.totalRounds === 1 ? "round" : "rounds"}
             </span>
+            {dateText && (
+              <span className="ds-chip" style={{ fontSize: 13, fontWeight: 600, background: "var(--ds-raised)", color: "var(--ds-text3)" }}>{dateText}</span>
+            )}
           </div>
-        </div>
+        </header>
 
-        {/* ── PRO GATE ── */}
-        {!isPro ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", position: "relative", zIndex: 1 }}>
-            <div onClick={() => navigate("/pricing")} style={{
-              cursor: "pointer", borderRadius: "1.25rem", padding: "2.5rem 2rem", textAlign: "center",
-              background: "linear-gradient(135deg,rgba(245,158,11,0.08),rgba(var(--violet-rgb),0.06))",
-              border: "1.5px solid rgba(245,158,11,0.3)", maxWidth: 400, width: "100%",
-            }}>
-              <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>🔒</div>
-              <div style={{ fontSize: "1.2rem", fontWeight: 900, color: "#fbbf24", marginBottom: "0.5rem" }}>Full Analysis is Pro</div>
-              <p style={{ color: "var(--muted)", fontSize: "0.85rem", lineHeight: 1.6, marginBottom: "1.25rem" }}>
-                Unlock full transcripts, AI breakdowns, per-player strengths & weaknesses, and more.
-              </p>
-              <div style={{
-                display: "inline-block", fontSize: "0.82rem", fontWeight: 800, padding: "0.5rem 1.5rem",
-                borderRadius: "9999px", background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000",
-              }}>⚡ Upgrade to Pro — ₹50/mo</div>
-            </div>
-          </div>
-        ) : (
+        {!isPro ? ProGate : (
           <>
-            {/* ── TABS ── */}
-            <div style={{
-              flexShrink: 0, position: "relative", zIndex: 1,
-              padding: isMobile ? "0.5rem 0.875rem 0" : "0.5rem 1.25rem 0",
-              display: "flex", gap: "0.25rem",
-              borderBottom: "1px solid var(--border)",
-            }}>
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  className="tab-btn"
-                  onClick={() => setTab(t.id)}
-                  style={{
-                    border: "none", cursor: "pointer", fontFamily: "inherit",
-                    fontSize: "0.78rem", fontWeight: tab === t.id ? 800 : 600,
-                    padding: "0.5rem 0.875rem",
-                    color: tab === t.id ? "var(--text)" : "var(--muted)",
-                    background: "transparent",
-                    borderBottom: `2px solid ${tab === t.id ? "var(--blue)" : "transparent"}`,
-                    borderRadius: "0.375rem 0.375rem 0 0",
-                    display: "flex", alignItems: "center", gap: "0.35rem",
-                    transition: "color 0.15s, border-color 0.15s",
-                  }}
-                >
-                  <span>{t.icon}</span>
-                  <span>{t.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* ── TAB CONTENT ── */}
-            <div style={{
-              flex: 1, minHeight: 0, overflowY: "auto",
-              padding: isMobile ? "0.875rem 0.875rem 2rem" : "1rem 1.25rem 2.5rem",
-              position: "relative", zIndex: 1,
-            }}>
-              <div style={{ maxWidth: 720, margin: "0 auto" }} className="analysis-card">
-                {tab === "transcript" && TranscriptTab}
-                {tab === "scores"     && ScoresTab}
-                {tab === "ai"         && AITab}
+            {tabOrder.length > 0 && (
+              <div role="tablist" aria-label="Debater" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
+                {tabOrder.map((s) => {
+                  const on = s.userId === selected?.userId;
+                  return (
+                    <button
+                      key={s.userId}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      className="analysis-tab"
+                      onClick={() => setSelectedId(s.userId)}
+                    >
+                      <span>{s.userId === user?.id ? "You" : s.username}</span>
+                      <span className="ds-mono" style={{ fontWeight: 600, opacity: 0.85 }}>{s.total}</span>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            )}
+            {Panel}
+            {Verdict}
+            {Transcript}
           </>
         )}
       </div>
-    </>
+    </AppShell>
   );
 }

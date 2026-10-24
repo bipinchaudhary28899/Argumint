@@ -10,14 +10,18 @@ import { useReconnectHandler } from "../hooks/useReconnectHandler";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { roomApi } from "../services/api";
 import { VotingPanel } from "../components/VotingPanel";
+import { RoomHeader, type RoomStatusTone } from "../components/RoomHeader";
+import { Icon } from "../components/Icon";
+import { initials } from "../components/AppShell";
 
 type ParticipantRole = "moderator" | "participant" | "judge" | "spectator";
 
+// Role tag colours. Judge keeps its existing purple; the rest map to theme tokens.
 const ROLE_BADGE: Record<ParticipantRole, { label: string; color: string; bg: string }> = {
-  moderator:   { label: "HOST",      color: "#f59e0b", bg: "rgba(245,158,11,0.15)"  },
-  participant: { label: "DEBATER",   color: "#4f8ef7", bg: "rgba(79,142,247,0.12)"  },
-  judge:       { label: "JUDGE",     color: "#a78bfa", bg: "rgba(167,139,250,0.15)" },
-  spectator:   { label: "SPECTATOR", color: "#6b7280", bg: "rgba(107,114,128,0.12)" },
+  moderator:   { label: "HOST",      color: "var(--ds-gold-text)",    bg: "var(--ds-gold-bg)"    },
+  participant: { label: "DEBATER",   color: "var(--ds-accent)",       bg: "var(--ds-accent-soft)" },
+  judge:       { label: "JUDGE",     color: "var(--ds-judge)",        bg: "rgba(var(--ds-judge-rgb),0.15)" },
+  spectator:   { label: "SPECTATOR", color: "var(--ds-neutral-text)", bg: "var(--ds-neutral-bg)" },
 };
 
 const ROLE_OPTIONS: { role: ParticipantRole; label: string }[] = [
@@ -85,8 +89,8 @@ export function RoomLobby() {
   const { room, setRoom, setError } = useRoom();
   const { socket, isConnected, isReconnecting, onReconnect } = useSocket();
   const [isLoading, setIsLoading]  = useState(!room);
-  const [copied, setCopied]        = useState(false);
   const [roleMenuFor, setRoleMenuFor] = useState<string | null>(null); // userId whose role menu is open
+  const [transferOpen, setTransferOpen] = useState(false);               // host's "Transfer host" picker
 
   useLeaveRoomOnNavigate(code, room?._id, socket);
 
@@ -251,13 +255,6 @@ export function RoomLobby() {
     if (room && socket) socket.emit("room:leave", { roomId: room._id });
     navigate("/");
   };
-  const handleCopy = () => {
-    if (code) {
-      navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
   const handleChangeRole = (targetUserId: string, newRole: ParticipantRole) => {
     if (!room || !socket) return;
     setRoleMenuFor(null);
@@ -268,14 +265,23 @@ export function RoomLobby() {
   const handleTransferHost = (targetUserId: string) => {
     if (!room || !socket) return;
     setRoleMenuFor(null);
+    setTransferOpen(false);
     socket.emit("room:transfer-host", { roomId: room._id, targetUserId }, (res: any) => {
       if (!res?.success) setError(res?.error || "Failed to transfer host");
     });
   };
 
+
+  // Full-screen centred shell for the loading / not-found states
+  const centred = {
+    minHeight: "100vh", boxSizing: "border-box", padding: 16,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: "var(--ds-bg)", color: "var(--ds-text)",
+  } as const;
+
   if (isLoading) {
     return (
-      <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
+      <div style={centred}>
         <img src="/logo/brand/argumint-app-icon-dark.svg" alt="Loading…" className="logo-heartbeat" style={{ width: 72, height: 72 }} />
       </div>
     );
@@ -283,10 +289,10 @@ export function RoomLobby() {
 
   if (!room) {
     return (
-      <div className="bg-grid" style={{ height: "100vh", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div className="glass" style={{ padding: "2.5rem", textAlign: "center", maxWidth: 400 }}>
-          <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>Room not found</p>
-          <button onClick={() => navigate("/")} className="btn-primary">Back to Home</button>
+      <div style={centred}>
+        <div className="ds-card" style={{ padding: 32, maxWidth: 400, width: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, textAlign: "center" }}>
+          <p className="ds-sub">Room not found</p>
+          <button type="button" onClick={() => navigate("/")} className="ds-btn ds-btn-primary">Back to Home</button>
         </div>
       </div>
     );
@@ -299,6 +305,7 @@ export function RoomLobby() {
       return map;
     }, new Map<string, typeof room.participants[number]>()).values(),
   );
+  type LobbyParticipant = typeof participants[number];
 
   const isCreator    = room.creatorId === user?.id;
   const currentUser  = participants.find((p) => p.userId === user?.id);
@@ -311,329 +318,418 @@ export function RoomLobby() {
   const debatingParticipants = participants.filter((p) => p.role === "participant" || p.role === "moderator");
   const judgeParticipants    = participants.filter((p) => p.role === "judge");
   const spectatorParticipants = participants.filter((p) => p.role === "spectator");
+  const observerParticipants = [...judgeParticipants, ...spectatorParticipants];
   const debatingReady        = debatingParticipants.every((p) => p.status === "ready");
   const readyCount           = debatingParticipants.filter((p) => p.status === "ready").length;
+  const allReady             = debatingReady && debatingParticipants.length >= 2;
+
+  // "Open seat" placeholders up to the debater cap; collapse the tail into one tile for big rooms.
+  const openSeats    = Math.max(0, room.maxParticipants - debatingParticipants.length);
+  const seatTiles    = Math.min(openSeats, 6);
+  const seatOverflow = openSeats - seatTiles;
+
+  const transferTargets = participants.filter((p) => p.userId !== user?.id);
+
+  const headerStatus: { label: string; tone: RoomStatusTone } =
+    room.status === "voting" ? { label: "Topic vote",        tone: "accent"  }
+    : allReady               ? { label: "Lobby · all ready", tone: "for"     }
+    :                          { label: "Lobby · waiting",   tone: "neutral" };
+
+  const settings = [
+    { label: "Mode", value: room.debateMode },
+    ...(room.debateMode === "alternate" ? [{ label: "Rounds", value: String(room.totalRounds ?? "—") }] : []),
+    { label: "Turn", value: `${room.turnDuration}s` },
+    { label: "Prep", value: `${room.prepDuration}s` },
+    ...(room.votingEnabled ? [{ label: "Vote", value: `${room.votingDuration}s` }] : []),
+  ];
+
+  const pad = isMobile ? 14 : 20;
+  const panel: React.CSSProperties = {
+    padding: pad, borderRadius: 20, background: "var(--ds-panel)", border: "1px solid var(--ds-border)",
+    boxShadow: "var(--ds-shadow)", display: "flex", flexDirection: "column", gap: 14, boxSizing: "border-box",
+  };
+  const sectionTitle: React.CSSProperties = {
+    margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ds-muted)",
+  };
+  const hint: React.CSSProperties = { margin: 0, fontSize: 13, textAlign: "center", color: "var(--ds-muted)", lineHeight: 1.5 };
+  const menuItem: React.CSSProperties = {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+    width: "100%", minHeight: 40, textAlign: "left", padding: "8px 12px", fontSize: 14,
+    background: "transparent", color: "var(--ds-text)", border: "none", cursor: "pointer", fontFamily: "inherit",
+  };
+
+  const statusChip = (p: LobbyParticipant) => {
+    if (p.status === "disconnected") return <span className="ds-chip ds-chip-neutral">Offline</span>;
+    const ready = p.status === "ready";
+    return (
+      <span className={`ds-chip ${ready ? "ds-chip-for" : "ds-chip-neutral"}`} style={{ flexShrink: 0 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: ready ? "var(--ds-for-mid)" : "currentColor" }} />
+        <span>{ready ? "Ready" : "Waiting"}</span>
+      </span>
+    );
+  };
+
+  // Host-only manage button + role menu (role change + transfer host), lobby phase only.
+  const renderManage = (p: LobbyParticipant) => {
+    if (!isHost || p.userId === user?.id || room.status !== "lobby") return null;
+    const pRole    = (p.role ?? "participant") as ParticipantRole;
+    const menuOpen = roleMenuFor === p.userId;
+
+    return (
+      <div style={{ position: "relative", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={() => setRoleMenuFor(menuOpen ? null : p.userId)}
+          title="Manage"
+          aria-label={`Manage ${p.username}`}
+          aria-expanded={menuOpen}
+          style={{ width: 44, height: 44, borderRadius: 10, border: 0, background: "transparent", color: "var(--ds-muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+        >
+          <Icon name="sliders" size={18} />
+        </button>
+
+        {menuOpen && (
+          <div style={{
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 50, minWidth: 220,
+            background: "var(--ds-panel)", border: "1px solid var(--ds-border)", borderRadius: 14,
+            boxShadow: "var(--ds-shadow)", overflow: "hidden", padding: "4px 0",
+          }}>
+            <div style={{ ...sectionTitle, fontSize: 11, padding: "8px 12px", borderBottom: "1px solid var(--ds-hair)" }}>
+              Change Role
+            </div>
+            {ROLE_OPTIONS.map(({ role: r, label }) => {
+              // Check capacity before rendering each option
+              const avail = roleAvailability(
+                r,
+                participants,
+                p.userId,
+                (room as any).maxJudges ?? 3,
+                (room as any).maxSpectators ?? 50,
+                room.maxParticipants,
+              );
+              const isCurrent = pRole === r;
+              // Always show current role (to unblock manual re-assignment)
+              // and always show "participant" (debater) as escape hatch.
+              // Hide other options that are disabled/full.
+              if (!avail.available && !isCurrent && r !== "participant") return null;
+
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => avail.available && handleChangeRole(p.userId, r)}
+                  disabled={!avail.available && !isCurrent}
+                  title={avail.reason ?? undefined}
+                  style={{
+                    ...menuItem,
+                    background: isCurrent ? "var(--ds-for-bg)" : "transparent",
+                    color: isCurrent ? "var(--ds-for-text)" : (!avail.available ? "var(--ds-muted)" : "var(--ds-text)"),
+                    cursor: avail.available ? "pointer" : "default",
+                    fontWeight: isCurrent ? 700 : 500,
+                    opacity: !avail.available && !isCurrent ? 0.5 : 1,
+                  }}
+                >
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 16, display: "inline-flex" }}>{isCurrent && <Icon name="check" size={16} />}</span>
+                    {label}
+                  </span>
+                  {/* Show remaining slot count on available non-current options */}
+                  {!isCurrent && avail.available && r !== "participant" && (
+                    <span style={{ fontSize: 12, color: avail.slotsLeft <= 1 ? "var(--ds-gold-text)" : "var(--ds-muted)" }}>
+                      {avail.slotsLeft} left
+                    </span>
+                  )}
+                  {!isCurrent && !avail.available && r !== "participant" && (
+                    <span style={{ fontSize: 11, color: "var(--ds-against-text)", fontWeight: 700 }}>
+                      {avail.reason}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            <div style={{ height: 1, background: "var(--ds-hair)", margin: "4px 0" }} />
+            <button type="button" onClick={() => handleTransferHost(p.userId)} style={{ ...menuItem, justifyContent: "flex-start", color: "var(--ds-gold-text)", fontWeight: 600 }}>
+              <Icon name="crown" size={16} />
+              Make Host
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <InAppBrowserGate>
       <ConnectionStatusBanner isConnected={isConnected} isReconnecting={isReconnecting} />
       <div
-        className="bg-grid"
-        style={{ height: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)", overflow: "hidden" }}
-        onClick={() => roleMenuFor && setRoleMenuFor(null)}
+        className="ds-room-page"
+        onClick={() => { if (roleMenuFor) setRoleMenuFor(null); if (transferOpen) setTransferOpen(false); }}
       >
-        <main style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", padding: isMobile ? "0.75rem" : "0.875rem 1rem 0" }}>
-          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, gap: "0.875rem" }}>
+        <RoomHeader
+          onLeave={handleLeave}
+          motion={room.topic || "Voting in progress — motion not locked yet"}
+          status={headerStatus}
+          code={room.code}
+        />
 
-            {/* Room code hero */}
-            <div className="glass fade-up" style={{ flexShrink: 0, padding: isMobile ? "0.75rem 1rem" : "0.875rem 1.5rem" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.625rem" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.15rem" }}>Room Code</div>
-                  <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: isMobile ? "1.6rem" : "2.2rem", fontWeight: 800, letterSpacing: isMobile ? "0.12em" : "0.18em", color: "var(--cyan)" }}>{room.code}</div>
-                </div>
-                <button onClick={handleCopy} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.45rem 0.9rem", flexShrink: 0 }}>
-                  {copied ? "✓ Copied!" : "Copy"}
-                </button>
-              </div>
-              <div style={{ display: "flex", gap: isMobile ? "1rem" : "1.5rem", flexWrap: "wrap" }}>
-                {[
-                  { label: "Debaters", value: `${readyCount}/${debatingParticipants.length} ready` },
-                  { label: "Judges",   value: judgeParticipants.length.toString()    },
-                  { label: "Watching", value: spectatorParticipants.length.toString() },
-                  { label: "Mode",     value: room.debateMode     },
-                  { label: "Turn",     value: `${room.turnDuration}s` },
-                ].map(({ label, value }) => (
-                  <div key={label}>
-                    <div style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</div>
-                    <div style={{ fontWeight: 800, color: "var(--text)", fontSize: "0.88rem", textTransform: "capitalize" }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+        <main className="ds-room-main">
+          <div style={{
+            maxWidth: 1280, margin: "0 auto", display: "grid", gap: 24, alignItems: "start",
+            gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1fr) clamp(280px, 30vw, 380px)",
+          }}>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 300px", gap: "0.875rem", paddingBottom: "0.875rem", flex: 1, minHeight: 0 }}>
-              {/* Left column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem", minHeight: 0 }}>
+            {/* ── Left: voting, debaters, observers ───────────────────── */}
+            <section style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
 
-                {/* Topic */}
-                <div className="glass fade-up" style={{ padding: "1rem 1.5rem" }}>
-                  <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.5rem" }}>Motion</div>
-                  <h1 style={{ fontSize: "1.35rem", fontWeight: 800, color: "var(--text)", margin: 0, lineHeight: 1.35 }}>
-                    {room.topic || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Voting in progress…</span>}
+              {room.votingEnabled && (
+                <VotingPanel
+                  votingTopics={room.votingTopics}
+                  votingDuration={room.votingDuration}
+                  isHost={isHost}
+                  roomId={room._id!}
+                  socket={socket}
+                />
+              )}
+
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                  <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 22 : 28, letterSpacing: "-0.02em" }}>
+                    Debaters <span style={{ color: "var(--ds-faint)" }}>{debatingParticipants.length}/{room.maxParticipants}</span>
                   </h1>
-                  {room.description && (
-                    <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0 }}>{room.description}</p>
-                  )}
+                  <p style={{ margin: 0, fontSize: 14, color: "var(--ds-muted)" }}>
+                    {readyCount} of {debatingParticipants.length} ready. Sides are assigned when the debate starts.
+                  </p>
                 </div>
+                <div
+                  role="img"
+                  aria-label={`${readyCount} of ${debatingParticipants.length} debaters ready`}
+                  style={{ height: 10, width: 180, maxWidth: "100%", borderRadius: 99, background: "var(--ds-track)", overflow: "hidden" }}
+                >
+                  <div style={{ height: 10, background: "var(--ds-for-mid)", transition: "width .3s", width: debatingParticipants.length ? `${(readyCount / debatingParticipants.length) * 100}%` : "0%" }} />
+                </div>
+              </div>
 
-                {/* Voting panel */}
-                {room.votingEnabled && (
-                  <div className="fade-up">
-                    <VotingPanel
-                      votingTopics={room.votingTopics}
-                      votingDuration={room.votingDuration}
-                      isHost={isHost}
-                      roomId={room._id!}
-                      socket={socket}
-                    />
-                  </div>
-                )}
+              <div style={{ display: "grid", gap: 14, gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "repeat(auto-fill, minmax(220px, 1fr))" }}>
+                {debatingParticipants.map((p) => {
+                  const isYou    = p.userId === user?.id;
+                  const offline  = p.status === "disconnected";
+                  const pIsHost  = p.role === "moderator" || p.userId === room.creatorId;
+                  const controls = <>{statusChip(p)}{renderManage(p)}</>;
 
-                {/* Players */}
-                <div className="glass fade-up" style={{ padding: "1rem 1.5rem", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.875rem", flexShrink: 0 }}>
-                    <span style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)" }}>
-                      Players — {participants.length}
-                    </span>
-                    <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", flex: 1, minHeight: 0, overflowY: "auto" }}>
-                    {participants.map((p) => {
-                      const isYou   = p.userId === user?.id;
-                      const ready   = p.status === "ready";
-                      const offline = p.status === "disconnected";
-                      const pRole   = (p.role ?? "participant") as ParticipantRole;
-                      const badge   = ROLE_BADGE[pRole];
-                      const isDebating = pRole === "participant" || pRole === "moderator";
-                      const menuOpen   = roleMenuFor === p.userId;
-
-                      return (
-                        <div
-                          key={p.userId}
-                          style={{
-                            position: "relative",
-                            display: "flex", alignItems: "center", gap: "0.875rem",
-                            padding: "0.75rem 1rem", borderRadius: "0.625rem",
-                            background: isYou ? "rgba(14,165,233,0.07)" : "var(--surface2)",
-                            border: `1px solid ${ready && isDebating ? "rgba(16,185,129,0.5)" : isYou ? "rgba(34,211,238,0.2)" : "var(--border)"}`,
-                            boxShadow: ready && isDebating ? "0 2px 8px rgba(16,185,129,0.12)" : "none",
-                            opacity: offline ? 0.45 : 1,
-                            transition: "all 0.2s",
-                          }}
-                        >
-                          <div
-                            className="avatar"
-                            style={{
-                              background: ready && isDebating ? "rgba(16,185,129,0.2)" : badge.bg,
-                              color: ready && isDebating ? "#10b981" : badge.color,
-                              border: `1px solid ${ready && isDebating ? "rgba(16,185,129,0.4)" : badge.color}30`,
-                            }}
-                          >
-                            {p.username.charAt(0).toUpperCase()}
-                          </div>
-
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 700, color: "var(--text)", fontSize: "0.9rem" }}>{p.username}</span>
-                              {isYou && <span className="badge badge-cyan" style={{ fontSize: "0.6rem" }}>YOU</span>}
-                              {/* Role badge */}
-                              <span style={{ fontSize: "0.58rem", fontWeight: 800, letterSpacing: "0.08em", padding: "0.15rem 0.45rem", borderRadius: 9999, background: badge.bg, color: badge.color, textTransform: "uppercase" }}>
-                                {badge.label}
+                  return (
+                    <article
+                      key={p.userId}
+                      style={{
+                        position: "relative", padding: isMobile ? 14 : 20, borderRadius: 20, boxSizing: "border-box",
+                        background: "var(--ds-panel)", border: `1px solid ${isYou ? "var(--ds-accent-line)" : "var(--ds-border)"}`,
+                        boxShadow: "var(--ds-shadow)", opacity: offline ? 0.55 : 1, transition: "opacity .2s, border-color .2s",
+                        display: "flex", flexDirection: isMobile ? "row" : "column", alignItems: isMobile ? "center" : "stretch", gap: isMobile ? 10 : 14,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 auto", minWidth: 0 }}>
+                        <span aria-hidden="true" style={{
+                          width: 48, height: 48, flexShrink: 0, borderRadius: 16, fontWeight: 700, fontSize: 16,
+                          background: isYou ? "var(--ds-avatar-bg)" : "var(--ds-raised)", color: isYou ? "var(--ds-avatar-fg)" : "var(--ds-text)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                        }}>
+                          {initials(p.username)}
+                        </span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 15, minWidth: 0 }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.username}</span>
+                            {pIsHost && (
+                              <span role="img" aria-label="Host" style={{ color: "var(--ds-gold-mid)", display: "inline-flex" }}>
+                                <Icon name="crown" size={15} />
                               </span>
-                            </div>
-                          </div>
-
-                          {/* Status indicator */}
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                            {offline ? (
-                              <span className="badge badge-muted">Offline</span>
-                            ) : !isDebating ? (
-                              <span className="badge badge-muted" style={{ background: badge.bg, color: badge.color }}>Observing</span>
-                            ) : ready ? (
-                              <>
-                                <div className="pulse-dot pulse-dot-green" />
-                                <span className="badge badge-for">Ready</span>
-                              </>
-                            ) : (
-                              <>
-                                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--border2)" }} />
-                                <span className="badge badge-muted">Waiting</span>
-                              </>
                             )}
+                          </span>
+                          <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>{isYou ? "You · " : ""}{pIsHost ? "Host" : "Debater"}</span>
+                        </div>
+                      </div>
 
-                            {/* Host controls: role change + transfer */}
-                            {isHost && !isYou && room.status === "lobby" && (
-                              <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={() => setRoleMenuFor(menuOpen ? null : p.userId)}
-                                  className="btn-ghost"
-                                  style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem", lineHeight: 1 }}
-                                  title="Manage"
-                                >
-                                  ⋯
-                                </button>
+                      {isMobile ? controls : (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 44 }}>{controls}</div>
+                      )}
+                    </article>
+                  );
+                })}
 
-                                {menuOpen && (
-                                  <div style={{
-                                    position: "absolute", right: 0, top: "calc(100% + 4px)",
-                                    background: "var(--surface)", border: "1px solid var(--border)",
-                                    borderRadius: "0.625rem", zIndex: 50, minWidth: 200,
-                                    boxShadow: "0 8px 32px rgba(0,0,0,0.35)", overflow: "hidden",
-                                  }}>
-                                    <div style={{ padding: "0.5rem 0.75rem", fontSize: "0.65rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: "1px solid var(--border)" }}>
-                                      Change Role
-                                    </div>
-                                    {ROLE_OPTIONS.map(({ role: r, label }) => {
-                                      // Check capacity before rendering each option
-                                      const avail = roleAvailability(
-                                        r,
-                                        participants,
-                                        p.userId,
-                                        (room as any).maxJudges ?? 3,
-                                        (room as any).maxSpectators ?? 50,
-                                        room.maxParticipants,
-                                      );
-                                      const isCurrent = pRole === r;
-                                      // Always show current role (to unblock manual re-assignment)
-                                      // and always show "participant" (debater) as escape hatch.
-                                      // Hide other options that are disabled/full.
-                                      if (!avail.available && !isCurrent && r !== "participant") return null;
+                {Array.from({ length: seatTiles }, (_, i) => {
+                  const isTail = seatOverflow > 0 && i === seatTiles - 1;
+                  return (
+                    <div key={`seat-${i}`} style={{
+                      minHeight: isMobile ? 64 : 150, borderRadius: 20, border: "2px dashed var(--ds-border2)", boxSizing: "border-box",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      color: "var(--ds-faint)", fontSize: 14, fontWeight: 600,
+                    }}>
+                      <Icon name="plus" size={16} />
+                      {isTail ? `+${seatOverflow + 1} open seats` : "Open seat"}
+                    </div>
+                  );
+                })}
+              </div>
 
-                                      return (
-                                        <button
-                                          key={r}
-                                          onClick={() => avail.available && handleChangeRole(p.userId, r)}
-                                          disabled={!avail.available && !isCurrent}
-                                          title={avail.reason ?? undefined}
-                                          style={{
-                                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                                            width: "100%", textAlign: "left",
-                                            padding: "0.55rem 0.75rem", fontSize: "0.83rem",
-                                            background: isCurrent ? "rgba(16,185,129,0.1)" : "transparent",
-                                            color: isCurrent ? "var(--for)" : (!avail.available ? "var(--muted)" : "var(--text)"),
-                                            border: "none", cursor: avail.available ? "pointer" : "default",
-                                            fontWeight: isCurrent ? 700 : 400,
-                                            opacity: !avail.available && !isCurrent ? 0.5 : 1,
-                                          }}
-                                        >
-                                          <span>{isCurrent ? "✓ " : "  "}{label}</span>
-                                          {/* Show remaining slot count on available non-current options */}
-                                          {!isCurrent && avail.available && r !== "participant" && (
-                                            <span style={{ fontSize: "0.65rem", color: avail.slotsLeft <= 1 ? "var(--gold)" : "var(--muted)", marginLeft: "0.5rem" }}>
-                                              {avail.slotsLeft} left
-                                            </span>
-                                          )}
-                                          {!isCurrent && !avail.available && r !== "participant" && (
-                                            <span style={{ fontSize: "0.6rem", color: "var(--against)", marginLeft: "0.5rem", fontWeight: 700 }}>
-                                              {avail.reason}
-                                            </span>
-                                          )}
-                                        </button>
-                                      );
-                                    })}
-                                    <div style={{ height: 1, background: "var(--border)", margin: "0.25rem 0" }} />
-                                    <button
-                                      onClick={() => handleTransferHost(p.userId)}
-                                      style={{
-                                        display: "block", width: "100%", textAlign: "left",
-                                        padding: "0.55rem 0.75rem", fontSize: "0.83rem",
-                                        background: "transparent", color: "#f59e0b",
-                                        border: "none", cursor: "pointer",
-                                      }}
-                                    >
-                                      👑 Make Host
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
+              {participants.length === 0 && (
+                <p style={{ ...hint, fontSize: 14 }}>No players yet — share the code!</p>
+              )}
+
+              {/* Judges & spectators */}
+              <div style={{ ...panel, boxShadow: "none", gap: 12 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                  <h2 style={sectionTitle}>Judges &amp; spectators</h2>
+                  <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>
+                    {judgeParticipants.length} judging · {spectatorParticipants.length} watching
+                  </span>
+                </div>
+                {observerParticipants.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 13, color: "var(--ds-muted)" }}>No judges or spectators yet.</p>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {observerParticipants.map((p) => {
+                      const isYou   = p.userId === user?.id;
+                      const offline = p.status === "disconnected";
+                      const isJudge = p.role === "judge";
+                      const manage  = renderManage(p);
+                      return (
+                        <div key={p.userId} style={{
+                          position: "relative", display: "inline-flex", alignItems: "center", gap: 10, minHeight: 48, maxWidth: "100%",
+                          padding: manage ? "2px 2px 2px 6px" : "2px 14px 2px 6px", borderRadius: 14, boxSizing: "border-box",
+                          background: "var(--ds-raised)", opacity: offline ? 0.6 : 1,
+                        }}>
+                          <span aria-hidden="true" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: 12, background: "var(--ds-panel)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 13 }}>
+                            {initials(p.username)}
+                          </span>
+                          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.username}</span>
+                            <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>
+                              {isYou ? "You · " : ""}{isJudge ? "Judge" : "Spectator"}{offline ? " · offline" : ""}
+                            </span>
+                          </span>
+                          <span style={{ color: isJudge ? ROLE_BADGE.judge.color : "var(--ds-muted)", display: "inline-flex" }}>
+                            <Icon name={isJudge ? "scale" : "eye"} size={16} />
+                          </span>
+                          {manage}
                         </div>
                       );
                     })}
-                    {participants.length === 0 && (
-                      <p style={{ color: "var(--muted)", textAlign: "center", fontSize: "0.875rem", padding: "1rem" }}>
-                        No players yet — share the code!
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* ── Right: settings + host controls / your status ───────── */}
+            <aside style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+              <div style={panel}>
+                <h2 style={sectionTitle}>Room settings</h2>
+                <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                  {settings.map(({ label, value }) => (
+                    <div key={label} style={{ padding: 12, borderRadius: 12, background: "var(--ds-raised)" }}>
+                      <dt style={{ fontSize: 12, color: "var(--ds-muted)", fontWeight: 600 }}>{label}</dt>
+                      <dd style={{ margin: "4px 0 0", fontWeight: 700, textTransform: "capitalize" }}>{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                {room.description && (
+                  <p style={{ margin: 0, fontSize: 14, color: "var(--ds-muted)", lineHeight: 1.5 }}>{room.description}</p>
+                )}
+              </div>
+
+              <div style={{ ...panel, gap: 12, border: `1px solid ${isHost ? "var(--ds-accent-line)" : "var(--ds-border)"}` }}>
+                <h2 style={{ ...sectionTitle, display: "flex", alignItems: "center", gap: 8, color: isHost ? "var(--ds-accent)" : "var(--ds-muted)" }}>
+                  {isHost && <span style={{ color: "var(--ds-gold-mid)", display: "inline-flex" }}><Icon name="crown" size={15} /></span>}
+                  {isHost ? "Host Controls" : "Your Status"}
+                </h2>
+
+                {/* My role tag */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 12px", borderRadius: 12, background: "var(--ds-raised)" }}>
+                  <span style={{ fontSize: 13, color: "var(--ds-muted)" }}>Your role</span>
+                  <span className="ds-chip" style={{ background: ROLE_BADGE[myRole].bg, color: ROLE_BADGE[myRole].color, letterSpacing: "0.06em" }}>
+                    {ROLE_BADGE[myRole].label}
+                  </span>
+                </div>
+
+                {/* Non-host, debating participant: ready/unready */}
+                {!isHost && isDebater && (
+                  <>
+                    {!userReady ? (
+                      <button type="button" onClick={handleReady} className="ds-btn ds-btn-for ds-btn-block" style={{ height: 52 }}>
+                        <Icon name="check" size={18} />Ready up
+                      </button>
+                    ) : (
+                      <button type="button" onClick={handleUnready} className="ds-btn ds-btn-danger ds-btn-block" style={{ height: 52 }}>
+                        <Icon name="x" size={18} />Not ready
+                      </button>
+                    )}
+                    <p style={hint}>
+                      {debatingReady && debatingParticipants.length >= 2 ? "All ready — waiting for host…" : "Ready up to start the debate"}
+                    </p>
+                  </>
+                )}
+
+                {/* Observer status message */}
+                {!isHost && !isDebater && (
+                  <p style={hint}>
+                    {myRole === "judge"
+                      ? "You'll score the debaters after the debate ends."
+                      : "You'll be able to listen to the debate live."}
+                  </p>
+                )}
+
+                {isHost && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleStartDebate}
+                      disabled={!debatingReady || debatingParticipants.length < 2}
+                      className="ds-btn ds-btn-primary ds-btn-block"
+                      style={{
+                        height: 56, fontSize: 16,
+                        ...(!debatingReady || debatingParticipants.length < 2
+                          ? { background: "var(--ds-neutral-bg)", color: "var(--ds-neutral-text)", boxShadow: "none", opacity: 1 }
+                          : {}),
+                      }}
+                    >
+                      {!isConnected ? "Connecting…" : <>Start debate<Icon name="right" size={18} /></>}
+                    </button>
+                    {(!debatingReady || debatingParticipants.length < 2) && (
+                      <p style={hint}>
+                        {debatingParticipants.length < 2
+                          ? "Need at least 2 debaters"
+                          : `${debatingParticipants.length - readyCount} debater(s) not ready`}
                       </p>
                     )}
-                  </div>
-                </div>
-              </div>
 
-              {/* Right sidebar */}
-              <div>
-                <div className="glass fade-up" style={{ padding: "1.25rem" }}>
-                  <div style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "1.25rem" }}>
-                    {isHost ? "Host Controls" : "Your Status"}
-                  </div>
-
-                  {/* My role tag */}
-                  <div style={{ marginBottom: "1rem", padding: "0.6rem 0.875rem", borderRadius: "0.625rem", background: ROLE_BADGE[myRole].bg, border: `1px solid ${ROLE_BADGE[myRole].color}30`, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>Your role:</span>
-                    <span style={{ fontWeight: 800, fontSize: "0.8rem", color: ROLE_BADGE[myRole].color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{ROLE_BADGE[myRole].label}</span>
-                  </div>
-
-                  {/* Non-host, debating participant: ready/unready */}
-                  {!isHost && isDebater && (
-                    <div style={{ marginBottom: "1rem" }}>
-                      {!userReady ? (
-                        <button onClick={handleReady} className="btn-for" style={{ width: "100%", marginBottom: "0.75rem" }}>✓ Ready Up</button>
-                      ) : (
-                        <button onClick={handleUnready} className="btn-danger" style={{ width: "100%", marginBottom: "0.75rem" }}>✕ Not Ready</button>
-                      )}
-                      <div style={{ padding: "0.75rem 1rem", background: "rgba(14,165,233,0.07)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: "0.625rem" }}>
-                        <p style={{ color: "var(--muted)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
-                          {debatingReady && debatingParticipants.length >= 2 ? "All ready — waiting for host…" : "Ready up to start the debate"}
-                        </p>
+                    {room.status === "lobby" && transferTargets.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          aria-expanded={transferOpen}
+                          onClick={() => setTransferOpen((o) => !o)}
+                          style={{ minHeight: 44, border: 0, background: "transparent", color: "var(--ds-muted)", font: "600 13px Outfit, sans-serif", textDecoration: "underline", cursor: "pointer" }}
+                        >
+                          Transfer host
+                        </button>
+                        {transferOpen && transferTargets.map((p) => (
+                          <button
+                            key={p.userId}
+                            type="button"
+                            onClick={() => handleTransferHost(p.userId)}
+                            aria-label={`Make ${p.username} the host`}
+                            style={{ ...menuItem, borderRadius: 12, background: "var(--ds-raised)", justifyContent: "flex-start", gap: 10 }}
+                          >
+                            <span aria-hidden="true" style={{ width: 28, height: 28, borderRadius: 9, background: "var(--ds-panel)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 11, flexShrink: 0 }}>
+                              {initials(p.username)}
+                            </span>
+                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.username}</span>
+                            <span style={{ color: "var(--ds-gold-mid)", display: "inline-flex" }}><Icon name="crown" size={16} /></span>
+                          </button>
+                        ))}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Observer status message */}
-                  {!isHost && !isDebater && (
-                    <div style={{ marginBottom: "1rem", padding: "0.875rem 1rem", background: ROLE_BADGE[myRole].bg, border: `1px solid ${ROLE_BADGE[myRole].color}30`, borderRadius: "0.625rem" }}>
-                      <p style={{ color: "var(--muted)", fontSize: "0.82rem", margin: 0, textAlign: "center", lineHeight: 1.5 }}>
-                        {myRole === "judge"
-                          ? "You'll score the debaters after the debate ends."
-                          : "You'll be able to listen to the debate live."}
-                      </p>
-                    </div>
-                  )}
-
-                  {isHost && (
-                    <div style={{ marginBottom: "1rem" }}>
-                      <button
-                        onClick={handleStartDebate}
-                        disabled={!debatingReady || debatingParticipants.length < 2}
-                        className="btn-primary"
-                        style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800, marginBottom: "0.75rem" }}
-                      >
-                        {!isConnected ? "Connecting…" : "Start Debate →"}
-                      </button>
-                      {(!debatingReady || debatingParticipants.length < 2) && (
-                        <div style={{ padding: "0.75rem 1rem", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "0.625rem" }}>
-                          <p style={{ color: "var(--gold)", fontSize: "0.8rem", margin: 0, textAlign: "center" }}>
-                            {debatingParticipants.length < 2
-                              ? "Need at least 2 debaters"
-                              : `${debatingParticipants.length - readyCount} debater(s) not ready`}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div style={{ marginBottom: "1.25rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
-                      <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Debaters Ready</span>
-                      <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text)" }}>{readyCount}/{debatingParticipants.length}</span>
-                    </div>
-                    <div className="score-bar-track">
-                      <div className="score-bar-fill score-bar-fill-for"
-                        style={{ width: debatingParticipants.length ? `${(readyCount / debatingParticipants.length) * 100}%` : "0%" }} />
-                    </div>
-                  </div>
-
-                  <div className="divider" />
-
-                  <button onClick={handleLeave} className="btn-ghost"
-                    style={{ width: "100%", color: "var(--against)", borderColor: "rgba(244,63,94,0.3)" }}>
-                    Leave Room
-                  </button>
-                </div>
+                    )}
+                  </>
+                )}
               </div>
-            </div>
+            </aside>
           </div>
         </main>
       </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 
 // ─── Hoisted mocks ────────────────────────────────────────────────────────────
 const { mockNavigate, mockSocket } = vi.hoisted(() => {
@@ -138,7 +138,7 @@ describe("PrepScreen", () => {
       setupDebateLoad(null, { error: "Debate not found" });
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText(/⚠ Debate not found/)).toBeInTheDocument()
+        expect(screen.getByText(/Debate not found/)).toBeInTheDocument()
       );
     });
 
@@ -178,10 +178,33 @@ describe("PrepScreen", () => {
       );
     });
 
-    it("shows debate topic as motion", async () => {
+    it("shows debate topic as motion (room header + hero)", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("AI will replace human creativity")).toBeInTheDocument()
+        expect(screen.getAllByText("AI will replace human creativity").length).toBeGreaterThan(1)
+      );
+    });
+
+    it("shows the room code and Prep status in the room header", async () => {
+      renderPage();
+      await waitFor(() => screen.getByText("PREP"));
+      expect(screen.getByRole("button", { name: /Copy room code ABCD1/ })).toBeInTheDocument();
+      expect(screen.getByText("Prep")).toBeInTheDocument();
+    });
+
+    it("Leave navigates home (room:leave is handled by useLeaveRoomOnNavigate)", async () => {
+      renderPage();
+      await waitFor(() => screen.getByText("PREP"));
+      fireEvent.click(screen.getByRole("button", { name: /Leave room/i }));
+      expect(mockNavigate).toHaveBeenCalledWith("/");
+      expect(mockSocket.emit).not.toHaveBeenCalledWith("room:leave", expect.anything());
+    });
+
+    it("shows the scoring rubric", async () => {
+      renderPage();
+      await waitFor(() => screen.getByText("How you’re scored"));
+      ["Clarity", "Evidence", "Rebuttal", "Organization"].forEach((c) =>
+        expect(screen.getByText(c)).toBeInTheDocument()
       );
     });
 
@@ -200,41 +223,28 @@ describe("PrepScreen", () => {
     });
   });
 
-  // ── Mode badge ─────────────────────────────────────────────────────────────
-  describe("mode badge", () => {
-    it("shows 'Alternate' in badge for alternate mode", async () => {
+  // ── Mode summary ───────────────────────────────────────────────────────────
+  describe("mode summary", () => {
+    it("shows mode, round count and slot duration for alternate mode", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("Alternate")).toBeInTheDocument()
+        expect(screen.getByText("Alternate · 4 rounds · 90s turns")).toBeInTheDocument()
       );
     });
 
-    it("shows 'Rounds' badge in alternate mode", async () => {
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByText("Rounds:")).toBeInTheDocument()
-      );
-    });
-
-    it("shows round count in alternate mode", async () => {
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByText("4")).toBeInTheDocument()
-      );
-    });
-
-    it("shows turn slot duration badge", async () => {
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByText("90s")).toBeInTheDocument()
-      );
-    });
-
-    it("shows 'Buzzer' in badge for buzzer mode", async () => {
+    it("shows 'Buzzer' and slot duration (no rounds) for buzzer mode", async () => {
       setupDebateLoad(MOCK_DEBATE_BUZZER);
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("Buzzer")).toBeInTheDocument()
+        expect(screen.getByText("Buzzer · 90s turns")).toBeInTheDocument()
+      );
+    });
+
+    it("tells the debater their speaking position in alternate mode", async () => {
+      mockUser = { id: "user-2", username: "bob" };
+      renderPage();
+      await waitFor(() =>
+        expect(screen.getByText("You speak 2nd")).toBeInTheDocument()
       );
     });
   });
@@ -243,7 +253,7 @@ describe("PrepScreen", () => {
   describe("team rosters", () => {
     it("shows FOR column header", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("alice"));
+      await waitFor(() => screen.getByText("Teams"));
       // The FOR header is "FOR — {count}" rendered as multiple text nodes inside a div;
       // match via a broad regex that crosses multiple elements
       expect(screen.getAllByText(/FOR/).length).toBeGreaterThan(0);
@@ -251,7 +261,7 @@ describe("PrepScreen", () => {
 
     it("shows AGAINST column header", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("bob"));
+      await waitFor(() => screen.getByText("Teams"));
       expect(screen.getAllByText(/AGAINST/).length).toBeGreaterThan(0);
     });
 
@@ -264,8 +274,9 @@ describe("PrepScreen", () => {
 
     it("shows bob in AGAINST column", async () => {
       renderPage();
+      // bob appears in the turn order and the team roster
       await waitFor(() =>
-        expect(screen.getByText("bob")).toBeInTheDocument()
+        expect(screen.getAllByText("bob").length).toBeGreaterThan(0)
       );
     });
 
@@ -276,81 +287,76 @@ describe("PrepScreen", () => {
       );
     });
 
-    it("shows player avatars with first letter of username", async () => {
+    it("shows player avatars with initials", async () => {
       renderPage();
       await waitFor(() => screen.getByText("alice"));
-      expect(screen.getByText("A")).toBeInTheDocument(); // alice's avatar
-      expect(screen.getByText("B")).toBeInTheDocument(); // bob's avatar
+      expect(screen.getAllByText("A").length).toBeGreaterThan(0); // alice's avatar
+      expect(screen.getAllByText("B").length).toBeGreaterThan(0); // bob's avatar
     });
   });
 
   // ── Side reveal ────────────────────────────────────────────────────────────
   describe("side reveal", () => {
-    it("shows 'You are arguing' label when user has a side", async () => {
+    it("shows 'Your side' label when user has a side", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("You are arguing")).toBeInTheDocument()
+        expect(screen.getByText("Your side")).toBeInTheDocument()
       );
     });
 
-    it("shows 'FOR THE MOTION' when user is on the for side", async () => {
+    it("shows 'FOR' headline when user is on the for side", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("FOR THE MOTION")).toBeInTheDocument()
+        expect(screen.getByRole("heading", { level: 1, name: "FOR" })).toBeInTheDocument()
       );
     });
 
-    it("shows 'AGAINST THE MOTION' when user is on the against side", async () => {
+    it("shows 'AGAINST' headline when user is on the against side", async () => {
       mockUser = { id: "user-2", username: "bob" };
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("AGAINST THE MOTION")).toBeInTheDocument()
+        expect(screen.getByRole("heading", { level: 1, name: "AGAINST" })).toBeInTheDocument()
       );
     });
 
     it("does not show side reveal if user has no matching turn order entry", async () => {
       mockUser = { id: "user-99", username: "unknown" };
       renderPage();
-      await waitFor(() => screen.getByText("AI will replace human creativity"));
-      expect(screen.queryByText("You are arguing")).not.toBeInTheDocument();
+      await waitFor(() => screen.getAllByText("AI will replace human creativity")[0]);
+      expect(screen.queryByText("Your side")).not.toBeInTheDocument();
+      expect(screen.getByText("Debate starts soon")).toBeInTheDocument();
     });
   });
 
   // ── Alternate mode — speaking order ────────────────────────────────────────
   describe("alternate mode — speaking order", () => {
-    it("shows 'Speaking Order' section header", async () => {
+    it("shows 'Turn order' section header", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("Speaking Order")).toBeInTheDocument()
+        expect(screen.getByText("Turn order")).toBeInTheDocument()
       );
     });
 
     it("shows numbered speaking order entries", async () => {
       renderPage();
-      await waitFor(() =>
-        expect(screen.getByText(/1\. alice/)).toBeInTheDocument()
-      );
-      expect(screen.getByText(/2\. bob/)).toBeInTheDocument();
+      await waitFor(() => screen.getByText("Turn order"));
+      const items = within(screen.getByRole("list")).getAllByRole("listitem");
+      expect(items).toHaveLength(2);
+      expect(items[0]).toHaveTextContent(/^1.*alice/);
+      expect(items[1]).toHaveTextContent(/^2.*bob/);
     });
 
     it("labels current user as '(you)' in speaking order", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText(/1\. alice \(you\)/)).toBeInTheDocument()
+        expect(screen.getByText("alice (you)")).toBeInTheDocument()
       );
     });
 
-    it("shows repeat order hint text", async () => {
+    it("shows repeat order hint text with rounds count", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText(/Order repeats for each round/)).toBeInTheDocument()
-      );
-    });
-
-    it("shows rounds count in speaking order header", async () => {
-      renderPage();
-      await waitFor(() =>
-        expect(screen.getByText("4 rounds")).toBeInTheDocument()
+        expect(screen.getByText(/Order repeats for 4 rounds · 90s per turn/)).toBeInTheDocument()
       );
     });
   });
@@ -361,17 +367,17 @@ describe("PrepScreen", () => {
       setupDebateLoad(MOCK_DEBATE_BUZZER);
     });
 
-    it("shows 'Buzzer Rules' section header", async () => {
+    it("shows 'Buzzer rules' section header", async () => {
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("Buzzer Rules")).toBeInTheDocument()
+        expect(screen.getByText("Buzzer rules")).toBeInTheDocument()
       );
     });
 
-    it("does NOT show 'Speaking Order' in buzzer mode", async () => {
+    it("does NOT show 'Turn order' in buzzer mode", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("Buzzer Rules"));
-      expect(screen.queryByText("Speaking Order")).not.toBeInTheDocument();
+      await waitFor(() => screen.getByText("Buzzer rules"));
+      expect(screen.queryByText("Turn order")).not.toBeInTheDocument();
     });
 
     it("shows grab mic rule", async () => {
@@ -395,7 +401,7 @@ describe("PrepScreen", () => {
       );
     });
 
-    it("shows buzzer prep hint for 'AGAINST THE MOTION'", async () => {
+    it("shows buzzer prep hint for the AGAINST side", async () => {
       mockUser = { id: "user-2", username: "bob" };
       renderPage();
       await waitFor(() =>
@@ -408,7 +414,7 @@ describe("PrepScreen", () => {
   describe("socket events", () => {
     it("navigates to debate page on debate:turn-started", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("AI will replace human creativity"));
+      await waitFor(() => screen.getAllByText("AI will replace human creativity")[0]);
 
       act(() => { mockSocket._emit("debate:turn-started"); });
       expect(mockNavigate).toHaveBeenCalledWith("/room/ABCD1/debate/debate-1");
@@ -416,7 +422,7 @@ describe("PrepScreen", () => {
 
     it("navigates to debate page on buzzer:open", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("AI will replace human creativity"));
+      await waitFor(() => screen.getAllByText("AI will replace human creativity")[0]);
 
       act(() => { mockSocket._emit("buzzer:open"); });
       expect(mockNavigate).toHaveBeenCalledWith("/room/ABCD1/debate/debate-1");
@@ -424,7 +430,7 @@ describe("PrepScreen", () => {
 
     it("registers socket listeners for turn-started and buzzer:open", async () => {
       renderPage();
-      await waitFor(() => screen.getByText("AI will replace human creativity"));
+      await waitFor(() => screen.getAllByText("AI will replace human creativity")[0]);
 
       const events = mockSocket.on.mock.calls.map((c: any[]) => c[0]);
       expect(events).toContain("debate:turn-started");
@@ -440,6 +446,12 @@ describe("PrepScreen", () => {
       // Should show some number (≈ 60) in the ring
       const prep = screen.getByText("PREP").parentElement;
       expect(prep?.textContent).toMatch(/\d/);
+    });
+
+    it("exposes the countdown as an accessible timer", async () => {
+      renderPage();
+      await waitFor(() => screen.getByText("PREP"));
+      expect(screen.getByRole("timer", { name: /seconds of prep left/ })).toBeInTheDocument();
     });
   });
 
@@ -485,7 +497,7 @@ describe("PrepScreen", () => {
       mockIsMobile = true;
       renderPage();
       await waitFor(() =>
-        expect(screen.getByText("AI will replace human creativity")).toBeInTheDocument()
+        expect(screen.getAllByText("AI will replace human creativity")[0]).toBeInTheDocument()
       );
     });
   });

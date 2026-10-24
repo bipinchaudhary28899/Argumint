@@ -1,6 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useSubscription } from "../payments/useSubscription";
+import { AppShell } from "../components/AppShell";
+import { BrandLogo, BrandSymbol } from "../components/BrandLogo";
+import { Icon } from "../components/Icon";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const FREE_FEATURES = [
   "Ranked debates & XP leaderboard",
@@ -19,9 +23,58 @@ const PRO_FEATURES = [
   "Everything in Free",
 ];
 
+// Only answers that hold for the product today (Pro is checked on the host when a room is created)
+const FAQ = [
+  {
+    q: "Can I cancel anytime?",
+    a: "Yes. Cancel from this page and Pro stays on until the end of the period you've paid for.",
+  },
+  {
+    q: "Do my judges need Pro?",
+    a: "No. Pro is tied to the host — judges and spectators join your room with a free account.",
+  },
+];
+
+const card: React.CSSProperties = {
+  borderRadius: 28,
+  background: "var(--ds-panel)",
+  boxShadow: "var(--ds-shadow)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 22,
+  minWidth: 0,
+};
+
+const featureItem: React.CSSProperties = { display: "flex", gap: 10, fontSize: 15, lineHeight: 1.45 };
+
+// Free-tier action styled as the board's outlined "Your current plan" block
+const outlineAction: React.CSSProperties = {
+  marginTop: "auto",
+  height: 52,
+  width: "100%",
+  borderRadius: 14,
+  border: "1px solid var(--ds-border2)",
+  background: "transparent",
+  color: "var(--ds-muted)",
+  fontWeight: 700,
+  fontSize: 15,
+};
+
+const goldAction: React.CSSProperties = {
+  height: 56,
+  width: "100%",
+  borderRadius: 16,
+  background: "linear-gradient(135deg, var(--gold-light), var(--gold))",
+  color: "var(--charcoal)",
+  boxShadow: "0 10px 24px rgba(var(--gold-rgb),0.3)",
+  fontWeight: 800,
+  fontSize: 16,
+};
+
 export function PricingPage() {
   const navigate    = useNavigate();
   const { user }    = useAuth();
+  const isMobile    = useIsMobile();
   const { isPro, status, currentPeriodEnd, isLoading, error, openCheckout, cancelSubscription } = useSubscription();
 
   const isCancelled = status === "cancelled";
@@ -31,141 +84,119 @@ export function PricingPage() {
     await openCheckout();
   };
 
-  return (
-    <div
-      className="bg-grid"
-      style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}
-    >
-      {/* Ambient glow */}
-      <div style={{ position: "fixed", top: "10%", left: "50%", transform: "translateX(-50%)", width: 600, height: 400, background: "radial-gradient(ellipse, rgba(79,142,247,0.07) 0%, transparent 70%)", pointerEvents: "none" }} />
+  const cardPad = isMobile ? "24px 20px" : 32;
 
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "2.5rem 1rem 4rem" }}>
+  const content = (
+    <div style={{ maxWidth: 960, margin: "0 auto", display: "flex", flexDirection: "column", gap: isMobile ? 24 : 36 }}>
 
-        {/* Back */}
-        <div style={{ width: "100%", maxWidth: 860, marginBottom: "1.5rem" }}>
-          <button onClick={() => navigate(-1)} className="btn-ghost" style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem" }}>
-            ← Back
-          </button>
+      {/* Header */}
+      <header style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center" }}>
+        <BrandSymbol size={isMobile ? 56 : 72} title="" />
+        <span className="ds-chip ds-chip-gold" style={{ height: 30, padding: "0 12px", borderRadius: 999, border: "1px solid var(--ds-gold-line)", fontSize: 11, letterSpacing: "0.12em" }}>
+          ARGUMINT PRO
+        </span>
+        <h1 style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 28 : 48, lineHeight: 1.05, letterSpacing: "-0.03em", textWrap: "balance", color: "var(--ds-text)" } as React.CSSProperties}>
+          Put a real panel behind the verdict.
+        </h1>
+        <p style={{ margin: 0, maxWidth: 560, fontSize: isMobile ? 16 : 18, lineHeight: 1.55, color: "var(--ds-muted)" }}>
+          Start free. Upgrade to seat human judges and spectators next to the AI.
+        </p>
+      </header>
+
+      {/* Error banner */}
+      {error && (
+        <div role="alert" style={{ padding: "14px 18px", borderRadius: 16, background: "var(--ds-against-bg)", border: "1px solid var(--ds-against-line)", color: "var(--ds-against-text)", fontSize: 14, lineHeight: 1.5 }}>
+          {error}
         </div>
+      )}
 
-        {/* Header */}
-        <div className="fade-up" style={{ textAlign: "center", marginBottom: "3rem" }}>
-          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>⚡</div>
-          <h1 style={{ fontSize: "2.4rem", fontWeight: 900, margin: "0 0 0.6rem", color: "var(--text)", letterSpacing: "-0.02em" }}>
-            Simple, honest pricing
-          </h1>
-          <p style={{ color: "var(--muted)", fontSize: "1rem", margin: 0, maxWidth: 440 }}>
-            Start free. Upgrade when you need more power.
-          </p>
-        </div>
+      {/* Tier cards */}
+      <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 20, alignItems: "stretch" }}>
 
-        {/* Error banner */}
-        {error && (
-          <div style={{ width: "100%", maxWidth: 860, marginBottom: "1.5rem", padding: "0.875rem 1.25rem", background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: "0.75rem", color: "#f43f5e", fontSize: "0.875rem" }}>
-            {error}
-          </div>
-        )}
-
-        {/* Tier cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1.5rem", width: "100%", maxWidth: 860 }}>
-
-          {/* ── Free ── */}
-          <div className="glass fade-up" style={{ padding: "2rem", borderRadius: "1.25rem", display: "flex", flexDirection: "column" }}>
-            <div style={{ marginBottom: "1.5rem" }}>
-              <div style={{ fontSize: "0.65rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "0.5rem" }}>Free</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.35rem" }}>
-                <span style={{ fontSize: "2.8rem", fontWeight: 900, color: "var(--text)", lineHeight: 1 }}>₹0</span>
-                <span style={{ color: "var(--muted)", fontSize: "0.875rem" }}>/ forever</span>
-              </div>
-              <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0, lineHeight: 1.5 }}>
-                Ranked debates, AI scoring, and surprises as you level up.
-              </p>
-            </div>
-
-            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 2rem", display: "flex", flexDirection: "column", gap: "0.6rem", flex: 1 }}>
-              {FREE_FEATURES.map((f) => (
-                <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.625rem", fontSize: "0.875rem", color: "var(--subtle)" }}>
-                  <span style={{ color: "var(--for)", flexShrink: 0, marginTop: "0.05rem" }}>✓</span>
-                  {f}
-                </li>
-              ))}
-            </ul>
-
-            <button
-              onClick={() => navigate(user ? "/" : "/register")}
-              className="btn-ghost"
-              style={{ width: "100%", padding: "0.875rem" }}
-            >
-              {user ? "Current plan" : "Get started free"}
-            </button>
+        {/* ── Free ── */}
+        <article style={{ ...card, padding: cardPad, border: "1px solid var(--ds-border)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <h2 style={{ margin: 0, fontWeight: 800, fontSize: 22, color: "var(--ds-text)" }}>Free</h2>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontWeight: 800, fontSize: 40, color: "var(--ds-text)" }}>₹0</span>
+              <span style={{ fontSize: 14, color: "var(--ds-muted)" }}>forever</span>
+            </span>
           </div>
 
-          {/* ── Pro ── */}
-          <div
-            className="glass fade-up"
-            style={{
-              padding: "2rem",
-              borderRadius: "1.25rem",
-              display: "flex",
-              flexDirection: "column",
-              border: "1.5px solid rgba(79,142,247,0.45)",
-              background: "rgba(79,142,247,0.04)",
-              position: "relative",
-              overflow: "hidden",
-            }}
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
+            {FREE_FEATURES.map((f) => (
+              <li key={f} style={{ ...featureItem, color: "var(--ds-text2)" }}>
+                <span style={{ color: "var(--ds-muted)", flexShrink: 0, paddingTop: 2 }}><Icon name="check" size={16} /></span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+
+          <button
+            onClick={() => { if (!isPro) navigate(user ? "/" : "/register"); }}
+            disabled={isPro}
+            className="ds-btn"
+            style={{ ...outlineAction, ...(!user ? { color: "var(--ds-text)" } : {}), ...(isPro ? { opacity: 1 } : {}) }}
           >
-            {/* Popular badge */}
-            <div style={{ position: "absolute", top: 0, right: 0, background: "linear-gradient(135deg,#4f8ef7,#22d3ee)", color: "#fff", fontSize: "0.6rem", fontWeight: 800, letterSpacing: "0.1em", padding: "0.3rem 0.875rem", borderBottomLeftRadius: "0.625rem" }}>
-              POPULAR
+            {!user ? "Get started free" : isPro ? "Included in Pro" : "Current plan"}
+          </button>
+        </article>
+
+        {/* ── Pro ── */}
+        <article style={{ ...card, padding: cardPad, border: "2px solid var(--ds-gold-line)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: 22, color: "var(--ds-gold-text)" }}>
+                <Icon name="crown" size={24} />Pro
+              </h2>
+              {/* Popular marker — becomes the plan marker for Pro users */}
+              <span className="ds-chip ds-chip-gold" style={{ letterSpacing: "0.1em", fontSize: 11 }}>
+                {isPro ? "YOUR PLAN" : "POPULAR"}
+              </span>
             </div>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontWeight: 800, fontSize: isMobile ? 28 : 40, color: "var(--ds-text)" }}>₹50</span>
+              <span style={{ fontSize: 14, color: "var(--ds-muted)" }}>/ month</span>
+            </span>
+          </div>
 
-            <div style={{ marginBottom: "1.5rem" }}>
-              <div style={{ fontSize: "0.65rem", fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--cyan)", marginBottom: "0.5rem" }}>Pro</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.35rem" }}>
-                <span style={{ fontSize: "2.8rem", fontWeight: 900, color: "var(--text)", lineHeight: 1 }}>₹50</span>
-                <span style={{ color: "var(--muted)", fontSize: "0.875rem" }}>/ month</span>
-              </div>
-              <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.6rem", marginBottom: 0, lineHeight: 1.5 }}>
-                Gold UI, buzzer mode, judges, spectators & deep AI analysis.
-              </p>
-            </div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
+            {PRO_FEATURES.map((f) => (
+              <li key={f} style={{ ...featureItem, color: "var(--ds-text)" }}>
+                <span style={{ color: "var(--ds-gold-mid)", flexShrink: 0, paddingTop: 2 }}><Icon name="check" size={16} /></span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
 
-            <ul style={{ listStyle: "none", padding: 0, margin: "0 0 2rem", display: "flex", flexDirection: "column", gap: "0.6rem", flex: 1 }}>
-              {PRO_FEATURES.map((f) => (
-                <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: "0.625rem", fontSize: "0.875rem", color: "var(--subtle)" }}>
-                  <span style={{ color: "var(--cyan)", flexShrink: 0, marginTop: "0.05rem" }}>✓</span>
-                  {f}
-                </li>
-              ))}
-            </ul>
-
+          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
             {/* ── Free user ── */}
             {!isPro && (
-              <button
-                onClick={handleProClick}
-                disabled={isLoading}
-                className="btn-primary"
-                style={{ width: "100%", padding: "0.875rem", fontSize: "1rem", fontWeight: 800 }}
-              >
-                {isLoading ? "Opening checkout…" : "Upgrade to Pro →"}
-              </button>
+              <>
+                <button onClick={handleProClick} disabled={isLoading} className="ds-btn" style={goldAction}>
+                  {isLoading ? "Opening checkout…" : <>Upgrade to Pro<Icon name="right" size={18} /></>}
+                </button>
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 12, color: "var(--ds-muted)", textAlign: "center" }}>
+                  <Icon name="lock" size={13} />Secure checkout with Razorpay · renews monthly
+                </span>
+              </>
             )}
 
             {/* ── Active Pro ── */}
             {isPro && !isCancelled && (
               <>
-                <p style={{ textAlign: "center", color: "var(--for)", fontSize: "0.875rem", marginBottom: "0.75rem", fontWeight: 700 }}>
-                  ✓ You're on Pro
+                <p style={{ margin: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--ds-for-text)", fontSize: 15, fontWeight: 700 }}>
+                  <Icon name="check" size={16} />You're on Pro
                 </p>
                 <button
                   onClick={() => cancelSubscription()}
                   disabled={isLoading}
-                  className="btn-ghost"
-                  style={{ width: "100%", padding: "0.75rem", fontSize: "0.85rem", color: "var(--muted)" }}
+                  className="ds-btn ds-btn-ghost ds-btn-block"
+                  style={{ height: 52, color: "var(--ds-muted)" }}
                 >
                   {isLoading ? "Cancelling…" : "Cancel subscription"}
                 </button>
-                <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.72rem", marginTop: "0.5rem", marginBottom: 0, lineHeight: 1.5 }}>
+                <p style={{ margin: 0, textAlign: "center", color: "var(--ds-muted)", fontSize: 12, lineHeight: 1.5 }}>
                   Access continues until the end of your current billing period.
                 </p>
               </>
@@ -173,34 +204,65 @@ export function PricingPage() {
 
             {/* ── Cancelled but still within paid period ── */}
             {isPro && isCancelled && (
-              <div style={{ textAlign: "center" }}>
-                <p style={{ color: "#f59e0b", fontSize: "0.875rem", fontWeight: 700, marginBottom: "0.4rem" }}>
-                  ⏳ Cancellation scheduled
+              <>
+                <p style={{ margin: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "var(--ds-gold-text)", fontSize: 15, fontWeight: 700 }}>
+                  <Icon name="timer" size={16} />Cancellation scheduled
                 </p>
-                <p style={{ color: "var(--muted)", fontSize: "0.78rem", lineHeight: 1.6, marginBottom: "0.75rem" }}>
+                <p style={{ margin: 0, textAlign: "center", color: "var(--ds-muted)", fontSize: 13, lineHeight: 1.6 }}>
                   You still have Pro access
                   {currentPeriodEnd
                     ? ` until ${currentPeriodEnd.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}.`
                     : " until the end of your billing period."}
                 </p>
-                <button
-                  onClick={handleProClick}
-                  disabled={isLoading}
-                  className="btn-ghost"
-                  style={{ width: "100%", padding: "0.75rem", fontSize: "0.85rem" }}
-                >
-                  {isLoading ? "Opening checkout…" : "Re-subscribe →"}
+                <button onClick={handleProClick} disabled={isLoading} className="ds-btn" style={goldAction}>
+                  {isLoading ? "Opening checkout…" : <>Re-subscribe<Icon name="right" size={18} /></>}
                 </button>
-              </div>
+              </>
             )}
           </div>
-        </div>
+        </article>
+      </section>
 
-        {/* Fine print */}
-        <p style={{ color: "var(--muted)", fontSize: "0.78rem", marginTop: "2.5rem", textAlign: "center", maxWidth: 500, lineHeight: 1.6 }}>
-          Payments are processed securely by Razorpay. Cancel any time — your Pro access continues until the end of the current billing period.
-        </p>
-      </main>
+      {/* FAQ */}
+      <section style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 16 }}>
+        {FAQ.map(({ q, a }) => (
+          <div key={q} style={{ padding: 20, borderRadius: 20, background: "var(--ds-panel)", border: "1px solid var(--ds-border)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--ds-text)" }}>{q}</h3>
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "var(--ds-muted)" }}>{a}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* Fine print */}
+      <p style={{ margin: "0 auto", color: "var(--ds-faint)", fontSize: 12, textAlign: "center", maxWidth: 500, lineHeight: 1.6 }}>
+        Payments are processed securely by Razorpay. Cancel any time — your Pro access continues until the end of the current billing period.
+      </p>
+    </div>
+  );
+
+  // Signed-in users get the app shell; guests can't use its user card / logout
+  if (user) return <AppShell active="pro">{content}</AppShell>;
+
+  return (
+    <div
+      // html/body/#root are overflow:hidden app-wide, so this page owns its scroll
+      style={{
+        height: "100vh", overflowY: "auto", boxSizing: "border-box",
+        padding: isMobile ? "20px 16px 32px" : "32px 48px 56px",
+        backgroundColor: "var(--ds-bg)",
+        backgroundImage: "radial-gradient(var(--ds-dots) 1px, transparent 1.2px)",
+        backgroundSize: "22px 22px",
+        color: "var(--ds-text)",
+        display: "flex", flexDirection: "column", gap: isMobile ? 24 : 40,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <BrandLogo height={isMobile ? 26 : 30} />
+        <button onClick={() => navigate(-1)} className="ds-btn ds-btn-ghost ds-btn-sm">
+          <Icon name="left" size={16} />Back
+        </button>
+      </div>
+      {content}
     </div>
   );
 }
