@@ -219,6 +219,39 @@ export const historyApi = {
   },
 };
 
+/** Pillar breakdown for one judged session (0–1 each; null = pillar not active yet) */
+export interface JudgePillarScores {
+  p1_rankAgreement:       number | null;
+  p2_gapPreservation:     number | null;
+  p3_consensusSimilarity: number | null;
+  p4_outlierCoherence:    number | null;
+  p5_biasDetection:       number | null;
+  p6_integrityScore:      number | null;
+}
+
+/** One entry of GET /auth/judge-history `sessions` (newest first) */
+export interface JudgeHistorySession {
+  id:               string;
+  debateId:         string | null;
+  topic:            string | null;
+  debateCreatedAt:  string | null;
+  sessionScore:     number | null;
+  credibilityAfter: number | null;
+  pillar:           JudgePillarScores | null;
+  createdAt:        string;
+}
+
+export const judgeApi = {
+  async getHistory(): Promise<JudgeHistorySession[]> {
+    try {
+      const res = await apiClient.get<{ sessions?: JudgeHistorySession[] }>("/auth/judge-history");
+      return Array.isArray(res.data?.sessions) ? res.data.sessions : [];
+    } catch {
+      return [];
+    }
+  },
+};
+
 export const debateApi = {
   /**
    * Upload an audio blob to /debates/:id/transcribe and get back the

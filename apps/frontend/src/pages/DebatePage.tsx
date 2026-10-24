@@ -286,8 +286,11 @@ export function DebatePage() {
   useLeaveRoomOnNavigate(code, debate?.roomId, socket);
 
   // ── Reconnection handling ─────────────────────────────────────────────────
-  const reconnectParamsRef = useRef({ socket, debateId });
-  useEffect(() => { reconnectParamsRef.current = { socket, debateId }; });
+  // isJudge / judgeSubmitted go through the ref too: reconnectFn (and the
+  // scoring-window socket listener below) are registered once on mount, so
+  // reading them directly would see first-render values.
+  const reconnectParamsRef = useRef({ socket, debateId, isJudge: false, judgeSubmitted: false });
+  useEffect(() => { reconnectParamsRef.current = { socket, debateId, isJudge, judgeSubmitted }; });
 
   useReconnectHandler({
     onReconnect,
@@ -297,11 +300,13 @@ export function DebatePage() {
       if (!s || !id) return;
       s.emit("debate:get-state", { debateId: id }, (res: any) => {
         if (!res?.success) return;
-        const d = res.debate as Debate;
+        const d = res.debate as Debate & { judgeScoresLockedAt?: string | Date | null };
         setDebate(d);
         if (d.mode === "buzzer" && d.buzzerState) setBuzzerState(d.buzzerState as BuzzerState);
-        // Restore judge panel if debate ended and we haven't submitted yet
-        if (d.status === "finished" && isJudge && !judgeSubmitted) setShowJudgePanel(true);
+        // Restore judge panel if debate ended, the scoring window is still open
+        // (server hasn't locked scores) and we haven't submitted yet
+        const { isJudge: judge, judgeSubmitted: submitted } = reconnectParamsRef.current;
+        if (d.status === "ended" && !d.judgeScoresLockedAt && judge && !submitted) setShowJudgePanel(true);
       });
     },
   });
@@ -417,7 +422,9 @@ export function DebatePage() {
         return;
       }
       setScoringWindowEndsAt(new Date(data.locksAt).getTime());
-      if (isJudge) setShowJudgePanel(true);
+      // Read via the ref: this listener is registered before the debate loads,
+      // so the closed-over isJudge would still be false.
+      if (reconnectParamsRef.current.isJudge) setShowJudgePanel(true);
     };
     const onJudgeScoresLocked = () => {
       setScoringWindowEndsAt(null);

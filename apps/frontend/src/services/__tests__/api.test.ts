@@ -37,7 +37,7 @@ vi.mock("axios", () => ({
   },
 }));
 
-import { authApi, roomApi, platformApi, historyApi, debateApi } from "../api";
+import { authApi, roomApi, platformApi, historyApi, judgeApi, debateApi } from "../api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -282,6 +282,27 @@ describe("historyApi", () => {
     mock.get.mockRejectedValue(new Error("fail"));
     const result = await historyApi.getHistory();
     expect(result).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe("judgeApi", () => {
+  it("getHistory — calls GET /auth/judge-history and returns its sessions", async () => {
+    const sessions = [{ id: "s1", topic: "AI", sessionScore: 0.8, credibilityAfter: 0.6 }];
+    mock.get.mockResolvedValue({ data: { judgeStats: { totalSessions: 1 }, sessions } });
+    const result = await judgeApi.getHistory();
+    expect(mock.get).toHaveBeenCalledWith("/auth/judge-history");
+    expect(result).toEqual(sessions);
+  });
+
+  it("getHistory — returns empty array when sessions is missing", async () => {
+    mock.get.mockResolvedValue({ data: { judgeStats: null } });
+    expect(await judgeApi.getHistory()).toEqual([]);
+  });
+
+  it("getHistory — returns empty array on error", async () => {
+    mock.get.mockRejectedValue(new Error("fail"));
+    expect(await judgeApi.getHistory()).toEqual([]);
   });
 });
 

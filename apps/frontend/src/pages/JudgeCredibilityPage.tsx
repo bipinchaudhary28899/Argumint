@@ -1,18 +1,32 @@
 /**
  * JudgeCredibilityPage.tsx — view over the signed-in user's judgeStats
- * (totalSessions, credibilityScore 0–1, credibilityBand, lastJudgedAt).
+ * (totalSessions, credibilityScore 0–1, credibilityBand, lastJudgedAt)
+ * plus GET /auth/judge-history (per-session pillars, sessionScore, credibilityAfter).
  *
- * Layout:
- *   SCORE   — current score, band chip, band bar with marker   | what each band means
- *   HOW     — the six scoring pillars + weights                | bias cap · rolling update
- * With no sessions yet the score card becomes an empty state; the explainer stays.
+ * Layout (with history):
+ *   SCORE   — current score, band chip, band bar with marker   | credibility trend
+ *   HOW     — the six pillars: latest scores + weights         | bias cap · rolling update
+ *   LIST    — debates you judged                               | what each band means
+ * Without history (or if it fails to load) the trend/list drop out, the bands take the
+ * trend's place and the pillars show weights only. With no sessions yet the score card
+ * becomes an empty state; the explainer stays.
  */
 
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
 import { Icon } from "../components/Icon";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { judgeApi, type JudgeHistorySession, type JudgePillarScores } from "../services/api";
+
+// Module-level cache — survives tab switches (unmount/remount) within the session.
+// Keyed by user + session count so a newly judged debate (or another account) refetches.
+let _historyCache: { key: string; sessions: JudgeHistorySession[] } | null = null;
+
+export function _resetCacheForTests() {
+  _historyCache = null;
+}
 
 type Band = "strong" | "moderate" | "flagged";
 
@@ -37,14 +51,16 @@ const BAND_STYLE: Record<Band, { bg: string; line: string; text: string; chipBg:
 };
 
 // Pillar weights from credibility.service (sum = 1.0)
-const PILLARS = [
-  { name: "Rank agreement",    desc: "Your ranking vs the AI's",              weight: 30 },
-  { name: "Gap preservation",  desc: "Score gaps vs the AI's gaps",           weight: 20 },
-  { name: "Consensus",         desc: "Agreement with the other human judges", weight: 15 },
-  { name: "Outlier coherence", desc: "Consistency over time (from session 3)", weight: 10 },
-  { name: "Bias detection",    desc: "No systematic favouritism (from session 5)", weight: 15 },
-  { name: "Integrity",         desc: "No lazy or identical scoring",          weight: 10 },
+const PILLARS: { key: keyof JudgePillarScores; name: string; desc: string; weight: number }[] = [
+  { key: "p1_rankAgreement",       name: "Rank agreement",    desc: "Your ranking vs the AI's",              weight: 30 },
+  { key: "p2_gapPreservation",     name: "Gap preservation",  desc: "Score gaps vs the AI's gaps",           weight: 20 },
+  { key: "p3_consensusSimilarity", name: "Consensus",         desc: "Agreement with the other human judges", weight: 15 },
+  { key: "p4_outlierCoherence",    name: "Outlier coherence", desc: "Consistency over time (from session 3)", weight: 10 },
+  { key: "p5_biasDetection",       name: "Bias detection",    desc: "No systematic favouritism (from session 5)", weight: 15 },
+  { key: "p6_integrityScore",      name: "Integrity",         desc: "No lazy or identical scoring",          weight: 10 },
 ];
+
+const LIST_PREVIEW = 5;
 
 const MONO = "'JetBrains Mono', monospace";
 
@@ -58,6 +74,61 @@ const formatDate = (d: string | Date) => {
   }
 };
 
+const formatShortDate = (d: string) => {
+  try {
+    return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+};
+
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const fmt2  = (v: number | null | undefined) => isNum(v) ? v.toFixed(2) : "—";
+
+// ── Trend chart ─────────────────────────────────────────────────────────────
+// Inline SVG in a 600×200 box stretched to the card width; strokes stay crisp via
+// non-scaling-stroke and the latest-point dot is HTML so it doesn't stretch.
+const CHART_W = 600, CHART_H = 200, CHART_PAD_X = 20;
+
+function TrendChart({ values }: { values: number[] }) {
+  // Show 0.40–1.00 like the design, widening downward when scores dip below it.
+  const lo = Math.min(0.4, Math.max(0, Math.floor(Math.min(...values) * 10) / 10 - 0.1));
+  const y  = (v: number) => ((1 - Math.min(1, Math.max(lo, v))) / (1 - lo)) * CHART_H;
+  const x  = (i: number) => values.length === 1
+    ? CHART_W / 2
+    : CHART_PAD_X + (i * (CHART_W - 2 * CHART_PAD_X)) / (values.length - 1);
+  const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+
+  const first = values[0], last = values[values.length - 1];
+  const n = values.length;
+  const lastBand = BANDS.find(b => b.id === bandFromScore(last))!.label;
+  const label = n === 1
+    ? `Credibility ${last.toFixed(2)} after 1 session, in the ${lastBand} band`
+    : `Credibility ${last > first ? "rose" : last < first ? "fell" : "held"} ${last === first ? `at ${last.toFixed(2)}` : `from ${first.toFixed(2)} to ${last.toFixed(2)}`} over ${n} sessions, now in the ${lastBand} band`;
+
+  const yStrong = y(0.75), yFlagged = y(0.45);
+  const pct = (v: number, of: number) => `${(v / of) * 100}%`;
+
+  return (
+    <div style={{ position: "relative", height: CHART_H }}>
+      <svg width="100%" height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`} preserveAspectRatio="none" role="img" aria-label={label} style={{ display: "block" }}>
+        <rect x="0" y="0" width={CHART_W} height={yStrong} style={{ fill: "var(--ds-for-bg)" }} />
+        <line x1="0" y1={yStrong} x2={CHART_W} y2={yStrong} strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" style={{ stroke: "var(--ds-for-mid)" }} />
+        <line x1="0" y1={yFlagged} x2={CHART_W} y2={yFlagged} strokeWidth="1" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" style={{ stroke: "var(--ds-against-mid)" }} />
+        {n > 1 && (
+          <polyline data-testid="trend-line" points={points} fill="none" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" style={{ stroke: "var(--ds-accent-mid)" }} />
+        )}
+      </svg>
+      <span aria-hidden="true" style={{
+        position: "absolute", left: pct(x(n - 1), CHART_W), top: pct(y(last), CHART_H), width: 10, height: 10, marginLeft: -5, marginTop: -5,
+        borderRadius: "50%", background: "var(--ds-accent-mid)", boxShadow: "0 0 0 3px var(--ds-panel)",
+      }} />
+      <span aria-hidden="true" style={{ position: "absolute", right: 0, top: `calc(${pct(yStrong, CHART_H)} - 19px)`, fontSize: 11, fontWeight: 700, color: "var(--ds-for-text)" }}>0.75 Strong</span>
+      <span aria-hidden="true" style={{ position: "absolute", right: 0, top: `calc(${pct(yFlagged, CHART_H)} - 19px)`, fontSize: 11, fontWeight: 700, color: "var(--ds-against-text)" }}>0.45 Flagged</span>
+    </div>
+  );
+}
+
 const cardStyle: React.CSSProperties = { display: "flex", flexDirection: "column", minWidth: 0 };
 const eyebrow: React.CSSProperties = { fontSize: 12, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ds-muted)" };
 
@@ -66,8 +137,34 @@ export function JudgeCredibilityPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
 
-  const stats: JudgeStats = (user as any)?.judgeStats ?? { totalSessions: 0, credibilityScore: 0, credibilityBand: "moderate", lastJudgedAt: null };
+  const authUser = user as { id?: string; judgeStats?: JudgeStats } | null;
+  const stats: JudgeStats = authUser?.judgeStats ?? { totalSessions: 0, credibilityScore: 0, credibilityBand: "moderate", lastJudgedAt: null };
   const hasSessions = (stats.totalSessions ?? 0) > 0;
+
+  // ── Judge history (only fetched once there's something to show) ──────────
+  const cacheKey = `${authUser?.id ?? ""}:${stats.totalSessions ?? 0}`;
+  const [fetched, setFetched] = useState<{ key: string; sessions: JudgeHistorySession[] } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  const loaded  = fetched?.key === cacheKey ? fetched : _historyCache?.key === cacheKey ? _historyCache : null;
+  const history = loaded?.sessions ?? [];
+  const loading = hasSessions && loaded === null;
+
+  useEffect(() => {
+    // Warm cache → no refetch on remount
+    if (!hasSessions || _historyCache?.key === cacheKey) return;
+    let cancelled = false;
+    judgeApi.getHistory().then(sessions => {
+      _historyCache = { key: cacheKey, sessions };
+      if (!cancelled) setFetched(_historyCache);
+    });
+    return () => { cancelled = true; };
+  }, [hasSessions, cacheKey]);
+
+  const showHistory = hasSessions && (loading || history.length > 0);
+  const trend       = [...history].reverse().map(s => s.credibilityAfter).filter(isNum);  // oldest → newest
+  const latest      = history[0]?.pillar ?? null;                                        // history is newest first
+  const listed      = showAll ? history : history.slice(0, LIST_PREVIEW);
   const score  = Math.min(1, Math.max(0, stats.credibilityScore ?? 0));
   const band   = (BAND_STYLE[stats.credibilityBand] ? stats.credibilityBand : bandFromScore(score)) as Band;
   const bs     = BAND_STYLE[band];
@@ -157,14 +254,48 @@ export function JudgeCredibilityPage() {
           );
         })}
       </ul>
-      <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ds-muted)" }}>
-        Each session moves your score by a rolling average, so one odd debate can't sink you.
-      </span>
+      {!showHistory && (  // the trend card carries this line when it's shown
+        <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+          Each session moves your score by a rolling average, so one odd debate can't sink you.
+        </span>
+      )}
     </section>
   );
 
   // ── Pillars ───────────────────────────────────────────────────────────────
-  const PillarsCard = (
+  const PillarsCard = latest ? (
+    <section className="ds-card" aria-label="Scoring pillars" style={{ ...cardStyle, padding: pad, gap: 14 }}>
+      <span style={eyebrow}>The six pillars · latest session</span>
+      <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
+        {PILLARS.map((p, i) => {
+          const v = latest[p.key];
+          return (
+            <li key={p.name} style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1.1fr)", gap: isMobile ? 8 : 12, alignItems: "center" }}>
+              <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>P{i + 1} · {p.name}</span>
+                <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>{p.desc}</span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="ds-track" aria-hidden="true" style={{ flex: 1, height: 8 }}>
+                  <div style={{ width: `${isNum(v) ? Math.min(1, Math.max(0, v)) * 100 : 0}%`, background: "var(--ds-accent-mid)" }} />
+                </span>
+                <span
+                  aria-label={isNum(v) ? `${p.name} score ${v.toFixed(2)}` : `${p.name} not active yet`}
+                  style={{ width: 36, textAlign: "right", fontFamily: MONO, fontWeight: 600, fontSize: 14, color: isNum(v) ? undefined : "var(--ds-faint)" }}
+                >
+                  {fmt2(v)}
+                </span>
+                <span style={{ width: 40, textAlign: "right", fontSize: 12, color: "var(--ds-muted)" }}>{p.weight}%</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+        Scores are from your most recent judged debate; percentages are each pillar's weight. A dash means that pillar hadn't switched on yet and was left out.
+      </span>
+    </section>
+  ) : (
     <section className="ds-card" aria-label="Scoring pillars" style={{ ...cardStyle, padding: pad, gap: 14 }}>
       <span style={eyebrow}>The six pillars</span>
       <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -186,6 +317,77 @@ export function JudgeCredibilityPage() {
       <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ds-muted)" }}>
         Weights show how much each pillar counts toward a session's score. Pillars that haven't switched on yet are left out.
       </span>
+    </section>
+  );
+
+  // ── Trend ─────────────────────────────────────────────────────────────────
+  const LoadingNote = (
+    <span role="status" style={{ fontSize: 14, color: "var(--ds-muted)" }}>Loading your judging history…</span>
+  );
+
+  const TrendCard = (
+    <section className="ds-card" aria-label="Credibility trend" aria-busy={loading || undefined} style={{ ...cardStyle, padding: pad, gap: 12 }}>
+      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <span style={eyebrow}>Trend</span>
+        {!loading && trend.length > 0 && (
+          <span style={{ fontSize: 12, color: "var(--ds-muted)" }}>
+            {trend.length === 1 ? "First session" : `Last ${trend.length} sessions`}
+          </span>
+        )}
+      </span>
+      {loading ? (
+        <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>{LoadingNote}</div>
+      ) : trend.length > 0 ? (
+        <TrendChart values={trend} />
+      ) : (
+        <span style={{ fontSize: 14, color: "var(--ds-muted)" }}>No scored sessions to chart yet.</span>
+      )}
+      <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ds-muted)" }}>
+        Each session moves your score by a rolling average, so one odd debate can't sink you.
+      </span>
+    </section>
+  );
+
+  // ── Debates you judged ────────────────────────────────────────────────────
+  const listCols = isMobile ? "minmax(0,1fr) auto" : "72px minmax(0,1fr) 72px 72px";
+  const JudgedCard = (
+    <section className="ds-card" aria-label="Debates you judged" aria-busy={loading || undefined} style={{ ...cardStyle, padding: pad, gap: 10 }}>
+      <span style={eyebrow}>Debates you judged</span>
+      {loading ? LoadingNote : (
+        <>
+          {!isMobile && (
+            <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: listCols, gap: 12, padding: "0 14px", fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--ds-faint)" }}>
+              <span>DATE</span><span>MOTION</span><span style={{ textAlign: "right" }}>SESSION</span><span style={{ textAlign: "right" }}>AFTER</span>
+            </div>
+          )}
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+            {listed.map(s => {
+              const date   = <span style={{ fontSize: 13, color: "var(--ds-muted)" }}>{formatShortDate(s.createdAt)}</span>;
+              const motion = <span style={{ fontSize: 14, fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>{s.topic || "Untitled debate"}</span>;
+              const scoreV = <span aria-label={`Session score ${fmt2(s.sessionScore)}`} style={{ textAlign: "right", fontFamily: MONO, fontWeight: 600 }}>{fmt2(s.sessionScore)}</span>;
+              const afterV = <span aria-label={`Credibility after ${fmt2(s.credibilityAfter)}`} style={{ textAlign: "right", fontFamily: MONO, color: "var(--ds-accent)" }}>{fmt2(s.credibilityAfter)}</span>;
+              const row: React.CSSProperties = { display: "grid", gridTemplateColumns: listCols, gap: 12, alignItems: "center", padding: 14, borderRadius: 14, background: "var(--ds-raised)" };
+              // Mobile: no column header, so the motion and date stack and each score carries a caption
+              return isMobile ? (
+                <li key={s.id} style={row}>
+                  <span style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>{motion}{date}</span>
+                  <span style={{ display: "grid", gridTemplateColumns: "auto auto", columnGap: 8, rowGap: 2, alignItems: "baseline", fontSize: 13 }}>
+                    <span aria-hidden="true" style={{ fontSize: 11, color: "var(--ds-faint)" }}>Session</span>{scoreV}
+                    <span aria-hidden="true" style={{ fontSize: 11, color: "var(--ds-faint)" }}>After</span>{afterV}
+                  </span>
+                </li>
+              ) : (
+                <li key={s.id} style={row}>{date}{motion}{scoreV}{afterV}</li>
+              );
+            })}
+          </ul>
+          {history.length > LIST_PREVIEW && (
+            <button type="button" className="ds-btn ds-btn-secondary" aria-expanded={showAll} style={{ alignSelf: "flex-start", height: 40, fontSize: 14 }} onClick={() => setShowAll(v => !v)}>
+              {showAll ? "Show fewer" : `Show all ${history.length}`}
+            </button>
+          )}
+        </>
+      )}
     </section>
   );
 
@@ -227,13 +429,20 @@ export function JudgeCredibilityPage() {
 
         <div style={grid("minmax(0,1fr) minmax(0,1.4fr)")}>
           {ScoreCard}
-          {BandsCard}
+          {showHistory ? TrendCard : BandsCard}
         </div>
 
         <div style={grid("minmax(0,1.4fr) minmax(0,1fr)")}>
           {PillarsCard}
           {SideCards}
         </div>
+
+        {showHistory && (
+          <div style={grid("minmax(0,1.4fr) minmax(0,1fr)")}>
+            {JudgedCard}
+            {BandsCard}
+          </div>
+        )}
       </div>
     </AppShell>
   );

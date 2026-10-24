@@ -601,11 +601,8 @@ describe("DebatePage — observer roles", () => {
 
 // ── Judge role — observable behaviors ────────────────────────────────────────
 //
-// NOTE: The judge scoring panel (showJudgePanel) is controlled by a React state
-// flag set inside a socket handler that captures `isJudge` as a closure. Because
-// the socket-listener effect runs BEFORE the debate loads (and isJudge=false at
-// that point), `setShowJudgePanel(true)` is never called via socket events in
-// tests.  We therefore test the judge's observable render states instead.
+// NOTE: The socket-listener effect registers before the debate loads, so the
+// scoring-window handler reads isJudge through a ref rather than its closure.
 
 describe("DebatePage — judge role behaviors", () => {
   function setupJudgeDebate(debateOverrides: any = {}) {
@@ -672,6 +669,19 @@ describe("DebatePage — judge role behaviors", () => {
     setupJudgeDebate({ status: "ended", currentTurn: null });
     renderPage();
     expect(screen.getByText(/Debate Complete/i)).toBeInTheDocument();
+  });
+
+  it("judge sees the scoring board when debate:scoring-window-opened fires", () => {
+    setupJudgeDebate();
+    renderPage();
+    act(() => {
+      mockSocket._emit("debate:ended", { rounds: [] });
+      mockSocket._emit("debate:scoring-window-opened", {
+        hasJudges: true,
+        locksAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+    });
+    expect(screen.getByRole("heading", { name: "Score each debater" })).toBeInTheDocument();
   });
 
   it("judge receives 'Scoring in Progress' countdown via non-judge scoring wait screen", () => {
@@ -1332,5 +1342,56 @@ describe("DebatePage — judge scoring board (preview role switcher)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Debater" }));
     expect(screen.queryByRole("heading", { name: "Score each debater" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Current speaker" })).toBeInTheDocument();
+  });
+});
+
+// ── Reconnect: restore judge scoring panel ───────────────────────────────────
+//
+// The real useReconnectHandler registers reconnectFn once on mount, so these
+// tests invoke the reconnectFn from the FIRST render (before the debate loaded).
+
+describe("DebatePage — reconnect restores judge scoring panel", () => {
+  const judgeTurnOrder = [
+    { userId: "user-2", username: "Bob", side: "for" },
+    { userId: "user-3", username: "Charlie", side: "against" },
+  ];
+
+  function setupJudgeReconnect(debateAfterReconnect: any) {
+    sessionStorage.setItem("argumint_room_role", "judge");
+    let current = makeDebate({ creatorId: "user-2", turnOrder: judgeTurnOrder });
+    mockSocket.emit.mockImplementation((event: string, _payload: any, cb?: Function) => {
+      if (event === "debate:get-state" && cb) {
+        cb({ success: true, debate: current, roomParticipants: [] });
+      } else if (cb) {
+        cb({ success: true });
+      }
+    });
+    const firstCall = mockUseReconnectHandler.mock.calls.length;
+    renderPage();
+    // While disconnected, the debate ended and the scoring window opened.
+    current = makeDebate({
+      creatorId: "user-2",
+      turnOrder: judgeTurnOrder,
+      currentTurn: null,
+      ...debateAfterReconnect,
+    });
+    const { reconnectFn } = mockUseReconnectHandler.mock.calls[firstCall][0];
+    act(() => { reconnectFn(); });
+  }
+
+  it("shows the judge scoring board after reconnecting while the scoring window is open", () => {
+    setupJudgeReconnect({ status: "ended" });
+    expect(screen.getByRole("heading", { name: "Score each debater" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Lock scores/i })).toBeInTheDocument();
+  });
+
+  it("does not show the scoring board if scores were already locked", () => {
+    setupJudgeReconnect({ status: "ended", judgeScoresLockedAt: new Date().toISOString() });
+    expect(screen.queryByRole("heading", { name: "Score each debater" })).not.toBeInTheDocument();
+  });
+
+  it("does not show the scoring board if the debate is still in progress", () => {
+    setupJudgeReconnect({ status: "in_progress" });
+    expect(screen.queryByRole("heading", { name: "Score each debater" })).not.toBeInTheDocument();
   });
 });
